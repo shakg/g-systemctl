@@ -22,7 +22,6 @@
   },
   "homepage": "https://github.com/shakg/g-systemctl#readme",
   "dependencies": {
-    "shell": "^0.5.1",
     "shelljs": "^0.8.5"
   }
 }
