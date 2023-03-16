@@ -1,0 +1,24 @@
+{
+  "name": "g-systemctl-parser",
+  "version": "1.0.0",
+  "description": "parse systemctl commands ",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shakg/g-systemctl.git"
+  },
+  "keywords": [
+    "systemctl",
+    "linux",
+    "sysadmin"
+  ],
+  "author": "ishakg",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/shakg/g-systemctl/issues"
+  },
+  "homepage": "https://github.com/shakg/g-systemctl#readme"
+}
