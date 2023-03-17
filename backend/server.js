@@ -1,13 +1,15 @@
 var express = require('express')
-var cors = require('cors')
-var app = express()
+let cors = require('cors')
+let app = express()
+let s = require("shelljs")
 
 app.use(cors())
 
-app.get('/products/:id', function (req, res, next) {
-  res.json({msg: 'This is CORS-enabled for all origins!'})
+app.get('/', function (req, res) {
+  const services = s.exec(`systemctl list-units -t service --full --all --plain --no-legend --no-pager --output=json`);
+  return res.send(JSON.parse(services))
 })
 
-app.listen(80, function () {
-  console.log('CORS-enabled web server listening on port 80')
+app.listen(3000, function () {
+  console.log('CORS-enabled web server listening on port 3000')
 })
