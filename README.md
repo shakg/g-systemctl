@@ -30,6 +30,12 @@ g-systemctl is a graphical user interface for your services in *nix systems. you
    ```bash
    go build server.go
    ```
+## One Line Relase Download
+
+```bash
+curl https://api.github.com/repos/shakg/g-systemctl/releases/latest |jq '.assets[0].browser_download_url' | xargs wget
+```
+
 
 ## Usage
 
