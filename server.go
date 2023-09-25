@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -17,6 +18,13 @@ type ServiceUnit struct {
 }
 
 func main() {
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: ./server <PORT>")
+		os.Exit(1)
+	}
+
+	port := os.Args[1]
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// Run systemctl list-units and capture its output
 		output, err := runCommand("systemctl list-units -t service --full --all --plain --no-legend --no-pager")
@@ -38,9 +46,8 @@ func main() {
 		w.Write(jsonData)
 	})
 
-	port := 8080
-	fmt.Printf("Server is listening on port %d...\n", port)
-	http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
+	fmt.Printf("Server is listening on port %s...\n", port)
+	http.ListenAndServe(fmt.Sprintf(":%s", port), nil)
 }
 
 func runCommand(cmd string) (string, error) {
