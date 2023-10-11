@@ -25,12 +25,13 @@ var content embed.FS
 
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: ./server <PORT>")
+	if len(os.Args) < 3 {
+		fmt.Println("Usage: ./server <PORT> <sudo_password>")
 		os.Exit(1)
 	}
 
 	port := os.Args[1]
+	password := os.Args[2]
 	
 
 	// Create a handler function that wraps the file server
@@ -63,23 +64,30 @@ func main() {
 
 		if open == "true" {
 			fmt.Fprintf(w, "Trying to open Service %s", serviceName)
-			
-			_command := "systemctl start " + serviceName
-			_, err := runCommand(_command)
+
+			// to pass password to command in linux, we use this , echo "your_password" | sudo -S your_command
+			pre_command := "systemctl start " + serviceName
+			c := exec.Command("sh", "-c", "echo "+password+" | sudo -S -k " + pre_command)
+			err := c.Run()
 			if err != nil {
-				http.Error(w, "Error running systemctl", http.StatusInternalServerError)
-				return
+				fmt.Printf("Error: %s\n", err)
+				http.Error(w, "Error in running command", http.StatusBadRequest)
 			}
 			
 		} else if open == "false" {
 			fmt.Fprintf(w, "Trying to close Service %s", serviceName)
-
-			_command := "systemctl stop " + serviceName
-			_, err := runCommand(_command)
+			
+			pre_command := "systemctl stop " + serviceName
+			c := exec.Command("sh", "-c", "echo "+password+" | sudo -S -k " + pre_command)
+			err := c.Run()
 			if err != nil {
-				http.Error(w, "Error running systemctl", http.StatusInternalServerError)
-				return
+				fmt.Printf("Error: %s\n", err)
+				http.Error(w, "Error in running command", http.StatusBadRequest)
 			}
+/**
+Trying to open Service docker.serviceError is exec: "echo 1 | systemctl start docker.service": executable file not found in $PATHError in running command
+
+*/
 		} else {
 			http.Error(w, "Invalid 'open' parameter. Use 'true' or 'false'.", http.StatusBadRequest)
 		}
