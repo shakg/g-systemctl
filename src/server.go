@@ -25,13 +25,12 @@ var content embed.FS
 
 
 func main() {
-	if len(os.Args) < 3 {
-		fmt.Println("Usage: ./server <PORT> <sudo_password>")
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: ./server <PORT>")
 		os.Exit(1)
 	}
 
 	port := os.Args[1]
-	password := os.Args[2]
 	
 
 	// Create a handler function that wraps the file server
@@ -67,7 +66,7 @@ func main() {
 
 			// to pass password to command in linux, we use this , echo "your_password" | sudo -S your_command
 			pre_command := "systemctl start " + serviceName
-			c := exec.Command("sh", "-c", "echo "+password+" | sudo -S -k " + pre_command)
+			c := exec.Command("sh", "-c", pre_command)
 			err := c.Run()
 			if err != nil {
 				fmt.Printf("Error: %s\n", err)
@@ -78,7 +77,7 @@ func main() {
 			fmt.Fprintf(w, "Trying to close Service %s", serviceName)
 			
 			pre_command := "systemctl stop " + serviceName
-			c := exec.Command("sh", "-c", "echo "+password+" | sudo -S -k " + pre_command)
+			c := exec.Command("sh", "-c", pre_command)
 			err := c.Run()
 			if err != nil {
 				fmt.Printf("Error: %s\n", err)
