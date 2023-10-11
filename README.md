@@ -65,7 +65,7 @@ The server will be accessible at `http://localhost:<port>`.
 
 ## API
 
-The API provides information about the running system's status.
+The API endpoint provides information about the running system's status.
 
 - **Endpoint:** `/api`
 - **Method:** `GET`
@@ -80,6 +80,19 @@ Example response:
   ...
 }
 ```
+## Service
+
+The service endpoint enables us to start and stop services.
+
+- **Endpoint:** `/service`
+- **Method:** `GET`
+
+Example Usage:
+
+```
+/service?open=true&service_name=MyService
+```
+
 
 ## Frontend
 

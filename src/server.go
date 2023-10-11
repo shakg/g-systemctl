@@ -57,6 +57,34 @@ func main() {
 		w.Write(jsonData)
 	})
 
+	http.HandleFunc("/service", func(w http.ResponseWriter, r *http.Request) {
+		open := r.URL.Query().Get("open")
+		serviceName := r.URL.Query().Get("service_name")
+
+		if open == "true" {
+			fmt.Fprintf(w, "Trying to open Service %s", serviceName)
+			
+			_command := "systemctl start " + serviceName
+			_, err := runCommand(_command)
+			if err != nil {
+				http.Error(w, "Error running systemctl", http.StatusInternalServerError)
+				return
+			}
+			
+		} else if open == "false" {
+			fmt.Fprintf(w, "Trying to close Service %s", serviceName)
+
+			_command := "systemctl stop " + serviceName
+			_, err := runCommand(_command)
+			if err != nil {
+				http.Error(w, "Error running systemctl", http.StatusInternalServerError)
+				return
+			}
+		} else {
+			http.Error(w, "Invalid 'open' parameter. Use 'true' or 'false'.", http.StatusBadRequest)
+		}
+	})
+
 	fmt.Printf("Server is listening on port %s...\n", port)
 	http.ListenAndServe(fmt.Sprintf(":%s", port), nil)
 }

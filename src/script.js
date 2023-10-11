@@ -7,15 +7,38 @@ function renderData(data) {
     serviceList.innerHTML = "";
 
     data.forEach(service => {
-        const li = document.createElement("li");
-        console.log(service)
-        li.textContent = `${service.unit} - ${service.sub}`;
-        li.style.margin = '2px';
+        const _div = document.createElement("div");
+        _div.textContent = `${service.unit} - ${service.sub}`;
+        _div.style.margin = '2px';
+        _div.style.display = 'flex';
+        _div.style.gap = '5px';
+        _div.style.flexDirection = 'row';
+        _div.style.alignItems = 'center';
+//        _div.style.justifyContent = 'center';
+
+        const _button = document.createElement("button");
+        _button.style.padding = "4px";
+        _button.style.color = "black";
+        _button.style.backgroundColor = "white";
+
+        _div.appendChild(_button);
+        
         if(service.sub === "running"){
-            li.style.backgroundColor = 'green';
-            li.style.color = 'white'
+            _div.style.backgroundColor = 'green';
+            _button.innerText = "STOP";
+            _button.onclick = async() => {
+                await fetch('/service?open=false&service_name='+service.unit);
+                fetchData();
+            }
+        }else{
+            _button.innerText = "START";
+            _button.onclick = async () => {
+                await fetch('/service?open=true&service_name='+service.unit);
+                fetchData();
+            }
         }
-        serviceList.appendChild(li);
+
+        serviceList.appendChild(_div);
     });
 }
 
@@ -42,6 +65,7 @@ async function fetchData() {
         console.error('Error fetching data:', error);
     }
 }
+
 
 // Filter data based on user input
 function filterData() {
