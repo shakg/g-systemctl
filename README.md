@@ -45,7 +45,7 @@ sudo chmod +x server
 and 
 
 ```bash
-./server <port> <password>
+./server <port>
 ```
 <port> could be any free port in your system. For example 8080. 
 
@@ -54,13 +54,14 @@ and
 To start the server, run the executable or use `go run` with the following command:
 
 ```bash
-./server <port> <password>
+./server <port>
 # or
-go run server.go <port> <password>
+go run server.go <port> 
 ```
 
 Replace `<port>` with the desired port number (e.g., 8080).
-Replace `<password>` with the computer's password, this is required because it starting and stopping service will require password.
+
+> ! IMPORTANT, run with sudo if password needed
 
 The server will be accessible at `http://localhost:<port>`.
 
