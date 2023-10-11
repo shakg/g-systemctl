@@ -37,7 +37,7 @@ This code of conduct applies to all content on the g-systemctl GitHub repository
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the project maintainer at shakg@github.com. All complaints will be reviewed and investigated promptly and fairly.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the project maintainer at 1sh4kg0nu1@gmail.com. All complaints will be reviewed and investigated promptly and fairly.
 
 The project maintainer is obligated to respect the privacy and security of the reporter of any incident.
 
