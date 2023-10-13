@@ -74,13 +74,23 @@ The API endpoint provides information about the running system's status.
 
 Example response:
 
-> TODO : Change this to correct output. 
 ```json
-{
-  "service_1": "active",
-  "service_2": "inactive",
-  ...
-}
+[
+   {
+      "unit":"accounts-daemon.service",
+      "load":"loaded",
+      "active":"active",
+      "sub":"running",
+      "description":"Accounts"
+   },
+   {
+      "unit":"acpid.service",
+      "load":"loaded",
+      "active":"active",
+      "sub":"running",
+      "description":"ACPI"
+   }
+]
 ```
 ## Service
 
