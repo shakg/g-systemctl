@@ -2,6 +2,9 @@
 
 g-systemctl is a graphical user interface for your services in *nix systems. you can see all of your service deamons and search, filter them. 
 
+![Screenshot from 2023-10-15 23-51-45](https://github.com/shakg/g-systemctl/assets/76657662/f9053cba-46a1-4124-838b-12a35f277b20)
+
+
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
@@ -21,8 +24,8 @@ g-systemctl is a graphical user interface for your services in *nix systems. you
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/yourusername/your-repo.git
-   cd your-repo
+   git clone https://github.com/shakg/g-systemctl.git
+   cd g-systemctl
    ```
 
 2. Build the project:
@@ -74,13 +77,23 @@ The API endpoint provides information about the running system's status.
 
 Example response:
 
-> TODO : Change this to correct output. 
 ```json
-{
-  "service_1": "active",
-  "service_2": "inactive",
-  ...
-}
+[
+   {
+      "unit":"accounts-daemon.service",
+      "load":"loaded",
+      "active":"active",
+      "sub":"running",
+      "description":"Accounts"
+   },
+   {
+      "unit":"acpid.service",
+      "load":"loaded",
+      "active":"active",
+      "sub":"running",
+      "description":"ACPI"
+   }
+]
 ```
 ## Service
 
