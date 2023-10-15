@@ -24,8 +24,8 @@ g-systemctl is a graphical user interface for your services in *nix systems. you
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/yourusername/your-repo.git
-   cd your-repo
+   git clone https://github.com/shakg/g-systemctl.git
+   cd g-systemctl
    ```
 
 2. Build the project:
