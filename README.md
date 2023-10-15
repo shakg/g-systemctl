@@ -31,7 +31,7 @@ g-systemctl is a graphical user interface for your services in *nix systems. you
 2. Build the project:
 
    ```bash
-   go build server.go
+   go build src/server.go
    ```
 ## One Line Relase Download
 
@@ -43,7 +43,7 @@ curl https://api.github.com/repos/shakg/g-systemctl/releases/latest |jq '.assets
 ## Usage
 
 ```bash
-sudo chmod +x server
+chmod +x server
 ```
 and 
 
