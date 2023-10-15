@@ -28,7 +28,7 @@ g-systemctl is a graphical user interface for your services in *nix systems. you
 2. Build the project:
 
    ```bash
-   go build server.go
+   go build src/server.go
    ```
 ## One Line Relase Download
 
