@@ -40,7 +40,7 @@ curl https://api.github.com/repos/shakg/g-systemctl/releases/latest |jq '.assets
 ## Usage
 
 ```bash
-sudo chmod +x server
+chmod +x server
 ```
 and 
 
