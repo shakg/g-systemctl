@@ -2,6 +2,9 @@
 
 g-systemctl is a graphical user interface for your services in *nix systems. you can see all of your service deamons and search, filter them. 
 
+![Screenshot from 2023-10-15 23-51-45](https://github.com/shakg/g-systemctl/assets/76657662/f9053cba-46a1-4124-838b-12a35f277b20)
+
+
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
