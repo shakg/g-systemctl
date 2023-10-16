@@ -9,10 +9,12 @@ function renderData(data) {
 
     data.forEach(service => {
         const _div = document.createElement("div");
-        _div.textContent = `${service.unit} - ${service.sub}`;
-        _div.classList.add("service"); // add the service class
-
         const _button = document.createElement("button");
+        const _txt = document.createElement("span");
+
+
+        _txt.textContent = `${service.unit} - ${service.sub}`;
+
         _div.appendChild(_button);
         
         if(service.sub === "running"){
@@ -29,7 +31,9 @@ function renderData(data) {
                 fetchData();
             }
         }
-
+        _div.classList.add("service"); // add the service class
+      
+        _div.appendChild(_txt); 
         serviceList.appendChild(_div);
     });
 }
