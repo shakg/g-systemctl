@@ -41,3 +41,6 @@ div.running button {
   color:white;
   font-weight:bold;
 }
+button:hover {
+  cursor:pointer;
+}
