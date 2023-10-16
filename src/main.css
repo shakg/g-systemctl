@@ -1,0 +1,17 @@
+div.service {
+  margin: 2px;
+  display: flex;
+  gap: 5px;
+  flex-direction: row;
+  align-items: center;
+}
+
+div.service > button {
+  padding: 4px;
+  color: black;
+  background-color: white;
+}
+
+div.service.running {
+  background-color: green;
+}

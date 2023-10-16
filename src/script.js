@@ -16,13 +16,13 @@ function renderData(data) {
         _div.appendChild(_button);
         
         if(service.sub === "running"){
-            _button.classList.add(runningCSSClass); // the service is running  
+            _div.classList.add(runningCSSClass); // the service is running  
             _button.innerText = "STOP";
             _button.onclick = async() => {
                 await fetch('/service?open=false&service_name='+service.unit); fetchData();
             }
         }else{
-            _button.classList.remove(runningCSSClass);
+            _div.classList.remove(runningCSSClass);
             _button.innerText = "START";
             _button.onclick = async () => {
                 await fetch('/service?open=true&service_name='+service.unit);
