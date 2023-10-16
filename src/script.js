@@ -3,41 +3,37 @@ let serviceData = [];
 
 // Function to render the data on the web page
 function renderData(data) {
+    const runningCSSClass = "running";
     const serviceList = document.getElementById("service-list");
     serviceList.innerHTML = "";
 
     data.forEach(service => {
         const _div = document.createElement("div");
-        _div.textContent = `${service.unit} - ${service.sub}`;
-        _div.style.margin = '2px';
-        _div.style.display = 'flex';
-        _div.style.gap = '5px';
-        _div.style.flexDirection = 'row';
-        _div.style.alignItems = 'center';
-//        _div.style.justifyContent = 'center';
-
         const _button = document.createElement("button");
-        _button.style.padding = "4px";
-        _button.style.color = "black";
-        _button.style.backgroundColor = "white";
+        const _txt = document.createElement("span");
+
+
+        _txt.textContent = `${service.unit} - ${service.sub}`;
 
         _div.appendChild(_button);
         
         if(service.sub === "running"){
-            _div.style.backgroundColor = 'green';
+            _div.classList.add(runningCSSClass); // the service is running  
             _button.innerText = "STOP";
             _button.onclick = async() => {
-                await fetch('/service?open=false&service_name='+service.unit);
-                fetchData();
+                await fetch('/service?open=false&service_name='+service.unit); fetchData();
             }
         }else{
+            _div.classList.remove(runningCSSClass);
             _button.innerText = "START";
             _button.onclick = async () => {
                 await fetch('/service?open=true&service_name='+service.unit);
                 fetchData();
             }
         }
-
+        _div.classList.add("service"); // add the service class
+      
+        _div.appendChild(_txt); 
         serviceList.appendChild(_div);
     });
 }

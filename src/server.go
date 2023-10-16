@@ -20,7 +20,7 @@ type ServiceUnit struct {
 }
 
 	
-//go:embed *.html *.js
+//go:embed *.html *.js *.css
 var content embed.FS
 
 
