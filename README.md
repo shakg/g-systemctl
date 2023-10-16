@@ -1,6 +1,6 @@
 # G-Systemctl
 
-g-systemctl is a graphical user interface for your services in *nix systems. you can see all of your service deamons and search, filter them. 
+g-systemctl is a graphical user interface for your services in *nix systems. You can see all of your service deamons, search and filter them, and control them.
 
 ![Screenshot from 2023-10-15 23-51-45](https://github.com/shakg/g-systemctl/assets/76657662/f9053cba-46a1-4124-838b-12a35f277b20)
 
@@ -33,10 +33,10 @@ g-systemctl is a graphical user interface for your services in *nix systems. you
    ```bash
    go build src/server.go
    ```
-## One Line Relase Download
+## One-Line Release Download
 
 ```bash
-curl https://api.github.com/repos/shakg/g-systemctl/releases/latest |jq '.assets[0].browser_download_url' | xargs wget
+curl https://api.github.com/repos/shakg/g-systemctl/releases/latest | jq '.assets[0].browser_download_url' | xargs wget
 ```
 
 
@@ -45,12 +45,12 @@ curl https://api.github.com/repos/shakg/g-systemctl/releases/latest |jq '.assets
 ```bash
 chmod +x server
 ```
-and 
+and
 
 ```bash
 ./server <port>
 ```
-<port> could be any free port in your system. For example 8080. 
+<port> could be any free port in your system; for example, 8080.
 
 ### Running the Server
 
