@@ -1,46 +1,122 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@500;700&display=swap');
+
+* {
+  font-family: 'inter', 'sans-serif';
+}
+
+main {
+  max-width: 800px;
+  margin: auto;
+}
+
+body {
+  background-color: #2C2C2E;
+  margin: 16px;
+}
+
 h1 {
-  background-color: blue;
   padding: 20px;
   margin: 0 0 10px 0;
   color: white;
-  font-family: monospace;
+  padding: 0px;
+  margin-top: 60px;
+}
+
+#filter-container {
+  background-color: #FFEBEB;
+  border-radius: 7px;
+  padding: 2px;
+}
+
+#filter-label {
+  padding: 6px 24px;
+  font-size: 16px;
+  background-color: #E2D7D7;
+  border-radius: 7px;
+  color: #3A3A3C;
+  display: inline-block;
+}
+
+#filter {
+  border: none;
+  background-color: transparent;
+  font-size: 16px;
+}
+
+#filter:focus {
+  outline: none;
+}
+
+#service-list {
+  padding: 0px;
+  border: 1px solid #554141;
+  border-radius: 7px;
+  padding: 0px 12px;
 }
 
 div.service {
   margin: 2px;
-  display: flex;
   gap: 5px;
   flex-direction: row;
   align-items: center;
   padding: 5px;
-  font-family: sans-serif;
+}
+
+div.service:not(:last-child) {
+  border-bottom: 1px solid #554141;
+}
+
+div.service > .indicator {
+  font-size: 16px;
+  color: white;
+  width: 6rem;
+  display: inline-block;
+  vertical-align: middle;
+  text-transform: capitalize;
+}
+
+div.service > .indicator::before {
+  content: ' ';
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: #FF3B30;
+  margin-right: 8px;
+}
+
+div.service.running > .indicator::before {
+  background-color: #34C759;
+}
+
+div.service > .content {
+  color: white;
+  font-weight: 700;
+  display: inline-block;
+  overflow-x: scroll;
+  padding: 8px;
+  vertical-align: middle;
 }
 
 
 div.service > button {
-  padding: 4px;
-  color: black;
-  background-color: white;
-  margin-right: 10px;
+  width: 100px;
+  height: 21px;
+  background-color: transparent;
+  border: 1px solid #E2D7D7;
+  border-radius: 7px;
+  color: #E2D7D7;
+  transition: 0.2s;
+  font-size: 12px;
+  margin-right: 3rem;
+  vertical-align: middle;
 }
 
-div.service.running {
-  background-color: green;
-  font-weight: bold;
-  color: lightgoldenrodyellow;
+div.service > button:hover {
+  background-color: #E2D7D7;
+  color: #2C2C2E;
 }
 
-div.service:nth-child(odd) {
-  background-color:antiquewhite;
-}
-div.service.running:nth-child(odd) {
-  background-color: green;
-}
-div.running button { 
-  background-color:black;
-  color:white;
-  font-weight:bold;
-}
 button:hover {
   cursor:pointer;
 }

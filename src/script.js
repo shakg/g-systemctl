@@ -9,12 +9,17 @@ function renderData(data) {
 
     data.forEach(service => {
         const _div = document.createElement("div");
+        const _indicator = document.createElement("span");
         const _button = document.createElement("button");
         const _txt = document.createElement("span");
 
+        _indicator.textContent = `${service.sub}`;
+        _indicator.classList.add("indicator");
 
-        _txt.textContent = `${service.unit} - ${service.sub}`;
+        _txt.textContent = `${service.unit}`;
+        _txt.classList.add("content");
 
+        _div.appendChild(_indicator);
         _div.appendChild(_button);
         
         if(service.sub === "running"){
