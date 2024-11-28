@@ -41,6 +41,20 @@ g-systemctl is a graphical user interface for your services in *nix systems. You
 curl https://api.github.com/repos/shakg/g-systemctl/releases/latest | jq '.assets[0].browser_download_url' | xargs wget
 ```
 
+---
+
+Start development environment:
+```bash
+docker compose up
+```
+
+Build for production:
+
+```bash
+docker-compose -f docker-compose.prod.yml up --build
+```
+
+---
 
 ## Usage
 

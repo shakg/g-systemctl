@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      target: production
+    ports:
+      - "80:80"
+
+  backend:
+    build:
+      context: ./backend
+      target: production
+    ports:
+      - "8080:8080"
+    privileged: true

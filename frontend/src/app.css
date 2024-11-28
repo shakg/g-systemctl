@@ -1,0 +1,6 @@
+/* Add this at the top of the file */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* You can keep any custom CSS below */
