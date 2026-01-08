@@ -19,5 +19,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake build-essential
 
+      - name: Build
+        run: |
+          make build
+          ls -la build/
+
       - name: Run Tests
-        run: make build && make test
+        run: make test
