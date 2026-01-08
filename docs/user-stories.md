@@ -30,7 +30,6 @@ Then the status bar displays "Loaded X services" where X is the total count
 ```
 
 **Priority**: Must Have  
-**Estimate**: 5 story points  
 **Dependencies**: None (core functionality)
 
 **Definition of Done**:
@@ -70,7 +69,6 @@ And the newly selected service is visually highlighted
 ```
 
 **Priority**: Must Have  
-**Estimate**: 3 story points  
 **Dependencies**: SVC-001
 
 **Definition of Done**:
@@ -123,7 +121,6 @@ And the filter box shows "(type to filter)" placeholder
 ```
 
 **Priority**: Must Have  
-**Estimate**: 3 story points  
 **Dependencies**: SVC-001
 
 **Definition of Done**:
@@ -167,7 +164,6 @@ And the status updates accordingly
 ```
 
 **Priority**: Must Have  
-**Estimate**: 5 story points  
 **Dependencies**: SVC-001, SVC-002
 
 **Definition of Done**:
@@ -201,7 +197,6 @@ And "nginx.service" now shows as stopped
 ```
 
 **Priority**: Must Have  
-**Estimate**: 3 story points  
 **Dependencies**: CTL-001
 
 **Definition of Done**:
@@ -241,7 +236,6 @@ And only nginx-related services are displayed
 ```
 
 **Priority**: Must Have  
-**Estimate**: 2 story points  
 **Dependencies**: SVC-001
 
 **Definition of Done**:
@@ -288,7 +282,6 @@ And the main service list is visible again
 ```
 
 **Priority**: Should Have  
-**Estimate**: 2 story points  
 **Dependencies**: None
 
 **Definition of Done**:
@@ -324,7 +317,6 @@ And the terminal is restored to its previous state
 ```
 
 **Priority**: Must Have  
-**Estimate**: 1 story point  
 **Dependencies**: None
 
 **Definition of Done**:
@@ -365,7 +357,6 @@ Then the status bar shows "q:quit r:refresh Enter:toggle"
 ```
 
 **Priority**: Should Have  
-**Estimate**: 2 story points  
 **Dependencies**: None
 
 **Definition of Done**:
@@ -411,7 +402,6 @@ Then the command "systemctl stop nginx.service" is executed
 ```
 
 **Priority**: Must Have  
-**Estimate**: 5 story points  
 **Dependencies**: None
 
 **Definition of Done**:
@@ -456,7 +446,6 @@ Then the command "launchctl unload com.apple.example" is executed
 ```
 
 **Priority**: Must Have  
-**Estimate**: 5 story points  
 **Dependencies**: None
 
 **Definition of Done**:
@@ -501,7 +490,6 @@ And the application exits gracefully
 ```
 
 **Priority**: Must Have  
-**Estimate**: 2 story points  
 **Dependencies**: PLT-001, PLT-002
 
 **Definition of Done**:
@@ -537,7 +525,6 @@ Then the same help information is displayed as --help
 ```
 
 **Priority**: Should Have  
-**Estimate**: 1 story point  
 **Dependencies**: None
 
 **Definition of Done**:
@@ -571,7 +558,6 @@ Then the same version information is displayed as --version
 ```
 
 **Priority**: Should Have  
-**Estimate**: 1 story point  
 **Dependencies**: None
 
 **Definition of Done**:
@@ -614,7 +600,6 @@ And services that depend on nginx (RequiredBy, WantedBy) are listed
 ```
 
 **Priority**: Could Have  
-**Estimate**: 8 story points  
 **Dependencies**: SVC-001, PLT-001, PLT-002
 
 **Definition of Done**:
@@ -660,7 +645,6 @@ And enabled services have a visual indicator (e.g., [E] or icon)
 ```
 
 **Priority**: Could Have  
-**Estimate**: 5 story points  
 **Dependencies**: CTL-001, PLT-001
 
 **Definition of Done**:
@@ -696,7 +680,6 @@ Then the log content is refreshed with latest entries
 ```
 
 **Priority**: Could Have  
-**Estimate**: 8 story points  
 **Dependencies**: SVC-001, PLT-001
 
 **Definition of Done**:
@@ -733,7 +716,6 @@ Then the action proceeds immediately without confirmation
 ```
 
 **Priority**: Should Have  
-**Estimate**: 3 story points  
 **Dependencies**: CTL-001, CTL-002
 
 **Definition of Done**:
@@ -776,7 +758,6 @@ And no services are filtered out (or all are hidden with error message)
 ```
 
 **Priority**: Could Have  
-**Estimate**: 3 story points  
 **Dependencies**: SVC-003
 
 **Definition of Done**:
@@ -834,13 +815,3 @@ And no services are filtered out (or all are hidden with error message)
 3. ENH-003 - Service Log Viewer
 4. ENH-005 - Search with Regular Expressions
 
----
-
-## Story Point Summary
-
-| Priority | Stories | Total Points |
-|----------|---------|--------------|
-| Must Have | 10 | 32 |
-| Should Have | 5 | 9 |
-| Could Have | 5 | 27 |
-| **Total** | **20** | **68** |
