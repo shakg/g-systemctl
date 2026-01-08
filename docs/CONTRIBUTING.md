@@ -39,4 +39,25 @@ If you want to contribute code or documentation to the project, please follow th
 9. Wait for a review from the project maintainer or a collaborator. Address any feedback or suggestions they may have.
 10. Once your pull request is approved and merged, you can delete your branch.
 
+## CI/CD
 
+This project uses GitHub Actions for continuous integration and release automation.
+
+### Workflows
+
+- **CI** (`.github/workflows/ci.yml`): Runs on every push to `main` and pull requests. It builds the project on Ubuntu and macOS to ensure code compiles correctly.
+
+- **Build and Release** (`.github/workflows/release.yml`): Creates GitHub Releases automatically when you push a version tag (e.g., `v1.0.0`). It builds and attaches binaries for both Linux and macOS.
+
+### Creating a Release
+
+To create a new release:
+
+```bash
+git checkout main
+git pull origin main
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+This will trigger the release workflow, which builds binaries for Linux and macOS and creates a GitHub Release with the artifacts attached.

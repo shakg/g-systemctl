@@ -1,0 +1,94 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            artifact_suffix: linux
+          - os: macos-latest
+            artifact_suffix: macos
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential libftxui-dev
+
+      - name: Install dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: brew install cmake ftxui
+
+      - name: Create build directory
+        run: mkdir -p build && cd build
+
+      - name: Configure
+        run: cmake -DCMAKE_BUILD_TYPE=Release ..
+
+      - name: Build
+        run: make -j$(nproc)
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: g-systemctl-${{ matrix.artifact_suffix }}
+          path: build/g-systemctl
+
+  create-release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: g-systemctl-linux
+          path: artifacts/linux
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: g-systemctl-macos
+          path: artifacts/macos
+
+      - name: Make artifacts executable
+        run: |
+          chmod +x artifacts/linux/g-systemctl
+          chmod +x artifacts/macos/g-systemctl
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          name: Release ${{ steps.version.outputs.VERSION }}
+          draft: false
+          prerelease: false
+          files: |
+            artifacts/linux/g-systemctl
+            artifacts/macos/g-systemctl
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
