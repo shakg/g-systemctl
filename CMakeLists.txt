@@ -17,6 +17,18 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 
 include(cmake/FetchFTXUI.cmake)
 
+option(BUILD_TESTING "Enable unit testing" OFF)
+
+if(BUILD_TESTING)
+    include(FetchContent)
+    FetchContent_Declare(
+        googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG v1.14.0
+    )
+    FetchContent_MakeAvailable(googletest)
+endif()
+
 file(GLOB_RECURSE SOURCES
     ${PROJECT_SOURCE_DIR}/src/*.cpp
 )
@@ -32,5 +44,10 @@ target_link_libraries(g-systemctl PRIVATE
     ftxui::dom
     ftxui::component
 )
+
+if(BUILD_TESTING)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
 
 install(TARGETS g-systemctl RUNTIME DESTINATION bin)
