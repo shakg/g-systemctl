@@ -29,11 +29,11 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake build-essential libftxui-dev
+          sudo apt-get install -y cmake build-essential
 
       - name: Install dependencies (macOS)
         if: matrix.os == 'macos-latest'
-        run: brew install cmake ftxui
+        run: brew install cmake
 
       - name: Create build directory
         run: mkdir -p build && cd build
