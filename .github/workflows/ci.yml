@@ -29,14 +29,7 @@ jobs:
         run: brew install cmake
 
       - name: Configure and Build
-        run: |
-          mkdir -p build
-          cd build
-          cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON ..
-          make -j$(nproc)
+        run: make build
 
       - name: Run Tests
-        run: |
-          cd build
-          ./g-systemctl-tests 2>&1
-          ctest --output-on-failure
+        run: make test
