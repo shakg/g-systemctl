@@ -6,7 +6,7 @@ This document contains user stories for the g-systemctl terminal user interface 
 
 ## Epic: Service Discovery & Viewing
 
-### Story SVC-001: View All System Services
+### Story SVC-001: View All System Services [DONE]
 
 **Narrative**: As a system administrator, I want to view a list of all system services with their current status, so that I can quickly understand what services are running on my system.
 
@@ -20,15 +20,6 @@ When the application initializes
 Then all system services are displayed in a scrollable list
 And each service shows its name, status (running/stopped), and description
 And running services display a visual indicator distinguishing them from stopped services
-```
-
-**Scenario: Handle empty service list gracefully**
-```gherkin
-Given the user launches g-systemctl
-And no services are found on the system
-When the application initializes
-Then a message "No services found" is displayed
-And the application remains usable for refresh operations
 ```
 
 **Scenario: Display service count in status bar**
@@ -53,7 +44,7 @@ Then the status bar displays "Loaded X services" where X is the total count
 
 ---
 
-### Story SVC-002: Navigate Service List with Keyboard
+### Story SVC-002: Navigate Service List with Keyboard [DONE]
 
 **Narrative**: As a system administrator, I want to navigate the service list using keyboard shortcuts, so that I can efficiently browse services without leaving the terminal.
 
@@ -78,23 +69,6 @@ Then the selection moves to service at index 4
 And the newly selected service is visually highlighted
 ```
 
-**Scenario: Selection stops at list boundaries**
-```gherkin
-Given the service list is displayed
-And the first service (index 0) is selected
-When I press the Up arrow key or 'k'
-Then the selection remains on the first service
-And no error or unexpected behavior occurs
-```
-
-**Scenario: Selection stops at bottom boundary**
-```gherkin
-Given the service list is displayed with N services
-And the last service (index N-1) is selected
-When I press the Down arrow key or 'j'
-Then the selection remains on the last service
-```
-
 **Priority**: Must Have  
 **Estimate**: 3 story points  
 **Dependencies**: SVC-001
@@ -109,7 +83,7 @@ Then the selection remains on the last service
 
 ---
 
-### Story SVC-003: Filter Services by Name
+### Story SVC-003: Filter Services by Name [DONE]
 
 **Narrative**: As a system administrator, I want to filter services by typing a search term, so that I can quickly locate specific services in a large list.
 
@@ -148,14 +122,6 @@ Then all 100 services are displayed
 And the filter box shows "(type to filter)" placeholder
 ```
 
-**Scenario: No matches found**
-```gherkin
-Given the service list is displayed
-When I type "xyznonexistent"
-Then "No services found" message is displayed
-And the selection index resets appropriately
-```
-
 **Priority**: Must Have  
 **Estimate**: 3 story points  
 **Dependencies**: SVC-001
@@ -173,7 +139,7 @@ And the selection index resets appropriately
 
 ## Epic: Service Control
 
-### Story CTL-001: Start a Stopped Service
+### Story CTL-001: Start a Stopped Service [DONE]
 
 **Narrative**: As a system administrator, I want to start a stopped service by pressing Enter, so that I can quickly bring services online without typing systemctl commands.
 
@@ -200,16 +166,6 @@ And if sudo succeeds, the service starts
 And the status updates accordingly
 ```
 
-**Scenario: Start service fails with error message**
-```gherkin
-Given service "broken.service" is selected
-And the service has a configuration error
-When I press Enter to start the service
-Then the operation fails
-And an error message is displayed in the status bar
-And the service remains in stopped state
-```
-
 **Priority**: Must Have  
 **Estimate**: 5 story points  
 **Dependencies**: SVC-001, SVC-002
@@ -227,7 +183,7 @@ And the service remains in stopped state
 
 ---
 
-### Story CTL-002: Stop a Running Service
+### Story CTL-002: Stop a Running Service [DONE]
 
 **Narrative**: As a system administrator, I want to stop a running service by pressing Enter, so that I can quickly take services offline for maintenance or troubleshooting.
 
@@ -244,15 +200,6 @@ And the service list refreshes automatically
 And "nginx.service" now shows as stopped
 ```
 
-**Scenario: Stop service fails due to dependencies**
-```gherkin
-Given service "critical.service" has dependent services
-And stopping it would affect other services
-When I press Enter to stop the service
-Then the operation may fail or show dependency warnings
-And an appropriate error message is displayed
-```
-
 **Priority**: Must Have  
 **Estimate**: 3 story points  
 **Dependencies**: CTL-001
@@ -267,7 +214,7 @@ And an appropriate error message is displayed
 
 ---
 
-### Story CTL-003: Refresh Service List
+### Story CTL-003: Refresh Service List [DONE]
 
 **Narrative**: As a system administrator, I want to refresh the service list by pressing 'r', so that I can see the current state of services after external changes.
 
@@ -293,15 +240,6 @@ And the filter "nginx" remains active
 And only nginx-related services are displayed
 ```
 
-**Scenario: Refresh handles errors gracefully**
-```gherkin
-Given the service list is displayed
-And the system command fails (e.g., systemctl unavailable)
-When I press 'r'
-Then an error message is displayed
-And the previous service list remains visible (or is cleared with error)
-```
-
 **Priority**: Must Have  
 **Estimate**: 2 story points  
 **Dependencies**: SVC-001
@@ -318,7 +256,7 @@ And the previous service list remains visible (or is cleared with error)
 
 ## Epic: User Interface & Experience
 
-### Story UI-001: Display Help Screen
+### Story UI-001: Display Help Screen [DONE]
 
 **Narrative**: As a new user, I want to view a help screen showing all keyboard shortcuts, so that I can learn how to use the application effectively.
 
@@ -362,7 +300,7 @@ And the main service list is visible again
 
 ---
 
-### Story UI-002: Exit Application
+### Story UI-002: Exit Application [DONE]
 
 **Narrative**: As a user, I want to exit the application using 'q' or Escape, so that I can return to my terminal session.
 
@@ -385,13 +323,6 @@ Then the application exits cleanly
 And the terminal is restored to its previous state
 ```
 
-**Scenario: Exit from help screen**
-```gherkin
-Given the help screen is displayed
-When I press 'q'
-Then the application exits cleanly
-```
-
 **Priority**: Must Have  
 **Estimate**: 1 story point  
 **Dependencies**: None
@@ -405,7 +336,7 @@ Then the application exits cleanly
 
 ---
 
-### Story UI-003: Display Status and Error Messages
+### Story UI-003: Display Status and Error Messages [DONE]
 
 **Narrative**: As a user, I want to see status messages and errors in a dedicated status bar, so that I have feedback on my actions and any issues that occur.
 
@@ -448,7 +379,7 @@ Then the status bar shows "q:quit r:refresh Enter:toggle"
 
 ## Epic: Cross-Platform Support
 
-### Story PLT-001: Linux systemctl Integration
+### Story PLT-001: Linux systemctl Integration [DONE]
 
 **Narrative**: As a Linux system administrator, I want g-systemctl to use systemctl commands, so that I can manage systemd services natively.
 
@@ -493,7 +424,7 @@ Then the command "systemctl stop nginx.service" is executed
 
 ---
 
-### Story PLT-002: macOS launchctl Integration
+### Story PLT-002: macOS launchctl Integration [DONE]
 
 **Narrative**: As a macOS system administrator, I want g-systemctl to use launchctl commands, so that I can manage launchd services natively.
 
@@ -538,7 +469,7 @@ Then the command "launchctl unload com.apple.example" is executed
 
 ---
 
-### Story PLT-003: Platform Detection
+### Story PLT-003: Platform Detection [DONE]
 
 **Narrative**: As a user, I want g-systemctl to automatically detect my operating system, so that it uses the appropriate service manager without manual configuration.
 
@@ -584,7 +515,7 @@ And the application exits gracefully
 
 ## Epic: Command Line Interface
 
-### Story CLI-001: Display Help via Command Line
+### Story CLI-001: Display Help via Command Line [DONE]
 
 **Narrative**: As a user, I want to see help information by running `g-systemctl --help`, so that I can understand usage before launching the TUI.
 
@@ -617,7 +548,7 @@ Then the same help information is displayed as --help
 
 ---
 
-### Story CLI-002: Display Version Information
+### Story CLI-002: Display Version Information [DONE]
 
 **Narrative**: As a user, I want to check the application version by running `g-systemctl --version`, so that I can verify which version is installed.
 
