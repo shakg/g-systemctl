@@ -28,11 +28,10 @@ If you want to contribute code or documentation to the project, please follow th
 3. Follow the [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines) for writing idiomatic and maintainable code.
 4. Add tests for your code if applicable, and make sure all tests pass.
 5. Ensure your code compiles without warnings using `-Wall -Wextra -Wpedantic`.
-6. Build and test your changes:
+6. Build and test your changes using the Makefile:
    ```bash
-   mkdir build && cd build
-   cmake -DCMAKE_BUILD_TYPE=Debug ..
-   make -j$(nproc)
+   make build
+   make test
    ```
 7. Update the documentation if necessary, and make sure it is consistent with the code.
 8. Open a pull request with a descriptive title and a summary of your changes. Link any relevant issues in the description.
@@ -45,7 +44,7 @@ This project uses GitHub Actions for continuous integration and release automati
 
 ### Workflows
 
-- **CI** (`.github/workflows/ci.yml`): Runs on every push to `main` and pull requests. It builds the project on Ubuntu and macOS to ensure code compiles correctly.
+- **Test** (`.github/workflows/test.yml`): Runs on every push to `main` and pull requests. It builds the project and runs tests on Ubuntu.
 
 - **Build and Release** (`.github/workflows/release.yml`): Creates GitHub Releases automatically when you push a version tag (e.g., `v1.0.0`). It builds and attaches binaries for both Linux and macOS.
 
