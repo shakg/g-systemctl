@@ -32,5 +32,11 @@ jobs:
         run: |
           mkdir -p build
           cd build
-          cmake -DCMAKE_BUILD_TYPE=Release ..
+          cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON ..
           make -j$(nproc)
+
+      - name: Run Tests
+        run: |
+          cd build
+          ./g-systemctl-tests 2>&1
+          ctest --output-on-failure
