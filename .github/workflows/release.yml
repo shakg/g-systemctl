@@ -35,14 +35,12 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: brew install cmake
 
-      - name: Create build directory
-        run: mkdir -p build && cd build
-
-      - name: Configure
-        run: cmake -DCMAKE_BUILD_TYPE=Release ..
-
-      - name: Build
-        run: make -j$(nproc)
+      - name: Configure and Build
+        run: |
+          mkdir -p build
+          cd build
+          cmake -DCMAKE_BUILD_TYPE=Release ..
+          make -j$(nproc)
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
