@@ -1,6 +1,6 @@
 # Contributing to g-systemctl
 
-Thank you for your interest in contributing to g-systemctl, a Go library for interacting with systemd services. This document outlines some of the best practices and guidelines for contributors.
+Thank you for your interest in contributing to g-systemctl, a C++ terminal UI for managing system services. This document outlines some of the best practices and guidelines for contributors.
 
 ## Code of Conduct
 
@@ -25,12 +25,18 @@ If you want to contribute code or documentation to the project, please follow th
 
 1. Fork the repository and create a new branch from the `main` branch.
 2. Write clear and concise commit messages that describe the changes you made.
-3. Follow the [Go style guide](https://go.dev/doc/effective_go) and the [Effective Go](https://golangdocs.com/golang-best-practices) recommendations for writing idiomatic and maintainable code.
+3. Follow the [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines) for writing idiomatic and maintainable code.
 4. Add tests for your code if applicable, and make sure all tests pass.
-5. Run `go fmt`, `go vet`, and `go lint` on your code to ensure it follows the coding standards and has no errors or warnings.
-6. Update the documentation if necessary, and make sure it is consistent with the code.
-7. Open a pull request with a descriptive title and a summary of your changes. Link any relevant issues in the description.
-8. Wait for a review from the project maintainer or a collaborator. Address any feedback or suggestions they may have.
-9. Once your pull request is approved and merged, you can delete your branch.
+5. Ensure your code compiles without warnings using `-Wall -Wextra -Wpedantic`.
+6. Build and test your changes:
+   ```bash
+   mkdir build && cd build
+   cmake -DCMAKE_BUILD_TYPE=Debug ..
+   make -j$(nproc)
+   ```
+7. Update the documentation if necessary, and make sure it is consistent with the code.
+8. Open a pull request with a descriptive title and a summary of your changes. Link any relevant issues in the description.
+9. Wait for a review from the project maintainer or a collaborator. Address any feedback or suggestions they may have.
+10. Once your pull request is approved and merged, you can delete your branch.
 
 
