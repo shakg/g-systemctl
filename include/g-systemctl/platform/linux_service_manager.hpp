@@ -6,7 +6,7 @@ namespace gsystemctl {
 
 class LinuxServiceManager : public ServiceManager {
 public:
-    explicit LinuxServiceManager(std::shared_ptr<CommandExecutor> executor);
+    explicit LinuxServiceManager(std::shared_ptr<CommandExecutor> executor, bool system_mode = false);
 
     std::vector<ServiceUnit> list_services() override;
     std::pair<bool, std::string> start_service(const std::string& name) override;
@@ -15,6 +15,7 @@ public:
 
 private:
     std::shared_ptr<CommandExecutor> executor_;
+    bool system_mode_;
     std::vector<ServiceUnit> parse_systemctl_output(const std::string& output);
 };
 

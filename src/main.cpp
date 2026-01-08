@@ -8,7 +8,8 @@ void print_help() {
     std::cout << "Usage: g-systemctl [options]\n\n";
     std::cout << "Options:\n";
     std::cout << "  -h, --help     Show this help message\n";
-    std::cout << "  -v, --version  Show version information\n\n";
+    std::cout << "  -v, --version  Show version information\n";
+    std::cout << "  --system       Show system services instead of user services\n\n";
     std::cout << "Note: Run with sudo for full functionality (start/stop services)\n";
 }
 
@@ -18,6 +19,8 @@ void print_version() {
 }
 
 int main(int argc, char* argv[]) {
+    bool system_mode = false;
+
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "-h") == 0 || std::strcmp(argv[i], "--help") == 0) {
             print_help();
@@ -27,10 +30,13 @@ int main(int argc, char* argv[]) {
             print_version();
             return 0;
         }
+        if (std::strcmp(argv[i], "--system") == 0) {
+            system_mode = true;
+        }
     }
 
     try {
-        gsystemctl::ui::App app;
+        gsystemctl::ui::App app(system_mode);
         return app.run();
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << "\n";

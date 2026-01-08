@@ -11,12 +11,13 @@ namespace gsystemctl::ui {
 
 class App {
 public:
-    App();
+    App(bool system_mode = false);
     int run();
 
 private:
     ftxui::ScreenInteractive screen_;
     std::shared_ptr<ServiceManager> service_manager_;
+    bool system_mode_;
 
     std::vector<ServiceUnit> services_;
     std::vector<ServiceUnit> filtered_services_;

@@ -8,9 +8,9 @@ using namespace ftxui;
 
 namespace gsystemctl::ui {
 
-App::App() : screen_(ScreenInteractive::Fullscreen()) {
+App::App(bool system_mode) : screen_(ScreenInteractive::Fullscreen()), system_mode_(system_mode) {
     auto executor = std::make_shared<SystemCommandExecutor>();
-    service_manager_ = ServiceManager::create(executor);
+    service_manager_ = ServiceManager::create(executor, system_mode_);
     refresh_services();
 }
 
@@ -134,6 +134,7 @@ Element App::render() {
     auto header = hbox({
         text("g-systemctl") | bold | color(Color::Cyan),
         filler(),
+        text(system_mode_ ? "[SYSTEM] " : "[USER] ") | dim,
         text("Press ? for help") | dim,
     });
 

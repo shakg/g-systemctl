@@ -7,13 +7,13 @@
 namespace gsystemctl {
 
 std::unique_ptr<ServiceManager> ServiceManager::create(
-    std::shared_ptr<CommandExecutor> executor
+    std::shared_ptr<CommandExecutor> executor, bool system_mode
 ) {
     Platform platform = detect_platform();
 
     switch (platform) {
         case Platform::Linux:
-            return std::make_unique<LinuxServiceManager>(executor);
+            return std::make_unique<LinuxServiceManager>(executor, system_mode);
         case Platform::MacOS:
             return std::make_unique<MacOSServiceManager>(executor);
         default:

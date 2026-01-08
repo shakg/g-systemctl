@@ -4,13 +4,15 @@
 
 namespace gsystemctl {
 
-LinuxServiceManager::LinuxServiceManager(std::shared_ptr<CommandExecutor> executor)
-    : executor_(std::move(executor)) {}
+LinuxServiceManager::LinuxServiceManager(std::shared_ptr<CommandExecutor> executor, bool system_mode)
+    : executor_(std::move(executor)), system_mode_(system_mode) {}
 
 std::vector<ServiceUnit> LinuxServiceManager::list_services() {
-    auto result = executor_->execute(
-        "systemctl list-units -t service --full --all --plain --no-legend --no-pager"
-    );
+    std::string command = system_mode_
+        ? "systemctl list-units -t service --full --all --plain --no-legend --no-pager"
+        : "systemctl --user list-units -t service --full --all --plain --no-legend --no-pager";
+
+    auto result = executor_->execute(command);
 
     if (result.exit_code != 0) {
         throw std::runtime_error("Failed to list services: " + result.stderr_output);
@@ -57,12 +59,14 @@ std::vector<ServiceUnit> LinuxServiceManager::parse_systemctl_output(const std::
 }
 
 std::pair<bool, std::string> LinuxServiceManager::start_service(const std::string& name) {
-    auto result = executor_->execute_privileged("systemctl start " + name);
+    std::string prefix = system_mode_ ? "systemctl" : "systemctl --user";
+    auto result = executor_->execute_privileged(prefix + " start " + name);
     return {result.exit_code == 0, result.stdout_output};
 }
 
 std::pair<bool, std::string> LinuxServiceManager::stop_service(const std::string& name) {
-    auto result = executor_->execute_privileged("systemctl stop " + name);
+    std::string prefix = system_mode_ ? "systemctl" : "systemctl --user";
+    auto result = executor_->execute_privileged(prefix + " stop " + name);
     return {result.exit_code == 0, result.stdout_output};
 }
 

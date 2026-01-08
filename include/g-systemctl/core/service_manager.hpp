@@ -17,7 +17,7 @@ public:
     virtual std::pair<bool, std::string> stop_service(const std::string& name) = 0;
     virtual std::pair<bool, std::string> toggle_service(const ServiceUnit& service) = 0;
 
-    static std::unique_ptr<ServiceManager> create(std::shared_ptr<CommandExecutor> executor);
+    static std::unique_ptr<ServiceManager> create(std::shared_ptr<CommandExecutor> executor, bool system_mode = false);
 };
 
 } // namespace gsystemctl
