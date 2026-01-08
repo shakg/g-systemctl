@@ -1,6 +1,7 @@
 # G-Systemctl
 
-![Build Status](https://github.com/shakg/g-systemctl/actions/workflows/test.yml/badge.svg)
+![Test Status](https://github.com/shakg/g-systemctl/actions/workflows/test.yml/badge.svg)
+![Build Status](https://github.com/shakg/g-systemctl/actions/workflows/release.yml/badge.svg)
 
 g-systemctl is a terminal user interface (TUI) for managing system services on Linux and macOS. View, search, filter, and control your service daemons directly from the terminal.
 
