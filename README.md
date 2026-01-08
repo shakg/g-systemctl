@@ -5,6 +5,11 @@
 
 g-systemctl is a terminal user interface (TUI) for managing system services on Linux and macOS. View, search, filter, and control your service daemons directly from the terminal.
 
+## See It In Action
+
+[Screencast from 2026-01-09 00-45-46.webm](https://github.com/user-attachments/assets/647f492d-4076-4f2f-9484-c8c2f360656a)
+
+
 ## Features
 
 - List all system services with status indicators
