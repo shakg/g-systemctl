@@ -1,6 +1,7 @@
 #pragma once
 
 #include "g-systemctl/core/service_manager.hpp"
+#include "g-systemctl/core/logging_manager.hpp"
 #include "g-systemctl/core/service.hpp"
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
@@ -17,6 +18,7 @@ public:
 private:
     ftxui::ScreenInteractive screen_;
     std::shared_ptr<ServiceManager> service_manager_;
+    std::unique_ptr<LoggingManager> logging_manager_;
     bool system_mode_;
 
     std::vector<ServiceUnit> services_;
@@ -30,6 +32,7 @@ private:
     void refresh_services();
     void apply_filter();
     void toggle_selected_service();
+    void open_logs_for_selected_service();
     ftxui::Component create_main_component();
     ftxui::Element render();
     ftxui::Element render_service_list();

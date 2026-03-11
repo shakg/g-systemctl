@@ -1,6 +1,7 @@
 #include "g-systemctl/ui/app.hpp"
 #include "g-systemctl/ui/styles.hpp"
 #include "g-systemctl/core/command_executor.hpp"
+#include "g-systemctl/core/logging_manager.hpp"
 #include <algorithm>
 #include <cctype>
 
@@ -11,6 +12,7 @@ namespace gsystemctl::ui {
 App::App(bool system_mode) : screen_(ScreenInteractive::Fullscreen()), system_mode_(system_mode) {
     auto executor = std::make_shared<SystemCommandExecutor>();
     service_manager_ = ServiceManager::create(executor, system_mode_);
+    logging_manager_ = LoggingManager::create(executor);
     refresh_services();
 }
 
@@ -76,6 +78,26 @@ void App::toggle_selected_service() {
     }
 }
 
+void App::open_logs_for_selected_service() {
+    if (filtered_services_.empty() || selected_index_ < 0 ||
+        selected_index_ >= static_cast<int>(filtered_services_.size())) {
+        return;
+    }
+
+    const auto& service = filtered_services_[selected_index_];
+    status_message_ = "Opening logs for " + service.unit + "...";
+    screen_.PostEvent(Event::Custom);
+
+    if (logging_manager_) {
+        auto [success, message] = logging_manager_->open_logs(service.unit);
+        if (!success) {
+            error_message_ = "Unable to open logs: " + message;
+        }
+    } else {
+        error_message_ = "No logging manager available";
+    }
+}
+
 Component App::create_main_component() {
     auto input = Input(&filter_text_, "Filter services...");
 
@@ -110,6 +132,10 @@ Component App::create_main_component() {
         }
         if (event == Event::Return) {
             toggle_selected_service();
+            return true;
+        }
+        if (event == Event::Character('l')) {
+            open_logs_for_selected_service();
             return true;
         }
         if (event.is_character()) {
@@ -178,7 +204,7 @@ Element App::render_status_bar() {
     return hbox({
         text(status_message_) | dim,
         filler(),
-        text("q:quit r:refresh Enter:toggle") | dim,
+        text("q:quit r:refresh Enter:toggle l:logs") | dim,
     });
 }
 
@@ -195,6 +221,7 @@ Element App::render_help() {
         text("Actions:") | bold,
         text("  r         - Refresh service list"),
         text("  ?         - Toggle this help screen"),
+        text("  l         - Open logs for selected unit (tmux only)"),
         text("  q/Esc     - Quit"),
         text(""),
         text("Filtering:") | bold,
