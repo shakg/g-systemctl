@@ -184,6 +184,35 @@ namespace gsystemctl::ui
             error_message_.clear();
             return true;
         }
+        if (event.is_mouse()) {
+            auto& mouse = event.mouse();
+            if (mouse.button == Mouse::WheelUp) {
+                if (selected_index_ > 0) {
+                    selected_index_--;
+                }
+                status_message_.clear();
+                error_message_.clear();
+                return true;
+            }
+            if (mouse.button == Mouse::WheelDown) {
+                if (selected_index_ < static_cast<int>(filtered_services_.size()) - 1) {
+                    selected_index_++;
+                }
+                status_message_.clear();
+                error_message_.clear();
+                return true;
+            }
+            if (mouse.button == Mouse::Left && mouse.motion == Mouse::Pressed) {
+                for (size_t i = 0; i < item_boxes_.size(); ++i) {
+                    if (item_boxes_[i].Contain(mouse.x, mouse.y)) {
+                        selected_index_ = static_cast<int>(i);
+                        status_message_.clear();
+                        error_message_.clear();
+                        return true;
+                    }
+                }
+            }
+        }
         return false; });
     }
 
@@ -227,6 +256,7 @@ namespace gsystemctl::ui
         }
 
         Elements items;
+        item_boxes_.resize(filtered_services_.size());
         for (size_t i = 0; i < filtered_services_.size(); ++i)
         {
             const auto &svc = filtered_services_[i];
@@ -237,6 +267,7 @@ namespace gsystemctl::ui
             {
                 card = card | focus;
             }
+            card = card | reflect(item_boxes_[i]);
             items.push_back(card);
         }
 

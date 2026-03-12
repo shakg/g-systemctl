@@ -5,6 +5,7 @@
 #include "g-systemctl/core/service.hpp"
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
+#include <ftxui/screen/box.hpp>
 #include <string>
 #include <vector>
 
@@ -30,6 +31,7 @@ namespace gsystemctl::ui
         std::string status_message_;
         std::string error_message_;
         bool show_help_ = false;
+        std::vector<ftxui::Box> item_boxes_;
 
         void refresh_services();
         void apply_filter();
