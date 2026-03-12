@@ -187,30 +187,23 @@ namespace gsystemctl::ui
             return render_help();
         }
 
-        auto header = hbox({
-            text("g-systemctl") | bold | color(Color::Cyan),
+        auto filter_line = hbox({
+            text("Filter: ") | dim,
+            text(filter_text_.empty() ? "(type to filter)" : filter_text_) |
+                (filter_text_.empty() ? dim : nothing),
             filler(),
-            text(system_mode_ ? "[SYSTEM] " : "[USER] ") | dim,
-            text("Press ? for help") | dim,
+            text(system_mode_ ? "[SYSTEM]" : "[USER]") | dim,
         });
 
-        auto filter_box = hbox({
-                              text("Filter: ") | dim,
-                              text(filter_text_.empty() ? "(type to filter)" : filter_text_) |
-                                  (filter_text_.empty() ? dim : nothing),
-                          }) |
-                          border;
+        auto title = text(" g-systemctl ") | bold | color(Color::Cyan) | align_right;
 
-        return vbox({
-                   header,
-                   separator(),
-                   filter_box,
-                   separator(),
-                   render_service_list() | flex,
-                   separator(),
-                   render_status_bar(),
-               }) |
-               border;
+        return window(title, vbox({
+                                 filter_line,
+                                 separator(),
+                                 render_service_list() | flex,
+                                 separator(),
+                                 render_status_bar(),
+                             }));
     }
 
     Element App::render_service_list()
