@@ -10,8 +10,9 @@ using namespace ftxui;
 namespace gsystemctl::ui
 {
 
-    App::App(bool system_mode) : screen_(ScreenInteractive::Fullscreen()), system_mode_(system_mode)
+    App::App(bool system_mode, const std::string &initial_filter) : screen_(ScreenInteractive::Fullscreen()), system_mode_(system_mode)
     {
+        filter_text_ = initial_filter;
         auto executor = std::make_shared<SystemCommandExecutor>();
         service_manager_ = ServiceManager::create(executor, system_mode_);
         logging_manager_ = LoggingManager::create(executor);
