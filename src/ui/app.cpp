@@ -32,7 +32,6 @@ namespace gsystemctl::ui
         {
             services_ = service_manager_->list_services();
             error_message_.clear();
-            status_message_ = "Loaded " + std::to_string(services_.size()) + " services";
             apply_filter();
         }
         catch (const std::exception &e)
@@ -151,12 +150,16 @@ namespace gsystemctl::ui
             if (selected_index_ > 0) {
                 selected_index_--;
             }
+            status_message_.clear();
+            error_message_.clear();
             return true;
         }
         if (event == Event::ArrowDown || event == Event::Character('j')) {
             if (selected_index_ < static_cast<int>(filtered_services_.size()) - 1) {
                 selected_index_++;
             }
+            status_message_.clear();
+            error_message_.clear();
             return true;
         }
         if (event == Event::Return) {
@@ -170,11 +173,15 @@ namespace gsystemctl::ui
         if (event.is_character()) {
             filter_text_ += event.character();
             apply_filter();
+            status_message_.clear();
+            error_message_.clear();
             return true;
         }
         if (event == Event::Backspace && !filter_text_.empty()) {
             filter_text_.pop_back();
             apply_filter();
+            status_message_.clear();
+            error_message_.clear();
             return true;
         }
         return false; });
@@ -197,13 +204,19 @@ namespace gsystemctl::ui
 
         auto title = text(" g-systemctl ") | bold | color(Color::Cyan) | align_right;
 
-        return window(title, vbox({
-                                 filter_line,
-                                 separator(),
-                                 render_service_list() | flex,
-                                 separator(),
-                                 render_status_bar(),
-                             }));
+        bool show_status = !status_message_.empty() || !error_message_.empty();
+
+        Elements layout;
+        layout.push_back(filter_line);
+        layout.push_back(separator());
+        layout.push_back(render_service_list() | flex);
+        if (show_status)
+        {
+            layout.push_back(separator());
+            layout.push_back(render_status_bar());
+        }
+
+        return window(title, vbox(std::move(layout)));
     }
 
     Element App::render_service_list()
@@ -236,11 +249,7 @@ namespace gsystemctl::ui
         {
             return text(error_message_) | color(Colors::error_fg());
         }
-        return hbox({
-            text(status_message_) | dim,
-            filler(),
-            text("q:quit r:refresh Enter:toggle l:logs") | dim,
-        });
+        return text(status_message_) | dim;
     }
 
     Element App::render_help()
