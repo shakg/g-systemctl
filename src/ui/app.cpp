@@ -134,7 +134,7 @@ namespace gsystemctl::ui
 
         return CatchEvent(renderer, [this, input](Event event)
                           {
-        if (event == Event::Character('q') || event == Event::Escape) {
+        if (event == Event::Special("\x1bq") || event == Event::Escape) {
             screen_.Exit();
             return true;
         }
@@ -142,11 +142,11 @@ namespace gsystemctl::ui
             show_help_ = !show_help_;
             return true;
         }
-        if (event == Event::Character('r')) {
+        if (event == Event::Special("\x1br")) {
             refresh_services();
             return true;
         }
-        if (event == Event::ArrowUp || event == Event::Character('k')) {
+        if (event == Event::ArrowUp || event == Event::Special("\x1bk")) {
             if (selected_index_ > 0) {
                 selected_index_--;
             }
@@ -154,7 +154,7 @@ namespace gsystemctl::ui
             error_message_.clear();
             return true;
         }
-        if (event == Event::ArrowDown || event == Event::Character('j')) {
+        if (event == Event::ArrowDown || event == Event::Special("\x1bj")) {
             if (selected_index_ < static_cast<int>(filtered_services_.size()) - 1) {
                 selected_index_++;
             }
@@ -166,7 +166,7 @@ namespace gsystemctl::ui
             toggle_selected_service();
             return true;
         }
-        if (event == Event::Character('l')) {
+        if (event == Event::Special("\x1bl")) {
             open_logs_for_selected_service();
             return true;
         }
@@ -290,19 +290,19 @@ namespace gsystemctl::ui
                    separator(),
                    text(""),
                    text("Navigation:") | bold,
-                   text("  Up/k      - Move selection up"),
-                   text("  Down/j    - Move selection down"),
-                   text("  Enter     - Toggle selected service (start/stop)"),
+                   text("  Up / Alt+k   - Move selection up"),
+                   text("  Down / Alt+j - Move selection down"),
+                   text("  Enter        - Toggle selected service (start/stop)"),
                    text(""),
                    text("Actions:") | bold,
-                   text("  r         - Refresh service list"),
-                   text("  ?         - Toggle this help screen"),
-                   text("  l         - Open logs for selected unit (tmux only)"),
-                   text("  q/Esc     - Quit"),
+                   text("  Alt+r        - Refresh service list"),
+                   text("  ?            - Toggle this help screen"),
+                   text("  Alt+l        - Open logs for selected unit (tmux only)"),
+                   text("  Alt+q / Esc  - Quit"),
                    text(""),
                    text("Filtering:") | bold,
-                   text("  Type      - Filter services by name"),
-                   text("  Backspace - Delete last character"),
+                   text("  Type         - Filter services by name"),
+                   text("  Backspace    - Delete last character"),
                    text(""),
                    separator(),
                    text("Press ? to close") | dim | center,
