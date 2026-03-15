@@ -27,8 +27,8 @@ namespace gsystemctl::ui
         auto content = vbox({
             hbox({
                 text(name) | bold | flex,
-                log_element,
                 toggle_element,
+                log_element,
             }),
             hbox({
                 status_element,
