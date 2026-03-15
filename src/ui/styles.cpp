@@ -13,19 +13,22 @@ namespace gsystemctl::ui
     Color Colors::error_fg() { return Color::Red; }
 
     Element service_card(const std::string &name, const std::string &status,
-                         const std::string &description, bool is_running, bool selected)
+                         const std::string &description, bool is_running, bool selected,
+                         Box &toggle_box, Box &log_box)
     {
         auto status_color = is_running ? Colors::running_fg() : Colors::stopped_fg();
         auto button_text = is_running ? "STOP" : "START";
         auto button_color = is_running ? Color::Red : Color::Green;
 
         auto status_element = text(status) | color(status_color);
-        auto button_element = text(" [" + std::string(button_text) + "] ") | color(button_color) | bold;
+        auto log_element = text(" [LOG] ") | color(Color::Cyan) | bold | reflect(log_box);
+        auto toggle_element = text(" [" + std::string(button_text) + "] ") | color(button_color) | bold | reflect(toggle_box);
 
         auto content = vbox({
             hbox({
                 text(name) | bold | flex,
-                button_element,
+                log_element,
+                toggle_element,
             }),
             hbox({
                 status_element,

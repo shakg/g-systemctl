@@ -32,6 +32,8 @@ namespace gsystemctl::ui
         std::string error_message_;
         bool show_help_ = false;
         std::vector<ftxui::Box> item_boxes_;
+        std::vector<ftxui::Box> toggle_button_boxes_;
+        std::vector<ftxui::Box> log_button_boxes_;
 
         void refresh_services();
         void apply_filter();

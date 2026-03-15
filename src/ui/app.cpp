@@ -203,6 +203,20 @@ namespace gsystemctl::ui
                 return true;
             }
             if (mouse.button == Mouse::Left && mouse.motion == Mouse::Pressed) {
+                for (size_t i = 0; i < toggle_button_boxes_.size(); ++i) {
+                    if (toggle_button_boxes_[i].Contain(mouse.x, mouse.y)) {
+                        selected_index_ = static_cast<int>(i);
+                        toggle_selected_service();
+                        return true;
+                    }
+                }
+                for (size_t i = 0; i < log_button_boxes_.size(); ++i) {
+                    if (log_button_boxes_[i].Contain(mouse.x, mouse.y)) {
+                        selected_index_ = static_cast<int>(i);
+                        open_logs_for_selected_service();
+                        return true;
+                    }
+                }
                 for (size_t i = 0; i < item_boxes_.size(); ++i) {
                     if (item_boxes_[i].Contain(mouse.x, mouse.y)) {
                         selected_index_ = static_cast<int>(i);
@@ -257,12 +271,15 @@ namespace gsystemctl::ui
 
         Elements items;
         item_boxes_.resize(filtered_services_.size());
+        toggle_button_boxes_.resize(filtered_services_.size());
+        log_button_boxes_.resize(filtered_services_.size());
         for (size_t i = 0; i < filtered_services_.size(); ++i)
         {
             const auto &svc = filtered_services_[i];
             bool selected = (static_cast<int>(i) == selected_index_);
             auto card = service_card(svc.unit, svc.sub, svc.description,
-                                     svc.is_running(), selected);
+                                     svc.is_running(), selected,
+                                     toggle_button_boxes_[i], log_button_boxes_[i]);
             if (selected)
             {
                 card = card | focus;
