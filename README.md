@@ -17,12 +17,16 @@ g-systemctl is a terminal user interface (TUI) for managing system services on L
 - Start/stop services with a single keypress
 - Cross-platform support (Linux via systemctl, macOS via launchctl)
 - Keyboard-driven navigation
+- Mouse support (scroll to navigate, click to select)
+- Initial filter via command line argument (`-f` / `--filter`)
+- View service logs via journalctl (requires tmux)
 
 ## Prerequisites
 
 - CMake 3.14+
 - C++17 compatible compiler (GCC 7+, Clang 5+)
 - Linux with systemd or macOS
+- tmux (optional, required for viewing service logs)
 
 ## Installation
 
@@ -63,16 +67,27 @@ sudo g-systemctl
 | `Down` / `j` | Move selection down |
 | `Enter` | Toggle selected service (start/stop) |
 | `r` | Refresh service list |
+| `l` | Open logs for selected service (tmux only) |
 | `?` | Show/hide help |
 | `q` / `Esc` | Quit |
 | Type | Filter services by name |
 | `Backspace` | Delete filter character |
 
+### Mouse Support
+
+| Action | Effect |
+|--------|--------|
+| Scroll up/down | Navigate the service list |
+| Left click | Select a service |
+
 ## Command Line Options
 
 ```bash
-g-systemctl --help     # Show help
-g-systemctl --version  # Show version
+g-systemctl --help              # Show help
+g-systemctl --version           # Show version
+g-systemctl --system            # Show system services instead of user services
+g-systemctl -f <text>           # Start with an initial filter
+g-systemctl --filter <text>     # Start with an initial filter
 ```
 
 ## Contributing
