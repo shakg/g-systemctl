@@ -7,7 +7,8 @@ g-systemctl is a terminal user interface (TUI) for managing system services on L
 
 ## See It In Action
 
-[Screencast from 2026-01-09 00-45-46.webm](https://github.com/user-attachments/assets/647f492d-4076-4f2f-9484-c8c2f360656a)
+https://github.com/user-attachments/assets/1608dc3a-20aa-46fd-b3ea-db577f4c197c
+
 
 
 ## Features
