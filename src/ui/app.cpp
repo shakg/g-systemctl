@@ -34,6 +34,16 @@ namespace gsystemctl::ui
         {
             return text(value) | color(fg) | align_right | size(WIDTH, EQUAL, width);
         }
+
+        Element service_cell(const std::string &value, Color fg = TextColor(), bool bold_text = false)
+        {
+            auto element = text(value) | color(fg);
+            if (bold_text)
+            {
+                element = element | bold;
+            }
+            return element | flex;
+        }
     }
 
     App::App(bool system_mode, const std::string &initial_filter) : screen_(ScreenInteractive::Fullscreen()), system_mode_(system_mode)
@@ -348,11 +358,11 @@ namespace gsystemctl::ui
 
         auto header = hbox({
                           text(" "),
-                          cell("SERVICE", 38, HeaderColor()),
-                          cell("STATUS", 12, HeaderColor()),
-                          right_cell("PID", 8, HeaderColor()),
-                          right_cell("CPU", 8, HeaderColor()),
-                          right_cell("MEMORY", 10, HeaderColor()),
+                          service_cell("SERVICE", HeaderColor()),
+                          cell("STATUS", 11, HeaderColor()),
+                          right_cell("PID", 7, HeaderColor()),
+                          right_cell("CPU", 7, HeaderColor()),
+                          right_cell("MEM", 8, HeaderColor()),
                       }) |
                       bgcolor(PanelColor());
 
@@ -370,11 +380,11 @@ namespace gsystemctl::ui
             std::string status_text = active ? "● active" : "○ inactive";
 
             auto card = hbox({
-                cell(svc.unit, 38, selected ? Color::White : TextColor(), selected),
-                cell(status_text, 12, status_color, active),
-                right_cell("-", 8, MutedColor()),
-                right_cell("-", 8, MutedColor()),
-                right_cell("-", 10, MutedColor()),
+                service_cell(svc.unit, selected ? Color::White : TextColor(), selected),
+                cell(status_text, 11, status_color, active),
+                right_cell(svc.pid.empty() ? "-" : svc.pid, 7, MutedColor()),
+                right_cell(svc.cpu.empty() ? "-" : svc.cpu, 7, MutedColor()),
+                right_cell(svc.memory.empty() ? "-" : svc.memory, 8, MutedColor()),
             });
             if (selected)
             {

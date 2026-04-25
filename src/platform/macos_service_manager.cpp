@@ -47,6 +47,7 @@ std::vector<ServiceUnit> MacOSServiceManager::parse_launchctl_output(const std::
         unit.active = unit.sub;
         unit.load = "loaded";
         unit.description = unit.unit;
+        unit.pid = fields[0] != "-" ? fields[0] : "";
 
         units.push_back(unit);
     }

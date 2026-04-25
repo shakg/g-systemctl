@@ -17,6 +17,7 @@ private:
     std::shared_ptr<CommandExecutor> executor_;
     bool system_mode_;
     std::vector<ServiceUnit> parse_systemctl_output(const std::string& output);
+    void populate_resource_usage(std::vector<ServiceUnit>& units);
 };
 
 } // namespace gsystemctl
