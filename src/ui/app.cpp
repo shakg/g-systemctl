@@ -10,6 +10,31 @@ using namespace ftxui;
 
 namespace gsystemctl::ui
 {
+    namespace
+    {
+        Color BackgroundColor() { return Color::RGB(11, 12, 19); }
+        Color PanelColor() { return Color::RGB(16, 17, 27); }
+        Color BorderColor() { return Color::RGB(40, 43, 61); }
+        Color MutedColor() { return Color::RGB(103, 110, 140); }
+        Color TextColor() { return Color::RGB(180, 186, 208); }
+        Color HeaderColor() { return Color::RGB(112, 119, 150); }
+        Color AccentColor() { return Color::RGB(0, 220, 235); }
+        Color WarningColor() { return Color::RGB(255, 190, 45); }
+        Element cell(const std::string &value, int width, Color fg = TextColor(), bool bold_text = false)
+        {
+            auto element = text(value) | color(fg);
+            if (bold_text)
+            {
+                element = element | bold;
+            }
+            return element | size(WIDTH, EQUAL, width);
+        }
+
+        Element right_cell(const std::string &value, int width, Color fg = TextColor())
+        {
+            return text(value) | color(fg) | align_right | size(WIDTH, EQUAL, width);
+        }
+    }
 
     App::App(bool system_mode, const std::string &initial_filter) : screen_(ScreenInteractive::Fullscreen()), system_mode_(system_mode)
     {
@@ -284,25 +309,13 @@ namespace gsystemctl::ui
             return render_help();
         }
 
-        auto filter_line = hbox({
-            text("Filter: ") | dim,
-            text(filter_text_.empty() ? "(type to filter)" : filter_text_) |
-                (filter_text_.empty() ? dim : nothing),
-            filler(),
-            text(system_mode_ ? "[SYSTEM]" : "[USER]") | dim,
-        });
-
-        auto title = text(" g-systemctl ") | bold | color(Color::Cyan) | align_right;
-
         bool show_status = !status_message_.empty() || !error_message_.empty();
 
         Elements layout;
-        layout.push_back(filter_line);
-        layout.push_back(separator());
         if (log_panel_open_)
         {
             layout.push_back(render_service_list() | flex);
-            layout.push_back(separator());
+            layout.push_back(separator() | color(BorderColor()));
             layout.push_back(render_log_panel() | size(HEIGHT, GREATER_THAN, 8) | flex);
         }
         else
@@ -311,11 +324,19 @@ namespace gsystemctl::ui
         }
         if (show_status)
         {
-            layout.push_back(separator());
+            layout.push_back(separator() | color(BorderColor()));
             layout.push_back(render_status_bar());
         }
+        layout.push_back(separator() | color(BorderColor()));
+        layout.push_back(hbox({
+            text(" Filter: ") | color(MutedColor()),
+            text(filter_text_.empty() ? "█" : filter_text_ + "█") | color(AccentColor()),
+            filler(),
+            text(std::to_string(filtered_services_.size()) + "/" + std::to_string(services_.size()) + " services") | color(MutedColor()),
+            text("  ·  ↑↓ navigate  ·  Enter toggle  ·  l logs  ·  / filter  ") | color(MutedColor()),
+        }));
 
-        return window(title, vbox(std::move(layout)));
+        return vbox(std::move(layout)) | borderStyled(ROUNDED, BorderColor()) | bgcolor(BackgroundColor());
     }
 
     Element App::render_service_list()
@@ -325,26 +346,59 @@ namespace gsystemctl::ui
             return text("No services found") | center | dim;
         }
 
+        auto header = hbox({
+                          text(" "),
+                          cell("SERVICE", 38, HeaderColor()),
+                          cell("STATUS", 12, HeaderColor()),
+                          right_cell("PID", 8, HeaderColor()),
+                          right_cell("CPU", 8, HeaderColor()),
+                          right_cell("MEMORY", 10, HeaderColor()),
+                      }) |
+                      bgcolor(PanelColor());
+
         Elements items;
         item_boxes_.resize(filtered_services_.size());
         toggle_button_boxes_.resize(filtered_services_.size());
         log_button_boxes_.resize(filtered_services_.size());
+
         for (size_t i = 0; i < filtered_services_.size(); ++i)
         {
             const auto &svc = filtered_services_[i];
             bool selected = (static_cast<int>(i) == selected_index_);
-            auto card = service_card(svc.unit, svc.sub, svc.description,
-                                     svc.is_running(), selected,
-                                     toggle_button_boxes_[i], log_button_boxes_[i]);
+            bool active = svc.active == "active" || svc.is_running();
+            auto status_color = active ? Colors::running_fg() : Colors::stopped_fg();
+            std::string status_text = active ? "● active" : "○ inactive";
+
+            auto card = hbox({
+                cell(svc.unit, 38, selected ? Color::White : TextColor(), selected),
+                cell(status_text, 12, status_color, active),
+                right_cell("-", 8, MutedColor()),
+                right_cell("-", 8, MutedColor()),
+                right_cell("-", 10, MutedColor()),
+            });
             if (selected)
             {
-                card = card | focus;
+                card = hbox({
+                           text("▌") | color(AccentColor()),
+                           card | flex,
+                       }) |
+                       bgcolor(Colors::selected_bg()) | focus;
+            }
+            else
+            {
+                card = hbox({
+                    text(" "),
+                    card | flex,
+                });
             }
             card = card | reflect(item_boxes_[i]);
             items.push_back(card);
         }
 
-        return vbox(items) | vscroll_indicator | frame | flex;
+        return vbox({
+            header,
+            vbox(items) | vscroll_indicator | yframe | flex,
+        }) | flex;
     }
 
     Element App::render_log_panel()
@@ -368,17 +422,26 @@ namespace gsystemctl::ui
             rendered_lines.push_back(text("Waiting for log output...") | dim);
         }
 
-        return window(text(" logs: " + unit + "  Alt+c close ") | bold,
-                      vbox(std::move(rendered_lines)) | vscroll_indicator | yframe | flex);
+        return vbox({
+                   hbox({
+                       text(" LOGS ") | color(HeaderColor()),
+                       text(unit) | color(WarningColor()),
+                       filler(),
+                       text("Alt+c close ") | color(MutedColor()),
+                   }),
+                   separator() | color(BorderColor()),
+                   vbox(std::move(rendered_lines)) | color(TextColor()) | vscroll_indicator | yframe | flex,
+               }) |
+               bgcolor(PanelColor());
     }
 
     Element App::render_status_bar()
     {
         if (!error_message_.empty())
         {
-            return text(error_message_) | color(Colors::error_fg());
+            return text(" " + error_message_) | color(Colors::error_fg());
         }
-        return text(status_message_) | dim;
+        return text(" " + status_message_) | color(MutedColor());
     }
 
     Element App::render_help()
@@ -406,7 +469,7 @@ namespace gsystemctl::ui
                    separator(),
                    text("Press ? to close") | dim | center,
                }) |
-               border | center;
+               borderStyled(ROUNDED, BorderColor()) | bgcolor(BackgroundColor()) | center;
     }
 
 } // namespace gsystemctl::ui

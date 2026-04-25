@@ -5,12 +5,12 @@ using namespace ftxui;
 namespace gsystemctl::ui
 {
 
-    Color Colors::running_fg() { return Color::Green; }
-    Color Colors::running_bg() { return Color::GreenLight; }
-    Color Colors::stopped_fg() { return Color::GrayDark; }
-    Color Colors::stopped_bg() { return Color::GrayLight; }
-    Color Colors::selected_bg() { return Color::Blue; }
-    Color Colors::error_fg() { return Color::Red; }
+    Color Colors::running_fg() { return Color::RGB(0, 220, 132); }
+    Color Colors::running_bg() { return Color::RGB(0, 220, 132); }
+    Color Colors::stopped_fg() { return Color::RGB(100, 107, 134); }
+    Color Colors::stopped_bg() { return Color::RGB(68, 74, 98); }
+    Color Colors::selected_bg() { return Color::RGB(27, 29, 37); }
+    Color Colors::error_fg() { return Color::RGB(255, 80, 96); }
 
     Element service_card(const std::string &name, const std::string &status,
                          const std::string &description, bool is_running, bool selected,
