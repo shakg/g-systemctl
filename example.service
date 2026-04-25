@@ -1,0 +1,15 @@
+[Unit]
+Description=g-systemctl Example Service
+Documentation=https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/bash -lc 'while true; do echo "g-systemctl example service is running"; sleep 30; done'
+Restart=always
+RestartSec=5s
+User=nobody
+Group=nogroup
+
+[Install]
+WantedBy=multi-user.target
