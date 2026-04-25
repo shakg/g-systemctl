@@ -1,9 +1,10 @@
 cmake_minimum_required(VERSION 3.14)
 
 set(G_SYSTEMCTL_VERSION "1.0.0" CACHE STRING "g-systemctl release version")
+set(G_SYSTEMCTL_PROJECT_VERSION "1.0.0" CACHE STRING "CMake-compatible g-systemctl project version")
 
 project(g-systemctl
-    VERSION ${G_SYSTEMCTL_VERSION}
+    VERSION ${G_SYSTEMCTL_PROJECT_VERSION}
     LANGUAGES CXX
     DESCRIPTION "Terminal UI for system service management"
 )
@@ -44,7 +45,7 @@ target_include_directories(g-systemctl PRIVATE
 )
 
 target_compile_definitions(g-systemctl PRIVATE
-    G_SYSTEMCTL_VERSION="${PROJECT_VERSION}"
+    G_SYSTEMCTL_VERSION="${G_SYSTEMCTL_VERSION}"
 )
 
 target_link_libraries(g-systemctl PRIVATE
@@ -65,9 +66,9 @@ set(CPACK_PACKAGE_NAME "g-systemctl")
 set(CPACK_PACKAGE_VENDOR "shakg")
 set(CPACK_PACKAGE_CONTACT "shakg")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_DESCRIPTION}")
-set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_VERSION "${G_SYSTEMCTL_VERSION}")
 set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/shakg/g-systemctl")
-set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${PROJECT_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
+set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${G_SYSTEMCTL_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
 
 if(UNIX AND NOT APPLE)
     set(CPACK_GENERATOR "TGZ;DEB")

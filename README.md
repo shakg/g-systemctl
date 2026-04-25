@@ -20,14 +20,14 @@ https://github.com/user-attachments/assets/1608dc3a-20aa-46fd-b3ea-db577f4c197c
 - Keyboard-driven navigation
 - Mouse support (scroll to navigate, click to select)
 - Initial filter via command line argument (`-f` / `--filter`)
-- View service logs via journalctl (requires tmux)
+- Stream service logs in the TUI via `journalctl`
 
 ## Prerequisites
 
 - CMake 3.14+
 - C++17 compatible compiler (GCC 7+, Clang 5+)
 - Linux with systemd or macOS
-- tmux (optional, required for viewing service logs)
+- `journalctl` for Linux service log streaming
 
 ## Installation
 
@@ -91,11 +91,13 @@ sudo g-systemctl
 
 | Key | Action |
 |-----|--------|
-| `Up` / `k` | Move selection up |
-| `Down` / `j` | Move selection down |
+| `Up` / `Alt+k` | Move selection up |
+| `Down` / `Alt+j` | Move selection down |
 | `Enter` | Toggle selected service (start/stop) |
 | `Alt+r` | Restart selected service |
-| `Alt+l` | Open logs for selected service (tmux only) |
+| `Alt+l` | Stream logs for selected service |
+| `Alt+c` | Close log stream |
+| `Page Up` / `Page Down` | Scroll the log stream by page |
 | `?` | Show/hide help |
 | `Alt+q` / `Esc` | Quit |
 | Type | Filter services by name |
@@ -105,8 +107,10 @@ sudo g-systemctl
 
 | Action | Effect |
 |--------|--------|
-| Scroll up/down | Navigate the service list |
-| Left click | Select a service |
+| Scroll up/down | Navigate the service list, or scroll the log panel when the pointer is over it |
+| Left click service | Select a service |
+| Left click action buttons | Toggle a service or open its logs |
+| Left click `Shortcuts(?)` | Show help |
 
 ## Command Line Options
 
