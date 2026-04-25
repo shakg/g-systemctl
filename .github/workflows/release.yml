@@ -63,9 +63,11 @@ jobs:
 
       - name: Build Debian package
         if: runner.os == 'Linux'
+        shell: bash
         run: |
           cmake --build build --target package --config Release
-          cp build/*.deb dist/
+          deb_package="$(find build -maxdepth 1 -name '*.deb' -print -quit)"
+          cp "$deb_package" dist/g-systemctl-linux-amd64.deb
 
       - name: Generate checksums
         shell: bash
@@ -105,11 +107,6 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Install release tooling
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y dpkg-dev apt-utils gnupg rsync
-
       - name: Generate Homebrew formula
         shell: bash
         run: |
@@ -123,71 +120,7 @@ jobs:
       - name: Generate combined checksums
         run: |
           cd artifacts
-          shasum -a 256 g-systemctl-linux-x86_64.tar.gz g-systemctl-macos.tar.gz *.deb g-systemctl.rb > SHA256SUMS.txt
-
-      - name: Import APT signing key
-        env:
-          GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
-          GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
-        run: |
-          if [[ -z "${GPG_PRIVATE_KEY}" ]]; then
-            echo "APT_GPG_PRIVATE_KEY is required to publish the APT repository" >&2
-            exit 1
-          fi
-
-          printf '%s' "${GPG_PRIVATE_KEY}" | gpg --batch --import
-          key_id="$(gpg --batch --list-secret-keys --with-colons | awk -F: '/^sec:/ {print $5; exit}')"
-          if [[ -z "${key_id}" ]]; then
-            echo "No GPG secret key was imported" >&2
-            exit 1
-          fi
-
-          echo "APT_GPG_KEY_ID=${key_id}" >> "$GITHUB_ENV"
-          gpg --batch --yes --armor --export "${key_id}" > artifacts/repo.gpg
-
-          if [[ -n "${GPG_PASSPHRASE}" ]]; then
-            echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
-          fi
-
-      - name: Build APT repository
-        env:
-          GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
-        run: |
-          repo_dir="${RUNNER_TEMP}/apt-repo"
-          mkdir -p "${repo_dir}/pool/main/g/g-systemctl"
-          mkdir -p "${repo_dir}/dists/stable/main/binary-amd64"
-
-          cp artifacts/*.deb "${repo_dir}/pool/main/g/g-systemctl/"
-          cp artifacts/repo.gpg "${repo_dir}/repo.gpg"
-
-          cd "${repo_dir}"
-          dpkg-scanpackages --arch amd64 pool > dists/stable/main/binary-amd64/Packages
-          gzip -9c dists/stable/main/binary-amd64/Packages > dists/stable/main/binary-amd64/Packages.gz
-
-          apt-ftparchive \
-            -o APT::FTPArchive::Release::Origin="g-systemctl" \
-            -o APT::FTPArchive::Release::Label="g-systemctl" \
-            -o APT::FTPArchive::Release::Suite="stable" \
-            -o APT::FTPArchive::Release::Codename="stable" \
-            -o APT::FTPArchive::Release::Architectures="amd64" \
-            -o APT::FTPArchive::Release::Components="main" \
-            release dists/stable > dists/stable/Release
-
-          if [[ -n "${GPG_PASSPHRASE}" ]]; then
-            gpg --batch --yes --pinentry-mode loopback --passphrase "${GPG_PASSPHRASE}" \
-              --default-key "${APT_GPG_KEY_ID}" --clearsign \
-              -o dists/stable/InRelease dists/stable/Release
-            gpg --batch --yes --pinentry-mode loopback --passphrase "${GPG_PASSPHRASE}" \
-              --default-key "${APT_GPG_KEY_ID}" --detach-sign --armor \
-              -o dists/stable/Release.gpg dists/stable/Release
-          else
-            gpg --batch --yes --default-key "${APT_GPG_KEY_ID}" --clearsign \
-              -o dists/stable/InRelease dists/stable/Release
-            gpg --batch --yes --default-key "${APT_GPG_KEY_ID}" --detach-sign --armor \
-              -o dists/stable/Release.gpg dists/stable/Release
-          fi
-
-          echo "APT_REPO_DIR=${repo_dir}" >> "$GITHUB_ENV"
+          shasum -a 256 g-systemctl-linux-x86_64.tar.gz g-systemctl-macos.tar.gz g-systemctl-linux-amd64.deb g-systemctl.rb > SHA256SUMS.txt
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -199,37 +132,10 @@ jobs:
           files: |
             artifacts/g-systemctl-linux-x86_64.tar.gz
             artifacts/g-systemctl-macos.tar.gz
-            artifacts/*.deb
+            artifacts/g-systemctl-linux-amd64.deb
             artifacts/g-systemctl.rb
             artifacts/SHA256SUMS.txt
             artifacts/SHA256SUMS-linux-x86_64.txt
             artifacts/SHA256SUMS-macos.txt
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish APT repository to GitHub Pages
-        run: |
-          publish_dir="${RUNNER_TEMP}/gh-pages"
-          repo_url="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-
-          if git ls-remote --exit-code --heads "${repo_url}" gh-pages >/dev/null 2>&1; then
-            git clone --depth 1 --branch gh-pages "${repo_url}" "${publish_dir}"
-          else
-            git clone --depth 1 "${repo_url}" "${publish_dir}"
-            cd "${publish_dir}"
-            git checkout --orphan gh-pages
-            git rm -rf .
-            cd -
-          fi
-
-          cd "${publish_dir}"
-          rsync -a --delete --exclude .git "${APT_REPO_DIR}/" "${publish_dir}/"
-          touch .nojekyll
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .
-          git commit -m "Publish APT repository for ${{ steps.version.outputs.TAG }}" || exit 0
-          git push origin gh-pages
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

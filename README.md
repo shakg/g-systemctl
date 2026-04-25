@@ -41,28 +41,12 @@ brew install ./g-systemctl.rb
 
 ### Debian / Ubuntu
 
-Install from the APT repository:
+Download the `.deb` package from the latest release and install it:
 
 ```bash
-curl -sSL https://shakg.github.io/g-systemctl/repo.gpg \
-    | sudo gpg --dearmor \
-    -o /usr/share/keyrings/g-systemctl.gpg
-
-echo "deb [signed-by=/usr/share/keyrings/g-systemctl.gpg] https://shakg.github.io/g-systemctl stable main" \
-    | sudo tee /etc/apt/sources.list.d/g-systemctl.list
-
-sudo apt update
-sudo apt install g-systemctl
+curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/g-systemctl-linux-amd64.deb
+sudo apt install ./g-systemctl-linux-amd64.deb
 ```
-
-Or download the `.deb` package from the latest release and install it directly:
-
-```bash
-curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/g-systemctl_1.0.0_amd64.deb
-sudo apt install ./g-systemctl_1.0.0_amd64.deb
-```
-
-Replace `1.0.0` with the version from the release you are installing.
 
 ### Linux Binary
 
@@ -137,28 +121,3 @@ g-systemctl --filter <text>     # Start with an initial filter
 ## Contributing
 
 Contributions are welcome! Please follow the [Contributing Guidelines](docs/CONTRIBUTING.md) for details on how to contribute to this project.
-
-## Release Maintainer Setup
-
-The release workflow publishes the APT repository to the `gh-pages` branch on tagged releases.
-
-One-time setup:
-
-```bash
-cat > g-systemctl-apt-key.conf <<'EOF'
-Key-Type: RSA
-Key-Length: 4096
-Name-Real: g-systemctl APT Repository
-Name-Email: noreply@github.com
-Expire-Date: 2y
-%no-protection
-%commit
-EOF
-
-gpg --batch --generate-key g-systemctl-apt-key.conf
-gpg --armor --export-secret-keys "g-systemctl APT Repository <noreply@github.com>"
-```
-
-Add the exported private key as the `APT_GPG_PRIVATE_KEY` repository secret. If you create a passphrase-protected key instead, add the passphrase as `APT_GPG_PASSPHRASE`.
-
-In GitHub repository settings, enable Pages from the `gh-pages` branch.
