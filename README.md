@@ -30,6 +30,32 @@ g-systemctl is a terminal user interface (TUI) for managing system services on L
 
 ## Installation
 
+### Homebrew
+
+Download the formula from the latest release and install it locally:
+
+```bash
+curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/g-systemctl.rb
+brew install ./g-systemctl.rb
+```
+
+### Debian / Ubuntu
+
+Download the `.deb` package from the latest release and install it:
+
+```bash
+curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/g-systemctl-linux-amd64.deb
+sudo apt install ./g-systemctl-linux-amd64.deb
+```
+
+### Linux Binary
+
+```bash
+curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/g-systemctl-linux-x86_64.tar.gz
+tar -xzf g-systemctl-linux-x86_64.tar.gz
+sudo install -m 755 g-systemctl-*/g-systemctl /usr/local/bin/g-systemctl
+```
+
 ### Build from source
 
 ```bash
@@ -41,10 +67,11 @@ make -j$(nproc)
 sudo make install
 ```
 
-### One-Line Release Download
+### Release Checksums
 
 ```bash
-curl https://api.github.com/repos/shakg/g-systemctl/releases/latest | jq '.assets[0].browser_download_url' | xargs wget
+curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/SHA256SUMS.txt
+grep g-systemctl-linux-x86_64.tar.gz SHA256SUMS.txt | shasum -a 256 -c -
 ```
 
 ## Usage
@@ -66,10 +93,10 @@ sudo g-systemctl
 | `Up` / `k` | Move selection up |
 | `Down` / `j` | Move selection down |
 | `Enter` | Toggle selected service (start/stop) |
-| `r` | Refresh service list |
-| `l` | Open logs for selected service (tmux only) |
+| `Alt+r` | Restart selected service |
+| `Alt+l` | Open logs for selected service (tmux only) |
 | `?` | Show/hide help |
-| `q` / `Esc` | Quit |
+| `Alt+q` / `Esc` | Quit |
 | Type | Filter services by name |
 | `Backspace` | Delete filter character |
 
@@ -85,7 +112,8 @@ sudo g-systemctl
 ```bash
 g-systemctl --help              # Show help
 g-systemctl --version           # Show version
-g-systemctl --system            # Show system services instead of user services
+g-systemctl --system            # Show system services (default)
+g-systemctl --user              # Show user services
 g-systemctl -f <text>           # Start with an initial filter
 g-systemctl --filter <text>     # Start with an initial filter
 ```

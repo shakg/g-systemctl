@@ -1,4 +1,6 @@
 #include "g-systemctl/platform/linux_service_manager.hpp"
+#include <algorithm>
+#include <map>
 #include <sstream>
 #include <stdexcept>
 
@@ -18,7 +20,10 @@ std::vector<ServiceUnit> LinuxServiceManager::list_services() {
         throw std::runtime_error("Failed to list services: " + result.stderr_output);
     }
 
-    return parse_systemctl_output(result.stdout_output);
+    auto units = parse_systemctl_output(result.stdout_output);
+    add_missing_unit_files(units);
+    populate_resource_usage(units);
+    return units;
 }
 
 std::vector<ServiceUnit> LinuxServiceManager::parse_systemctl_output(const std::string& output) {
@@ -58,23 +63,176 @@ std::vector<ServiceUnit> LinuxServiceManager::parse_systemctl_output(const std::
     return units;
 }
 
-std::pair<bool, std::string> LinuxServiceManager::start_service(const std::string& name) {
-    std::string prefix = system_mode_ ? "systemctl" : "systemctl --user";
-    auto result = executor_->execute_privileged(prefix + " start " + name);
-    return {result.exit_code == 0, result.stdout_output};
-}
+std::vector<ServiceUnit> LinuxServiceManager::parse_systemctl_unit_files_output(const std::string& output) {
+    std::vector<ServiceUnit> units;
+    std::istringstream stream(output);
+    std::string line;
 
-std::pair<bool, std::string> LinuxServiceManager::stop_service(const std::string& name) {
-    std::string prefix = system_mode_ ? "systemctl" : "systemctl --user";
-    auto result = executor_->execute_privileged(prefix + " stop " + name);
-    return {result.exit_code == 0, result.stdout_output};
-}
+    while (std::getline(stream, line)) {
+        if (line.empty()) continue;
 
-std::pair<bool, std::string> LinuxServiceManager::toggle_service(const ServiceUnit& service) {
-    if (service.is_running()) {
-        return stop_service(service.unit);
+        std::istringstream line_stream(line);
+        std::string unit_name;
+        std::string state;
+        if (!(line_stream >> unit_name >> state)) {
+            continue;
+        }
+
+        ServiceUnit unit;
+        unit.unit = unit_name;
+        unit.load = "loaded";
+        unit.active = "inactive";
+        unit.sub = "dead";
+        unit.description = state;
+        units.push_back(unit);
     }
-    return start_service(service.unit);
+
+    return units;
+}
+
+void LinuxServiceManager::add_missing_unit_files(std::vector<ServiceUnit>& units) {
+    std::string command = system_mode_
+        ? "systemctl list-unit-files -t service --full --plain --no-legend --no-pager"
+        : "systemctl --user list-unit-files -t service --full --plain --no-legend --no-pager";
+
+    auto result = executor_->execute(command);
+    if (result.exit_code != 0) {
+        return;
+    }
+
+    auto unit_files = parse_systemctl_unit_files_output(result.stdout_output);
+    for (auto& unit_file : unit_files) {
+        auto existing = std::find_if(units.begin(), units.end(), [&unit_file](const ServiceUnit& unit) {
+            return unit.unit == unit_file.unit;
+        });
+        if (existing == units.end()) {
+            units.push_back(std::move(unit_file));
+        }
+    }
+
+    std::sort(units.begin(), units.end(), [](const ServiceUnit& left, const ServiceUnit& right) {
+        return left.unit < right.unit;
+    });
+}
+
+void LinuxServiceManager::populate_resource_usage(std::vector<ServiceUnit>& units) {
+    std::vector<std::string> running_units;
+    for (const auto& unit : units) {
+        if (unit.is_running()) {
+            running_units.push_back(unit.unit);
+        }
+    }
+
+    if (running_units.empty()) {
+        return;
+    }
+
+    std::string prefix = system_mode_ ? "systemctl" : "systemctl --user";
+    std::ostringstream show_command;
+    show_command << prefix << " show --property=MainPID --value";
+    for (const auto& unit_name : running_units) {
+        show_command << " " << unit_name;
+    }
+
+    auto pid_result = executor_->execute(show_command.str());
+    if (pid_result.exit_code != 0) {
+        return;
+    }
+
+    std::map<std::string, std::string> unit_pid;
+    std::istringstream pid_stream(pid_result.stdout_output);
+    std::string pid;
+    size_t index = 0;
+    while (index < running_units.size() && std::getline(pid_stream, pid)) {
+        if (!pid.empty() && pid != "0") {
+            unit_pid[running_units[index]] = pid;
+        }
+        ++index;
+    }
+
+    if (unit_pid.empty()) {
+        return;
+    }
+
+    std::ostringstream ps_command;
+    ps_command << "ps -o pid=,pcpu=,rss= -p ";
+    bool first = true;
+    for (const auto& [_, pid_value] : unit_pid) {
+        if (!first) {
+            ps_command << ",";
+        }
+        ps_command << pid_value;
+        first = false;
+    }
+
+    auto ps_result = executor_->execute(ps_command.str());
+    if (ps_result.exit_code != 0) {
+        for (auto& unit : units) {
+            auto pid_it = unit_pid.find(unit.unit);
+            if (pid_it != unit_pid.end()) {
+                unit.pid = pid_it->second;
+            }
+        }
+        return;
+    }
+
+    std::map<std::string, std::pair<std::string, std::string>> process_usage;
+    std::istringstream ps_stream(ps_result.stdout_output);
+    std::string line;
+    while (std::getline(ps_stream, line)) {
+        std::istringstream line_stream(line);
+        std::string process_pid;
+        std::string cpu;
+        long rss_kb = 0;
+        if (!(line_stream >> process_pid >> cpu >> rss_kb)) {
+            continue;
+        }
+
+        std::ostringstream memory;
+        memory.setf(std::ios::fixed);
+        memory.precision(1);
+        memory << (static_cast<double>(rss_kb) / 1024.0) << "MB";
+        process_usage[process_pid] = {cpu + "%", memory.str()};
+    }
+
+    for (auto& unit : units) {
+        auto pid_it = unit_pid.find(unit.unit);
+        if (pid_it == unit_pid.end()) {
+            continue;
+        }
+
+        unit.pid = pid_it->second;
+        auto usage_it = process_usage.find(pid_it->second);
+        if (usage_it != process_usage.end()) {
+            unit.cpu = usage_it->second.first;
+            unit.memory = usage_it->second.second;
+        }
+    }
+}
+
+std::pair<bool, std::string> LinuxServiceManager::start_service(const std::string& name, const std::string& password) {
+    std::string prefix = system_mode_ ? "systemctl" : "systemctl --user";
+    auto result = executor_->execute_privileged(prefix + " start " + name, password);
+    return {result.exit_code == 0, result.stdout_output};
+}
+
+std::pair<bool, std::string> LinuxServiceManager::stop_service(const std::string& name, const std::string& password) {
+    std::string prefix = system_mode_ ? "systemctl" : "systemctl --user";
+    auto result = executor_->execute_privileged(prefix + " stop " + name, password);
+    return {result.exit_code == 0, result.stdout_output};
+}
+
+std::pair<bool, std::string> LinuxServiceManager::restart_service(const std::string& name, const std::string& password) {
+    std::string prefix = system_mode_ ? "systemctl" : "systemctl --user";
+    auto result = executor_->execute_privileged(prefix + " restart " + name, password);
+    return {result.exit_code == 0, result.stdout_output};
+}
+
+std::pair<bool, std::string> LinuxServiceManager::toggle_service(const ServiceUnit& service, const std::string& password) {
+    if (service.is_running()) {
+        return stop_service(service.unit, password);
+    }
+    return start_service(service.unit, password);
 }
 
 } // namespace gsystemctl

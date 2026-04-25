@@ -47,6 +47,7 @@ std::vector<ServiceUnit> MacOSServiceManager::parse_launchctl_output(const std::
         unit.active = unit.sub;
         unit.load = "loaded";
         unit.description = unit.unit;
+        unit.pid = fields[0] != "-" ? fields[0] : "";
 
         units.push_back(unit);
     }
@@ -54,21 +55,29 @@ std::vector<ServiceUnit> MacOSServiceManager::parse_launchctl_output(const std::
     return units;
 }
 
-std::pair<bool, std::string> MacOSServiceManager::start_service(const std::string& name) {
-    auto result = executor_->execute_privileged("launchctl load " + name);
+std::pair<bool, std::string> MacOSServiceManager::start_service(const std::string& name, const std::string& password) {
+    auto result = executor_->execute_privileged("launchctl load " + name, password);
     return {result.exit_code == 0, result.stdout_output};
 }
 
-std::pair<bool, std::string> MacOSServiceManager::stop_service(const std::string& name) {
-    auto result = executor_->execute_privileged("launchctl unload " + name);
+std::pair<bool, std::string> MacOSServiceManager::stop_service(const std::string& name, const std::string& password) {
+    auto result = executor_->execute_privileged("launchctl unload " + name, password);
     return {result.exit_code == 0, result.stdout_output};
 }
 
-std::pair<bool, std::string> MacOSServiceManager::toggle_service(const ServiceUnit& service) {
-    if (service.is_running()) {
-        return stop_service(service.unit);
+std::pair<bool, std::string> MacOSServiceManager::restart_service(const std::string& name, const std::string& password) {
+    auto stop_result = stop_service(name, password);
+    if (!stop_result.first) {
+        return stop_result;
     }
-    return start_service(service.unit);
+    return start_service(name, password);
+}
+
+std::pair<bool, std::string> MacOSServiceManager::toggle_service(const ServiceUnit& service, const std::string& password) {
+    if (service.is_running()) {
+        return stop_service(service.unit, password);
+    }
+    return start_service(service.unit, password);
 }
 
 } // namespace gsystemctl

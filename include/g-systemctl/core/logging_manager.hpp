@@ -3,19 +3,29 @@
 #include <string>
 #include <memory>
 #include <utility>
+#include <functional>
 
 namespace gsystemctl {
 
 class CommandExecutor; // forward
 
+class LogStream {
+public:
+    virtual ~LogStream() = default;
+};
+
 class LoggingManager {
 public:
+    using LogCallback = std::function<void(std::string)>;
+
     virtual ~LoggingManager() = default;
 
-    /// Open a log viewer for the given unit.  When running inside tmux this will
-    /// split the current pane and invoke "journalctl -u <unit> -f".  Returns a
-    /// pair of (success,message) where the message contains human readable error
-    /// information in case of failure.
+    /// Start streaming logs for the given unit. The callback is invoked from a
+    /// background thread.
+    virtual std::unique_ptr<LogStream> stream_logs(
+        const std::string& unit, bool system_mode, LogCallback on_line) = 0;
+
+    /// Legacy tmux log viewer entry point.
     virtual std::pair<bool, std::string> open_logs(const std::string& unit) = 0;
 
     static std::unique_ptr<LoggingManager> create(

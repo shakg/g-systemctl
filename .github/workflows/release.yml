@@ -14,39 +14,77 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
         include:
           - os: ubuntu-latest
-            artifact_suffix: linux
+            artifact_suffix: linux-x86_64
+            archive_name: g-systemctl-linux-x86_64.tar.gz
           - os: macos-latest
             artifact_suffix: macos
+            archive_name: g-systemctl-macos.tar.gz
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Install dependencies (Linux)
-        if: matrix.os == 'ubuntu-latest'
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake build-essential
 
       - name: Install dependencies (macOS)
-        if: matrix.os == 'macos-latest'
+        if: runner.os == 'macOS'
         run: brew install cmake
 
-      - name: Configure and Build
+      - name: Get version
+        id: version
+        shell: bash
         run: |
-          mkdir -p build
-          cd build
-          cmake -DCMAKE_BUILD_TYPE=Release ..
-          make -j$(nproc)
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "VERSION=0.0.0-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure and build
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DG_SYSTEMCTL_VERSION=${{ steps.version.outputs.VERSION }}
+          cmake --build build --config Release --parallel
+
+      - name: Package binary archive
+        shell: bash
+        run: |
+          mkdir -p dist/g-systemctl-${{ steps.version.outputs.VERSION }}
+          cp build/g-systemctl dist/g-systemctl-${{ steps.version.outputs.VERSION }}/
+          chmod +x dist/g-systemctl-${{ steps.version.outputs.VERSION }}/g-systemctl
+          tar -czf dist/${{ matrix.archive_name }} -C dist g-systemctl-${{ steps.version.outputs.VERSION }}
+
+      - name: Build Debian package
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cmake --build build --target package --config Release
+          deb_package="$(find build -maxdepth 1 -name '*.deb' -print -quit)"
+          cp "$deb_package" dist/g-systemctl-linux-amd64.deb
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          cd dist
+          for file in *; do
+            if [[ -f "$file" ]]; then
+              shasum -a 256 "$file"
+            fi
+          done > SHA256SUMS-${{ matrix.artifact_suffix }}.txt
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: g-systemctl-${{ matrix.artifact_suffix }}
-          path: build/g-systemctl
+          path: dist/*
+          if-no-files-found: error
 
   create-release:
     needs: build
@@ -59,34 +97,45 @@ jobs:
 
       - name: Get version
         id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-
-      - name: Download Linux artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: g-systemctl-linux
-          path: artifacts/linux
-
-      - name: Download macOS artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: g-systemctl-macos
-          path: artifacts/macos
-
-      - name: Make artifacts executable
         run: |
-          chmod +x artifacts/linux/g-systemctl
-          chmod +x artifacts/macos/g-systemctl
+          echo "TAG=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate Homebrew formula
+        shell: bash
+        run: |
+          source_url="https://github.com/shakg/g-systemctl/archive/refs/tags/${{ steps.version.outputs.TAG }}.tar.gz"
+          source_sha="$(curl -L "$source_url" | shasum -a 256 | awk '{print $1}')"
+          sed \
+            -e "s|refs/tags/v1.0.0.tar.gz|refs/tags/${{ steps.version.outputs.TAG }}.tar.gz|" \
+            -e "s|REPLACE_WITH_RELEASE_TARBALL_SHA256|${source_sha}|" \
+            Formula/g-systemctl.rb > artifacts/g-systemctl.rb
+
+      - name: Generate combined checksums
+        run: |
+          cd artifacts
+          shasum -a 256 g-systemctl-linux-x86_64.tar.gz g-systemctl-macos.tar.gz g-systemctl-linux-amd64.deb g-systemctl.rb > SHA256SUMS.txt
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.VERSION }}
-          name: Release ${{ steps.version.outputs.VERSION }}
+          tag_name: ${{ steps.version.outputs.TAG }}
+          name: Release ${{ steps.version.outputs.TAG }}
           draft: false
           prerelease: false
           files: |
-            artifacts/linux/g-systemctl
-            artifacts/macos/g-systemctl
+            artifacts/g-systemctl-linux-x86_64.tar.gz
+            artifacts/g-systemctl-macos.tar.gz
+            artifacts/g-systemctl-linux-amd64.deb
+            artifacts/g-systemctl.rb
+            artifacts/SHA256SUMS.txt
+            artifacts/SHA256SUMS-linux-x86_64.txt
+            artifacts/SHA256SUMS-macos.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

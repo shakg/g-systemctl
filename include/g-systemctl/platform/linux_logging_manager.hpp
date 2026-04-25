@@ -9,6 +9,8 @@ class LinuxLoggingManager : public LoggingManager {
 public:
     explicit LinuxLoggingManager(std::shared_ptr<CommandExecutor> executor);
 
+    std::unique_ptr<LogStream> stream_logs(
+        const std::string& unit, bool system_mode, LogCallback on_line) override;
     std::pair<bool, std::string> open_logs(const std::string& unit) override;
 
 private:

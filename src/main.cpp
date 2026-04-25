@@ -10,20 +10,21 @@ void print_help()
     std::cout << "Options:\n";
     std::cout << "  -h, --help              Show this help message\n";
     std::cout << "  -v, --version           Show version information\n";
-    std::cout << "  --system                Show system services instead of user services\n";
+    std::cout << "  --system                Show system services (default)\n";
+    std::cout << "  --user                  Show user services\n";
     std::cout << "  -f, --filter <text>     Set the initial filter text\n\n";
     std::cout << "Note: Run with sudo for full functionality (start/stop services)\n";
 }
 
 void print_version()
 {
-    std::cout << "g-systemctl version 1.0.0\n";
+    std::cout << "g-systemctl version " << G_SYSTEMCTL_VERSION << "\n";
     std::cout << "Platform: " << gsystemctl::platform_name(gsystemctl::detect_platform()) << "\n";
 }
 
 int main(int argc, char *argv[])
 {
-    bool system_mode = false;
+    bool system_mode = true;
     std::string initial_filter;
 
     for (int i = 1; i < argc; ++i)
@@ -41,6 +42,10 @@ int main(int argc, char *argv[])
         if (std::strcmp(argv[i], "--system") == 0)
         {
             system_mode = true;
+        }
+        if (std::strcmp(argv[i], "--user") == 0)
+        {
+            system_mode = false;
         }
         if ((std::strcmp(argv[i], "-f") == 0 || std::strcmp(argv[i], "--filter") == 0) && i + 1 < argc)
         {
