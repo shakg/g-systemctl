@@ -21,7 +21,7 @@ namespace gsystemctl::ui
         Color MutedColor() { return Color::RGB(103, 110, 140); }
         Color TextColor() { return Color::RGB(180, 186, 208); }
         Color HeaderColor() { return Color::RGB(112, 119, 150); }
-        Color AccentColor() { return Color::RGB(0, 220, 235); }
+        Color AccentColor() { return Color::RGB(110, 171, 147); }
         Color WarningColor() { return Color::RGB(255, 190, 45); }
         Element cell(const std::string &value, int width, Color fg = TextColor(), bool bold_text = false)
         {
@@ -48,23 +48,6 @@ namespace gsystemctl::ui
             return element | flex;
         }
 
-        std::string shell_quote(const std::string &value)
-        {
-            std::string quoted = "'";
-            for (char ch : value)
-            {
-                if (ch == '\'')
-                {
-                    quoted += "'\\''";
-                }
-                else
-                {
-                    quoted += ch;
-                }
-            }
-            quoted += "'";
-            return quoted;
-        }
     }
 
     App::App(bool system_mode, const std::string &initial_filter) : screen_(ScreenInteractive::Fullscreen()), system_mode_(system_mode)
@@ -249,43 +232,6 @@ namespace gsystemctl::ui
         screen_.PostEvent(Event::Custom);
     }
 
-    void App::edit_selected_service_file()
-    {
-        if (filtered_services_.empty() || selected_index_ < 0 ||
-            selected_index_ >= static_cast<int>(filtered_services_.size()))
-        {
-            return;
-        }
-
-        const auto &service = filtered_services_[selected_index_];
-        if (detect_platform() == Platform::MacOS)
-        {
-            error_message_ = "Edit service file is not implemented on macOS";
-            status_message_.clear();
-            return;
-        }
-
-        std::string command = (system_mode_ ? "systemctl edit " : "systemctl --user edit ") + shell_quote(service.unit);
-        status_message_ = "Editing " + service.unit + "...";
-        error_message_.clear();
-        screen_.PostEvent(Event::Custom);
-
-        int exit_code = 0;
-        screen_.WithRestoredIO([&] {
-            exit_code = std::system(command.c_str());
-        });
-
-        if (exit_code == 0)
-        {
-            status_message_ = "Edited " + service.unit;
-            refresh_services();
-        }
-        else
-        {
-            error_message_ = "Failed to edit " + service.unit;
-        }
-    }
-
     void App::open_logs_for_selected_service()
     {
         if (filtered_services_.empty() || selected_index_ < 0 ||
@@ -309,6 +255,8 @@ namespace gsystemctl::ui
                 log_lines_.push_back(system_mode_
                                          ? "Starting: journalctl -u " + service.unit + " -f -n 100"
                                          : "Starting: journalctl --user-unit " + service.unit + " -f -n 100");
+                log_scroll_position_ = 0;
+                log_follow_tail_ = true;
                 log_panel_open_ = true;
             }
 
@@ -321,6 +269,14 @@ namespace gsystemctl::ui
                     if (log_lines_.size() > 500)
                     {
                         log_lines_.erase(log_lines_.begin(), log_lines_.begin() + 100);
+                    }
+                    if (log_follow_tail_)
+                    {
+                        log_scroll_position_ = std::max(0, static_cast<int>(log_lines_.size()) - 1);
+                    }
+                    else
+                    {
+                        log_scroll_position_ = std::clamp(log_scroll_position_, 0, std::max(0, static_cast<int>(log_lines_.size()) - 1));
                     }
                 }
                 screen_.PostEvent(Event::Custom);
@@ -350,6 +306,21 @@ namespace gsystemctl::ui
         log_panel_open_ = false;
         log_unit_.clear();
         log_lines_.clear();
+        log_scroll_position_ = 0;
+        log_follow_tail_ = true;
+    }
+
+    void App::scroll_logs(int delta)
+    {
+        std::lock_guard<std::mutex> lock(log_mutex_);
+        if (!log_panel_open_ || log_lines_.empty())
+        {
+            return;
+        }
+
+        const int max_position = static_cast<int>(log_lines_.size()) - 1;
+        log_scroll_position_ = std::clamp(log_scroll_position_ + delta, 0, max_position);
+        log_follow_tail_ = log_scroll_position_ == max_position;
     }
 
     Component App::create_main_component()
@@ -380,6 +351,22 @@ namespace gsystemctl::ui
             restart_selected_service();
             return true;
         }
+        if (log_panel_open_ && event == Event::PageUp) {
+            scroll_logs(-10);
+            return true;
+        }
+        if (log_panel_open_ && event == Event::PageDown) {
+            scroll_logs(10);
+            return true;
+        }
+        if (log_panel_open_ && (event == Event::ArrowUp || event == Event::Special("\x1b" "k"))) {
+            scroll_logs(-1);
+            return true;
+        }
+        if (log_panel_open_ && (event == Event::ArrowDown || event == Event::Special("\x1b" "j"))) {
+            scroll_logs(1);
+            return true;
+        }
         if (event == Event::ArrowUp || event == Event::Special("\x1b" "k")) {
             if (selected_index_ > 0) {
                 selected_index_--;
@@ -404,10 +391,6 @@ namespace gsystemctl::ui
             open_logs_for_selected_service();
             return true;
         }
-        if (event == Event::Special("\x1b" "e")) {
-            edit_selected_service_file();
-            return true;
-        }
         if (event == Event::Special("\x1b" "c")) {
             close_logs();
             status_message_.clear();
@@ -430,6 +413,16 @@ namespace gsystemctl::ui
         }
         if (event.is_mouse()) {
             auto& mouse = event.mouse();
+            if (log_panel_open_ && log_panel_box_.Contain(mouse.x, mouse.y)) {
+                if (mouse.button == Mouse::WheelUp) {
+                    scroll_logs(-3);
+                    return true;
+                }
+                if (mouse.button == Mouse::WheelDown) {
+                    scroll_logs(3);
+                    return true;
+                }
+            }
             if (mouse.button == Mouse::WheelUp) {
                 if (selected_index_ > 0) {
                     selected_index_--;
@@ -521,7 +514,7 @@ namespace gsystemctl::ui
         layout.push_back(separator() | color(BorderColor()));
         if (log_panel_open_)
         {
-            layout.push_back(render_service_list() | flex);
+            layout.push_back(render_service_list() | size(HEIGHT, EQUAL, 2));
             layout.push_back(separator() | color(BorderColor()));
             layout.push_back(render_log_panel() | size(HEIGHT, GREATER_THAN, 8) | flex);
         }
@@ -642,9 +635,19 @@ namespace gsystemctl::ui
     {
         std::string unit;
         std::vector<std::string> lines;
+        int scroll_position = 0;
         {
             std::lock_guard<std::mutex> lock(log_mutex_);
             unit = log_unit_;
+            if (log_follow_tail_)
+            {
+                log_scroll_position_ = std::max(0, static_cast<int>(log_lines_.size()) - 1);
+            }
+            else
+            {
+                log_scroll_position_ = std::clamp(log_scroll_position_, 0, std::max(0, static_cast<int>(log_lines_.size()) - 1));
+            }
+            scroll_position = log_scroll_position_;
             lines = log_lines_;
         }
 
@@ -667,9 +670,9 @@ namespace gsystemctl::ui
                        text("Alt+c close ") | color(MutedColor()),
                    }),
                    separator() | color(BorderColor()),
-                   vbox(std::move(rendered_lines)) | color(TextColor()) | vscroll_indicator | yframe | flex,
+                   vbox(std::move(rendered_lines)) | color(TextColor()) | focusPosition(0, scroll_position) | vscroll_indicator | yframe | flex,
                }) |
-               bgcolor(PanelColor());
+               bgcolor(PanelColor()) | reflect(log_panel_box_);
     }
 
     Element App::render_status_bar()
@@ -694,17 +697,10 @@ namespace gsystemctl::ui
                    text(""),
                    text("Actions:") | bold,
                    text("  Alt+r        - Restart selected service"),
-                   text("  ?            - Toggle this help screen"),
                    text("  Alt+l        - Stream logs for selected unit"),
                    text("  Alt+c        - Close log stream"),
-                   text("  Alt+e        - Edit selected service file"),
                    text("  Alt+q / Esc  - Quit"),
                    text(""),
-                   text("Filtering:") | bold,
-                   text("  Type         - Filter services by name"),
-                   text("  Backspace    - Delete last character"),
-                   text(""),
-                   separator(),
                    text("Press ? to close") | dim | center,
                }) |
                borderStyled(ROUNDED, BorderColor()) | bgcolor(BackgroundColor()) | center;

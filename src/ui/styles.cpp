@@ -5,8 +5,8 @@ using namespace ftxui;
 namespace gsystemctl::ui
 {
 
-    Color Colors::running_fg() { return Color::RGB(0, 220, 132); }
-    Color Colors::running_bg() { return Color::RGB(0, 220, 132); }
+    Color Colors::running_fg() { return Color::RGB(110, 171, 147); }
+    Color Colors::running_bg() { return Color::RGB(110, 171, 147); }
     Color Colors::stopped_fg() { return Color::RGB(100, 107, 134); }
     Color Colors::stopped_bg() { return Color::RGB(68, 74, 98); }
     Color Colors::selected_bg() { return Color::RGB(27, 29, 37); }
@@ -21,7 +21,7 @@ namespace gsystemctl::ui
         auto button_color = is_running ? Color::Red : Color::Green;
 
         auto status_element = text(status) | color(status_color);
-        auto log_element = text(" [LOG] ") | color(Color::Cyan) | bold | reflect(log_box);
+        auto log_element = text(" [LOG] ") | color(Colors::running_fg()) | bold | reflect(log_box);
         auto toggle_element = text(" [" + std::string(button_text) + "] ") | color(button_color) | bold | reflect(toggle_box);
 
         auto content = vbox({

@@ -38,8 +38,11 @@ namespace gsystemctl::ui
         std::vector<std::string> log_lines_;
         mutable std::mutex log_mutex_;
         bool log_panel_open_ = false;
+        int log_scroll_position_ = 0;
+        bool log_follow_tail_ = true;
         bool show_help_ = false;
         ftxui::Box shortcuts_box_;
+        ftxui::Box log_panel_box_;
         bool auth_dialog_open_ = false;
         std::string auth_password_;
         std::string auth_dialog_message_;
@@ -65,9 +68,9 @@ namespace gsystemctl::ui
         void open_auth_dialog(AuthAction action, const ServiceUnit& service);
         void submit_auth_dialog();
         void close_auth_dialog();
-        void edit_selected_service_file();
         void open_logs_for_selected_service();
         void close_logs();
+        void scroll_logs(int delta);
         ftxui::Component create_main_component();
         ftxui::Element render();
         ftxui::Element render_top_bar();

@@ -68,7 +68,6 @@ sudo g-systemctl
 | `Enter` | Toggle selected service (start/stop) |
 | `Alt+r` | Restart selected service |
 | `Alt+l` | Open logs for selected service (tmux only) |
-| `Alt+e` | Edit selected service file |
 | `?` | Show/hide help |
 | `Alt+q` / `Esc` | Quit |
 | Type | Filter services by name |
@@ -86,7 +85,8 @@ sudo g-systemctl
 ```bash
 g-systemctl --help              # Show help
 g-systemctl --version           # Show version
-g-systemctl --system            # Show system services instead of user services
+g-systemctl --system            # Show system services (default)
+g-systemctl --user              # Show user services
 g-systemctl -f <text>           # Start with an initial filter
 g-systemctl --filter <text>     # Start with an initial filter
 ```

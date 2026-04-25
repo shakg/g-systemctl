@@ -18,8 +18,10 @@ jobs:
         include:
           - os: ubuntu-latest
             artifact_suffix: linux
+            binary_name: g-systemctl-linux
           - os: macos-latest
             artifact_suffix: macos
+            binary_name: g-systemctl-macos
 
     steps:
       - name: Checkout code
@@ -37,16 +39,20 @@ jobs:
 
       - name: Configure and Build
         run: |
-          mkdir -p build
-          cd build
-          cmake -DCMAKE_BUILD_TYPE=Release ..
-          make -j$(nproc)
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release --parallel
+
+      - name: Prepare binary
+        run: |
+          cp build/g-systemctl ${{ matrix.binary_name }}
+          chmod +x ${{ matrix.binary_name }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: g-systemctl-${{ matrix.artifact_suffix }}
-          path: build/g-systemctl
+          path: ${{ matrix.binary_name }}
+          if-no-files-found: error
 
   create-release:
     needs: build
@@ -59,7 +65,7 @@ jobs:
 
       - name: Get version
         id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        run: echo "VERSION=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
 
       - name: Download Linux artifact
         uses: actions/download-artifact@v4
@@ -75,8 +81,8 @@ jobs:
 
       - name: Make artifacts executable
         run: |
-          chmod +x artifacts/linux/g-systemctl
-          chmod +x artifacts/macos/g-systemctl
+          chmod +x artifacts/linux/g-systemctl-linux
+          chmod +x artifacts/macos/g-systemctl-macos
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -86,7 +92,7 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            artifacts/linux/g-systemctl
-            artifacts/macos/g-systemctl
+            artifacts/linux/g-systemctl-linux
+            artifacts/macos/g-systemctl-macos
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
