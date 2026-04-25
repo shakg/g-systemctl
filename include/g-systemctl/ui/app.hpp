@@ -3,6 +3,7 @@
 #include "g-systemctl/core/service_manager.hpp"
 #include "g-systemctl/core/logging_manager.hpp"
 #include "g-systemctl/core/service.hpp"
+#include "g-systemctl/core/command_executor.hpp"
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/screen/box.hpp>
@@ -22,6 +23,7 @@ namespace gsystemctl::ui
 
     private:
         ftxui::ScreenInteractive screen_;
+        std::shared_ptr<CommandExecutor> executor_;
         std::shared_ptr<ServiceManager> service_manager_;
         std::unique_ptr<LoggingManager> logging_manager_;
         bool system_mode_;
@@ -37,6 +39,18 @@ namespace gsystemctl::ui
         mutable std::mutex log_mutex_;
         bool log_panel_open_ = false;
         bool show_help_ = false;
+        ftxui::Box shortcuts_box_;
+        bool auth_dialog_open_ = false;
+        std::string auth_password_;
+        std::string auth_dialog_message_;
+        enum class AuthAction
+        {
+            None,
+            Toggle,
+            Restart,
+        };
+        AuthAction pending_auth_action_ = AuthAction::None;
+        ServiceUnit pending_auth_service_;
         std::vector<ftxui::Box> item_boxes_;
         std::vector<ftxui::Box> toggle_button_boxes_;
         std::vector<ftxui::Box> log_button_boxes_;
@@ -45,10 +59,19 @@ namespace gsystemctl::ui
         void refresh_services();
         void apply_filter();
         void toggle_selected_service();
+        void restart_selected_service();
+        void toggle_service(const ServiceUnit& service, const std::string& password = "");
+        void restart_service(const ServiceUnit& service, const std::string& password = "");
+        void open_auth_dialog(AuthAction action, const ServiceUnit& service);
+        void submit_auth_dialog();
+        void close_auth_dialog();
+        void edit_selected_service_file();
         void open_logs_for_selected_service();
         void close_logs();
         ftxui::Component create_main_component();
         ftxui::Element render();
+        ftxui::Element render_top_bar();
+        ftxui::Element render_shortcuts_dialog();
         ftxui::Element render_service_list();
         ftxui::Element render_log_panel();
         ftxui::Element render_status_bar();

@@ -1,4 +1,5 @@
 #include "g-systemctl/platform/linux_service_manager.hpp"
+#include <algorithm>
 #include <map>
 #include <sstream>
 #include <stdexcept>
@@ -20,6 +21,7 @@ std::vector<ServiceUnit> LinuxServiceManager::list_services() {
     }
 
     auto units = parse_systemctl_output(result.stdout_output);
+    add_missing_unit_files(units);
     populate_resource_usage(units);
     return units;
 }
@@ -59,6 +61,58 @@ std::vector<ServiceUnit> LinuxServiceManager::parse_systemctl_output(const std::
     }
 
     return units;
+}
+
+std::vector<ServiceUnit> LinuxServiceManager::parse_systemctl_unit_files_output(const std::string& output) {
+    std::vector<ServiceUnit> units;
+    std::istringstream stream(output);
+    std::string line;
+
+    while (std::getline(stream, line)) {
+        if (line.empty()) continue;
+
+        std::istringstream line_stream(line);
+        std::string unit_name;
+        std::string state;
+        if (!(line_stream >> unit_name >> state)) {
+            continue;
+        }
+
+        ServiceUnit unit;
+        unit.unit = unit_name;
+        unit.load = "loaded";
+        unit.active = "inactive";
+        unit.sub = "dead";
+        unit.description = state;
+        units.push_back(unit);
+    }
+
+    return units;
+}
+
+void LinuxServiceManager::add_missing_unit_files(std::vector<ServiceUnit>& units) {
+    std::string command = system_mode_
+        ? "systemctl list-unit-files -t service --full --plain --no-legend --no-pager"
+        : "systemctl --user list-unit-files -t service --full --plain --no-legend --no-pager";
+
+    auto result = executor_->execute(command);
+    if (result.exit_code != 0) {
+        return;
+    }
+
+    auto unit_files = parse_systemctl_unit_files_output(result.stdout_output);
+    for (auto& unit_file : unit_files) {
+        auto existing = std::find_if(units.begin(), units.end(), [&unit_file](const ServiceUnit& unit) {
+            return unit.unit == unit_file.unit;
+        });
+        if (existing == units.end()) {
+            units.push_back(std::move(unit_file));
+        }
+    }
+
+    std::sort(units.begin(), units.end(), [](const ServiceUnit& left, const ServiceUnit& right) {
+        return left.unit < right.unit;
+    });
 }
 
 void LinuxServiceManager::populate_resource_usage(std::vector<ServiceUnit>& units) {
@@ -156,23 +210,29 @@ void LinuxServiceManager::populate_resource_usage(std::vector<ServiceUnit>& unit
     }
 }
 
-std::pair<bool, std::string> LinuxServiceManager::start_service(const std::string& name) {
+std::pair<bool, std::string> LinuxServiceManager::start_service(const std::string& name, const std::string& password) {
     std::string prefix = system_mode_ ? "systemctl" : "systemctl --user";
-    auto result = executor_->execute_privileged(prefix + " start " + name);
+    auto result = executor_->execute_privileged(prefix + " start " + name, password);
     return {result.exit_code == 0, result.stdout_output};
 }
 
-std::pair<bool, std::string> LinuxServiceManager::stop_service(const std::string& name) {
+std::pair<bool, std::string> LinuxServiceManager::stop_service(const std::string& name, const std::string& password) {
     std::string prefix = system_mode_ ? "systemctl" : "systemctl --user";
-    auto result = executor_->execute_privileged(prefix + " stop " + name);
+    auto result = executor_->execute_privileged(prefix + " stop " + name, password);
     return {result.exit_code == 0, result.stdout_output};
 }
 
-std::pair<bool, std::string> LinuxServiceManager::toggle_service(const ServiceUnit& service) {
+std::pair<bool, std::string> LinuxServiceManager::restart_service(const std::string& name, const std::string& password) {
+    std::string prefix = system_mode_ ? "systemctl" : "systemctl --user";
+    auto result = executor_->execute_privileged(prefix + " restart " + name, password);
+    return {result.exit_code == 0, result.stdout_output};
+}
+
+std::pair<bool, std::string> LinuxServiceManager::toggle_service(const ServiceUnit& service, const std::string& password) {
     if (service.is_running()) {
-        return stop_service(service.unit);
+        return stop_service(service.unit, password);
     }
-    return start_service(service.unit);
+    return start_service(service.unit, password);
 }
 
 } // namespace gsystemctl

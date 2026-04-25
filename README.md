@@ -66,10 +66,11 @@ sudo g-systemctl
 | `Up` / `k` | Move selection up |
 | `Down` / `j` | Move selection down |
 | `Enter` | Toggle selected service (start/stop) |
-| `r` | Refresh service list |
-| `l` | Open logs for selected service (tmux only) |
+| `Alt+r` | Restart selected service |
+| `Alt+l` | Open logs for selected service (tmux only) |
+| `Alt+e` | Edit selected service file |
 | `?` | Show/hide help |
-| `q` / `Esc` | Quit |
+| `Alt+q` / `Esc` | Quit |
 | Type | Filter services by name |
 | `Backspace` | Delete filter character |
 

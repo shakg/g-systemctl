@@ -2,8 +2,11 @@
 #include "g-systemctl/ui/styles.hpp"
 #include "g-systemctl/core/command_executor.hpp"
 #include "g-systemctl/core/logging_manager.hpp"
+#include "g-systemctl/platform/platform.hpp"
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
+#include <ftxui/component/component_options.hpp>
 #include <mutex>
 
 using namespace ftxui;
@@ -44,14 +47,32 @@ namespace gsystemctl::ui
             }
             return element | flex;
         }
+
+        std::string shell_quote(const std::string &value)
+        {
+            std::string quoted = "'";
+            for (char ch : value)
+            {
+                if (ch == '\'')
+                {
+                    quoted += "'\\''";
+                }
+                else
+                {
+                    quoted += ch;
+                }
+            }
+            quoted += "'";
+            return quoted;
+        }
     }
 
     App::App(bool system_mode, const std::string &initial_filter) : screen_(ScreenInteractive::Fullscreen()), system_mode_(system_mode)
     {
         filter_text_ = initial_filter;
-        auto executor = std::make_shared<SystemCommandExecutor>();
-        service_manager_ = ServiceManager::create(executor, system_mode_);
-        logging_manager_ = LoggingManager::create(executor);
+        executor_ = std::make_shared<SystemCommandExecutor>();
+        service_manager_ = ServiceManager::create(executor_, system_mode_);
+        logging_manager_ = LoggingManager::create(executor_);
         refresh_services();
     }
 
@@ -120,10 +141,22 @@ namespace gsystemctl::ui
         }
 
         const auto &service = filtered_services_[selected_index_];
+        if (!executor_->can_execute_privileged_without_password())
+        {
+            open_auth_dialog(AuthAction::Toggle, service);
+            return;
+        }
+
+        toggle_service(service);
+    }
+
+    void App::toggle_service(const ServiceUnit& service, const std::string& password)
+    {
         status_message_ = "Toggling " + service.unit + "...";
+        error_message_.clear();
         screen_.PostEvent(Event::Custom);
 
-        auto [success, message] = service_manager_->toggle_service(service);
+        auto [success, message] = service_manager_->toggle_service(service, password);
         if (success)
         {
             status_message_ = "Successfully toggled " + service.unit;
@@ -132,6 +165,124 @@ namespace gsystemctl::ui
         else
         {
             error_message_ = "Failed to toggle " + service.unit + ": " + message;
+        }
+    }
+
+    void App::restart_selected_service()
+    {
+        if (filtered_services_.empty() || selected_index_ < 0 ||
+            selected_index_ >= static_cast<int>(filtered_services_.size()))
+        {
+            return;
+        }
+
+        const auto &service = filtered_services_[selected_index_];
+        if (!executor_->can_execute_privileged_without_password())
+        {
+            open_auth_dialog(AuthAction::Restart, service);
+            return;
+        }
+
+        restart_service(service);
+    }
+
+    void App::restart_service(const ServiceUnit& service, const std::string& password)
+    {
+        status_message_ = "Restarting " + service.unit + "...";
+        error_message_.clear();
+        screen_.PostEvent(Event::Custom);
+
+        auto [success, message] = service_manager_->restart_service(service.unit, password);
+        if (success)
+        {
+            status_message_ = "Successfully restarted " + service.unit;
+            refresh_services();
+        }
+        else
+        {
+            error_message_ = "Failed to restart " + service.unit + ": " + message;
+        }
+    }
+
+    void App::open_auth_dialog(AuthAction action, const ServiceUnit& service)
+    {
+        pending_auth_action_ = action;
+        pending_auth_service_ = service;
+        auth_password_.clear();
+        auth_dialog_message_ = (action == AuthAction::Restart ? "Restart " : "Toggle ") + service.unit;
+        auth_dialog_open_ = true;
+        status_message_.clear();
+        error_message_.clear();
+        screen_.PostEvent(Event::Custom);
+    }
+
+    void App::submit_auth_dialog()
+    {
+        auto action = pending_auth_action_;
+        auto service = pending_auth_service_;
+        auto password = auth_password_;
+        close_auth_dialog();
+
+        if (password.empty())
+        {
+            error_message_ = "Sudo password is required";
+            return;
+        }
+
+        if (action == AuthAction::Toggle)
+        {
+            toggle_service(service, password);
+        }
+        else if (action == AuthAction::Restart)
+        {
+            restart_service(service, password);
+        }
+    }
+
+    void App::close_auth_dialog()
+    {
+        auth_dialog_open_ = false;
+        auth_password_.clear();
+        auth_dialog_message_.clear();
+        pending_auth_action_ = AuthAction::None;
+        pending_auth_service_ = ServiceUnit{};
+        screen_.PostEvent(Event::Custom);
+    }
+
+    void App::edit_selected_service_file()
+    {
+        if (filtered_services_.empty() || selected_index_ < 0 ||
+            selected_index_ >= static_cast<int>(filtered_services_.size()))
+        {
+            return;
+        }
+
+        const auto &service = filtered_services_[selected_index_];
+        if (detect_platform() == Platform::MacOS)
+        {
+            error_message_ = "Edit service file is not implemented on macOS";
+            status_message_.clear();
+            return;
+        }
+
+        std::string command = (system_mode_ ? "systemctl edit " : "systemctl --user edit ") + shell_quote(service.unit);
+        status_message_ = "Editing " + service.unit + "...";
+        error_message_.clear();
+        screen_.PostEvent(Event::Custom);
+
+        int exit_code = 0;
+        screen_.WithRestoredIO([&] {
+            exit_code = std::system(command.c_str());
+        });
+
+        if (exit_code == 0)
+        {
+            status_message_ = "Edited " + service.unit;
+            refresh_services();
+        }
+        else
+        {
+            error_message_ = "Failed to edit " + service.unit;
         }
     }
 
@@ -208,9 +359,16 @@ namespace gsystemctl::ui
         auto renderer = Renderer(input, [this, input]
                                  { return render(); });
 
-        return CatchEvent(renderer, [this, input](Event event)
+        auto main_component = CatchEvent(renderer, [this, input](Event event)
                           {
+        if (auth_dialog_open_) {
+            return false;
+        }
         if (event == Event::Special("\x1b" "q") || event == Event::Escape) {
+            if (show_help_) {
+                show_help_ = false;
+                return true;
+            }
             screen_.Exit();
             return true;
         }
@@ -219,7 +377,7 @@ namespace gsystemctl::ui
             return true;
         }
         if (event == Event::Special("\x1b" "r")) {
-            refresh_services();
+            restart_selected_service();
             return true;
         }
         if (event == Event::ArrowUp || event == Event::Special("\x1b" "k")) {
@@ -244,6 +402,10 @@ namespace gsystemctl::ui
         }
         if (event == Event::Special("\x1b" "l")) {
             open_logs_for_selected_service();
+            return true;
+        }
+        if (event == Event::Special("\x1b" "e")) {
+            edit_selected_service_file();
             return true;
         }
         if (event == Event::Special("\x1b" "c")) {
@@ -285,6 +447,10 @@ namespace gsystemctl::ui
                 return true;
             }
             if (mouse.button == Mouse::Left && mouse.motion == Mouse::Pressed) {
+                if (shortcuts_box_.Contain(mouse.x, mouse.y)) {
+                    show_help_ = true;
+                    return true;
+                }
                 for (size_t i = 0; i < toggle_button_boxes_.size(); ++i) {
                     if (toggle_button_boxes_[i].Contain(mouse.x, mouse.y)) {
                         selected_index_ = static_cast<int>(i);
@@ -310,18 +476,49 @@ namespace gsystemctl::ui
             }
         }
         return false; });
+
+        InputOption password_option;
+        password_option.password = true;
+        auto password_input = Input(&auth_password_, "sudo password", password_option);
+        auto auth_renderer = Renderer(password_input, [this, password_input] {
+            return vbox({
+                       text("Authentication required") | bold | color(AccentColor()),
+                       separator() | color(BorderColor()),
+                       text(auth_dialog_message_) | color(TextColor()),
+                       hbox({
+                           text("Password: ") | color(MutedColor()),
+                           password_input->Render() | flex,
+                       }),
+                       separator() | color(BorderColor()),
+                       text("Enter submit  Esc cancel") | color(MutedColor()),
+                   }) |
+                   size(WIDTH, GREATER_THAN, 44) |
+                   borderStyled(ROUNDED, BorderColor()) |
+                   bgcolor(PanelColor());
+        });
+        auto auth_modal = CatchEvent(auth_renderer, [this](Event event) {
+            if (event == Event::Return) {
+                submit_auth_dialog();
+                return true;
+            }
+            if (event == Event::Escape) {
+                close_auth_dialog();
+                return true;
+            }
+            return false;
+        });
+
+        main_component |= Modal(auth_modal, &auth_dialog_open_);
+        return main_component;
     }
 
     Element App::render()
     {
-        if (show_help_)
-        {
-            return render_help();
-        }
-
         bool show_status = !status_message_.empty() || !error_message_.empty();
 
         Elements layout;
+        layout.push_back(render_top_bar());
+        layout.push_back(separator() | color(BorderColor()));
         if (log_panel_open_)
         {
             layout.push_back(render_service_list() | flex);
@@ -343,10 +540,40 @@ namespace gsystemctl::ui
             text(filter_text_.empty() ? "█" : filter_text_ + "█") | color(AccentColor()),
             filler(),
             text(std::to_string(filtered_services_.size()) + "/" + std::to_string(services_.size()) + " services") | color(MutedColor()),
-            text("  ·  ↑↓ navigate  ·  Enter toggle  ·  l logs  ·  / filter  ") | color(MutedColor()),
+            text("  ·  ↑↓ navigate  ·  type to filter  ") | color(MutedColor()),
         }));
 
-        return vbox(std::move(layout)) | borderStyled(ROUNDED, BorderColor()) | bgcolor(BackgroundColor());
+        auto page = vbox(std::move(layout)) | borderStyled(ROUNDED, BorderColor()) | bgcolor(BackgroundColor());
+        auto dialog_open = show_help_ || auth_dialog_open_;
+        if (dialog_open)
+        {
+            page = page | color(Color::RGB(55, 59, 78)) | bgcolor(Color::RGB(4, 5, 9)) | dim;
+        }
+
+        if (show_help_)
+        {
+            return dbox({
+                page,
+                render_shortcuts_dialog() | clear_under | center,
+            });
+        }
+
+        return page;
+    }
+
+    Element App::render_top_bar()
+    {
+        return hbox({
+                   text(" g-systemctl ") | color(AccentColor()) | bold,
+                   filler(),
+                   text(" Shortcuts(?) ") | color(MutedColor()) | reflect(shortcuts_box_),
+               }) |
+               bgcolor(PanelColor());
+    }
+
+    Element App::render_shortcuts_dialog()
+    {
+        return render_help();
     }
 
     Element App::render_service_list()
@@ -466,10 +693,11 @@ namespace gsystemctl::ui
                    text("  Enter        - Toggle selected service (start/stop)"),
                    text(""),
                    text("Actions:") | bold,
-                   text("  Alt+r        - Refresh service list"),
+                   text("  Alt+r        - Restart selected service"),
                    text("  ?            - Toggle this help screen"),
                    text("  Alt+l        - Stream logs for selected unit"),
                    text("  Alt+c        - Close log stream"),
+                   text("  Alt+e        - Edit selected service file"),
                    text("  Alt+q / Esc  - Quit"),
                    text(""),
                    text("Filtering:") | bold,
