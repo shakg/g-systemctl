@@ -4,6 +4,7 @@
 #include "g-systemctl/core/logging_manager.hpp"
 #include <algorithm>
 #include <cctype>
+#include <mutex>
 
 using namespace ftxui;
 
@@ -108,21 +109,61 @@ namespace gsystemctl::ui
         }
 
         const auto &service = filtered_services_[selected_index_];
-        status_message_ = "Opening logs for " + service.unit + "...";
+        status_message_ = "Streaming logs for " + service.unit + "...";
+        error_message_.clear();
         screen_.PostEvent(Event::Custom);
 
         if (logging_manager_)
         {
-            auto [success, message] = logging_manager_->open_logs(service.unit);
-            if (!success)
+            log_stream_.reset();
             {
-                error_message_ = "Unable to open logs: " + message;
+                std::lock_guard<std::mutex> lock(log_mutex_);
+                log_unit_ = service.unit;
+                log_lines_.clear();
+                log_lines_.push_back(system_mode_
+                                         ? "Starting: journalctl -u " + service.unit + " -f -n 100"
+                                         : "Starting: journalctl --user-unit " + service.unit + " -f -n 100");
+                log_panel_open_ = true;
+            }
+
+            screen_.PostEvent(Event::Custom);
+
+            log_stream_ = logging_manager_->stream_logs(service.unit, system_mode_, [this](std::string line) {
+                {
+                    std::lock_guard<std::mutex> lock(log_mutex_);
+                    log_lines_.push_back(std::move(line));
+                    if (log_lines_.size() > 500)
+                    {
+                        log_lines_.erase(log_lines_.begin(), log_lines_.begin() + 100);
+                    }
+                }
+                screen_.PostEvent(Event::Custom);
+            });
+
+            if (!log_stream_)
+            {
+                error_message_ = "Unable to start log stream";
+                std::lock_guard<std::mutex> lock(log_mutex_);
+                log_lines_.push_back(error_message_);
+            }
+            else
+            {
+                status_message_.clear();
             }
         }
         else
         {
             error_message_ = "No logging manager available";
         }
+    }
+
+    void App::close_logs()
+    {
+        log_stream_.reset();
+        std::lock_guard<std::mutex> lock(log_mutex_);
+        log_panel_open_ = false;
+        log_unit_.clear();
+        log_lines_.clear();
     }
 
     Component App::create_main_component()
@@ -134,7 +175,7 @@ namespace gsystemctl::ui
 
         return CatchEvent(renderer, [this, input](Event event)
                           {
-        if (event == Event::Special("\x1bq") || event == Event::Escape) {
+        if (event == Event::Special("\x1b" "q") || event == Event::Escape) {
             screen_.Exit();
             return true;
         }
@@ -142,11 +183,11 @@ namespace gsystemctl::ui
             show_help_ = !show_help_;
             return true;
         }
-        if (event == Event::Special("\x1br")) {
+        if (event == Event::Special("\x1b" "r")) {
             refresh_services();
             return true;
         }
-        if (event == Event::ArrowUp || event == Event::Special("\x1bk")) {
+        if (event == Event::ArrowUp || event == Event::Special("\x1b" "k")) {
             if (selected_index_ > 0) {
                 selected_index_--;
             }
@@ -154,7 +195,7 @@ namespace gsystemctl::ui
             error_message_.clear();
             return true;
         }
-        if (event == Event::ArrowDown || event == Event::Special("\x1bj")) {
+        if (event == Event::ArrowDown || event == Event::Special("\x1b" "j")) {
             if (selected_index_ < static_cast<int>(filtered_services_.size()) - 1) {
                 selected_index_++;
             }
@@ -166,8 +207,14 @@ namespace gsystemctl::ui
             toggle_selected_service();
             return true;
         }
-        if (event == Event::Special("\x1bl")) {
+        if (event == Event::Special("\x1b" "l")) {
             open_logs_for_selected_service();
+            return true;
+        }
+        if (event == Event::Special("\x1b" "c")) {
+            close_logs();
+            status_message_.clear();
+            error_message_.clear();
             return true;
         }
         if (event.is_character()) {
@@ -252,7 +299,16 @@ namespace gsystemctl::ui
         Elements layout;
         layout.push_back(filter_line);
         layout.push_back(separator());
-        layout.push_back(render_service_list() | flex);
+        if (log_panel_open_)
+        {
+            layout.push_back(render_service_list() | flex);
+            layout.push_back(separator());
+            layout.push_back(render_log_panel() | size(HEIGHT, GREATER_THAN, 8) | flex);
+        }
+        else
+        {
+            layout.push_back(render_service_list() | flex);
+        }
         if (show_status)
         {
             layout.push_back(separator());
@@ -291,6 +347,31 @@ namespace gsystemctl::ui
         return vbox(items) | vscroll_indicator | frame | flex;
     }
 
+    Element App::render_log_panel()
+    {
+        std::string unit;
+        std::vector<std::string> lines;
+        {
+            std::lock_guard<std::mutex> lock(log_mutex_);
+            unit = log_unit_;
+            lines = log_lines_;
+        }
+
+        Elements rendered_lines;
+        for (const auto &line : lines)
+        {
+            rendered_lines.push_back(text(line));
+        }
+
+        if (rendered_lines.empty())
+        {
+            rendered_lines.push_back(text("Waiting for log output...") | dim);
+        }
+
+        return window(text(" logs: " + unit + "  Alt+c close ") | bold,
+                      vbox(std::move(rendered_lines)) | vscroll_indicator | yframe | flex);
+    }
+
     Element App::render_status_bar()
     {
         if (!error_message_.empty())
@@ -314,7 +395,8 @@ namespace gsystemctl::ui
                    text("Actions:") | bold,
                    text("  Alt+r        - Refresh service list"),
                    text("  ?            - Toggle this help screen"),
-                   text("  Alt+l        - Open logs for selected unit (tmux only)"),
+                   text("  Alt+l        - Stream logs for selected unit"),
+                   text("  Alt+c        - Close log stream"),
                    text("  Alt+q / Esc  - Quit"),
                    text(""),
                    text("Filtering:") | bold,

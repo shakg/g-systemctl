@@ -16,6 +16,7 @@ endif()
 add_compile_options(-Wall -Wextra -Wpedantic)
 
 include(cmake/FetchFTXUI.cmake)
+find_package(Threads REQUIRED)
 
 option(BUILD_TESTING "Enable unit testing" OFF)
 
@@ -43,6 +44,7 @@ target_link_libraries(g-systemctl PRIVATE
     ftxui::screen
     ftxui::dom
     ftxui::component
+    Threads::Threads
 )
 
 if(BUILD_TESTING)
