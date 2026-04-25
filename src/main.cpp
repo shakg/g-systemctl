@@ -18,7 +18,7 @@ void print_help()
 
 void print_version()
 {
-    std::cout << "g-systemctl version 1.0.0\n";
+    std::cout << "g-systemctl version " << G_SYSTEMCTL_VERSION << "\n";
     std::cout << "Platform: " << gsystemctl::platform_name(gsystemctl::detect_platform()) << "\n";
 }
 
