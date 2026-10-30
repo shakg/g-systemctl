@@ -3,789 +3,2163 @@
 
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>g-systemctl - Graphical Service Manager for Linux and macOS</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>g-systemctl</title>
+  <meta name="description"
+    content="g-systemctl is a terminal UI for systemd and launchd. List, filter, start, stop and restart services, read their journal and edit unit files." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Martian+Mono:wdth,wght@75..112.5,400..800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap"
+    rel="stylesheet" />
   <style>
+    /* Layout: the page is the g-systemctl(1) manual page. Running header and footer,
+       section names flush left, body indented, the live terminal breaking out of the text column. */
+    :root {
+      --paper: #f2f3f6;
+      --ink: #15161f;
+      --ink-2: #4c5168;
+      --rule: #d3d6e0;
+      --accent: #2e6b54;
+      --mark: #dfe9e4;
+      --code: #e6e8ee;
+
+      /* The terminal always uses the app's own colors (src/ui/app.cpp, src/ui/styles.cpp). */
+      --t-bg: #0b0c13;
+      --t-panel: #10111b;
+      --t-border: #282b3d;
+      --t-muted: #676e8c;
+      --t-text: #b4bad0;
+      --t-header: #707796;
+      --t-sel: #1b1d25;
+      --t-accent: #6eab93;
+      --t-stopped: #646b86;
+      --t-warn: #ffbe2d;
+      --t-err: #ff5060;
+
+      --display: "Martian Mono", ui-monospace, Menlo, Consolas, monospace;
+      --body: "Source Serif 4", "Iowan Old Style", Georgia, serif;
+      --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+      --measure: 66ch;
+      --indent: 7ch;
+      color-scheme: light;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --paper: #0e0f16;
+        --ink: #dadde9;
+        --ink-2: #8d93ab;
+        --rule: #262a3a;
+        --accent: #6eab93;
+        --mark: #172520;
+        --code: #161823;
+        color-scheme: dark;
+      }
+    }
+
+    :root[data-theme="dark"] {
+      --paper: #0e0f16;
+      --ink: #dadde9;
+      --ink-2: #8d93ab;
+      --rule: #262a3a;
+      --accent: #6eab93;
+      --mark: #172520;
+      --code: #161823;
+      color-scheme: dark;
+    }
+
     *,
     *::before,
     *::after {
       box-sizing: border-box;
     }
 
-    :root {
-      --bg: #f0f5f3;
-      --surface: #ffffff;
-      --surface-2: #e6efec;
-      --border: #cdddd8;
-      --border-strong: #b8d0c9;
-      --text: #0e1f1c;
-      --text-muted: #3d5c56;
-      --text-soft: #7a9e97;
-      --accent: #6eab93;
-      --accent-soft: rgba(110, 171, 147, 0.16);
-      --mono: "SFMono-Regular", "Cascadia Code", "Liberation Mono", Menlo, Consolas, monospace;
-      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
-
     html {
-      scroll-behavior: smooth;
+      -webkit-text-size-adjust: 100%;
     }
 
     body {
       margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font-family: var(--sans);
-      font-size: 16px;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--body);
+      font-size: 18px;
       line-height: 1.6;
-      overflow-x: hidden;
+      font-optical-sizing: auto;
     }
 
     a {
-      color: inherit;
+      color: var(--accent);
+      text-underline-offset: 3px;
+      text-decoration-thickness: 1px;
     }
 
-    svg {
-      flex: 0 0 auto;
+    a:hover {
+      text-decoration-thickness: 2px;
     }
 
-    .site-nav {
-      position: fixed;
-      top: 12px;
-      left: 50%;
-      z-index: 20;
-      width: min(800px, calc(100% - 96px));
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 24px;
-      padding: 18px;
-      border-bottom: 1px solid transparent;
-      border-radius: 24px;
-      corner-shape: squircle;
-      transform: translateX(-50%);
-      transition: background 180ms ease, border-color 180ms ease, backdrop-filter 180ms ease, box-shadow 180ms ease;
+    :focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
     }
 
-    .site-nav.scrolled {
-      background: rgba(240, 245, 243, 0.6);
-      border-bottom-color: var(--border);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      box-shadow: 0 12px 36px rgba(14, 31, 28, 0.08);
-    }
-
-    .brand {
-      color: var(--text);
+    code,
+    kbd,
+    pre {
       font-family: var(--mono);
-      font-size: 15px;
+      font-size: 0.82em;
+    }
+
+    kbd {
       font-weight: 700;
-      text-decoration: none;
     }
 
-    .nav-links {
-      display: flex;
-      align-items: center;
-      gap: 28px;
+    b,
+    strong {
+      font-weight: 600;
     }
 
-    .nav-links a {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      color: var(--text-muted);
-      font-size: 14px;
-      text-decoration: none;
-      transition: color 160ms ease;
+    .page {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding-left: max(20px, env(safe-area-inset-left, 0px));
+      padding-right: max(20px, env(safe-area-inset-right, 0px));
     }
 
-    .nav-links a:hover {
-      color: var(--text);
+    /* Running header and footer, as in a printed man page */
+
+    .running {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 16px;
+      padding-block: 18px;
+      border-bottom: 1px solid var(--rule);
+      color: var(--ink-2);
+      font-family: var(--mono);
+      font-size: 13px;
+      letter-spacing: 0.02em;
     }
 
-    .hero {
-      position: relative;
-      min-height: 50svh;
-      display: flex;
-      align-items: flex-start;
-      justify-content: center;
-      padding: 128px 48px 36px;
-      overflow: hidden;
-      isolation: isolate;
-    }
-
-    .hero-inner {
-      width: min(800px, 100%);
+    .running> :nth-child(2) {
       text-align: center;
     }
 
-    .badges {
+    .running> :last-child {
+      text-align: right;
+    }
+
+    .running a {
+      color: inherit;
+    }
+
+    .toc {
       display: flex;
-      gap: 8px;
       flex-wrap: wrap;
-      margin-bottom: 28px;
-    }
-
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 12px;
-      background: var(--surface);
-      border: 1px solid var(--border-strong);
-      border-radius: 999px;
-      color: var(--text-muted);
+      gap: 4px 18px;
+      padding-block: 12px;
+      border-bottom: 1px solid var(--rule);
       font-family: var(--mono);
-      font-size: 12px;
+      font-size: 12.5px;
+      letter-spacing: 0.04em;
     }
 
-    .hero h1 {
-      max-width: 760px;
-      margin: 0 auto 22px;
-      color: var(--text);
-      font-size: clamp(38px, 5vw, 68px);
+    .toc a {
+      color: var(--ink-2);
+      text-decoration: none;
+    }
+
+    .toc a:hover {
+      color: var(--ink);
+      text-decoration: underline;
+    }
+
+    /* Masthead */
+
+    .mast {
+      padding-block: clamp(40px, 7vw, 88px) 28px;
+    }
+
+    .mast h1 {
+      margin: 0;
+      font-family: var(--display);
+      font-size: clamp(34px, 10.5vw, 128px);
+      font-stretch: 78%;
+      white-space: nowrap;
       font-weight: 800;
-      letter-spacing: 0;
-      line-height: 1.08;
+      letter-spacing: -0.04em;
+      line-height: 0.95;
     }
 
-    .hero h1 span {
-      color: var(--accent);
+    .mast h1 span {
+      color: var(--ink-2);
+      font-weight: 400;
     }
 
-    .hero-copy {
-      max-width: 560px;
-      margin: 0 auto 28px;
-      color: var(--text-muted);
-      font-size: clamp(15px, 1.6vw, 18px);
+    .lede {
+      max-width: 40ch;
+      margin: 22px 0 0;
+      font-size: clamp(20px, 2.4vw, 26px);
+      line-height: 1.35;
+      text-wrap: balance;
     }
 
     .actions {
       display: flex;
-      justify-content: center;
-      gap: 12px;
       flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 28px;
     }
 
-    .button {
+    .btn {
       display: inline-flex;
       align-items: center;
-      justify-content: center;
-      gap: 8px;
       min-height: 44px;
-      padding: 10px 20px;
-      border: 1px solid var(--border-strong);
-      border-radius: 14px;
-      color: var(--text);
-      font-size: 15px;
-      font-weight: 650;
+      padding: 10px 18px;
+      border: 1px solid var(--ink);
+      border-radius: 6px;
+      background: var(--ink);
+      color: var(--paper);
+      font-family: var(--mono);
+      font-size: 14px;
+      font-weight: 500;
       text-decoration: none;
-      transition: border-color 160ms ease, opacity 160ms ease, transform 160ms ease;
     }
 
-    .button:hover {
-      border-color: var(--text-soft);
-      transform: translateY(-1px);
+    .btn.quiet {
+      background: transparent;
+      color: var(--ink);
+      border-color: var(--rule);
     }
 
-    .button.primary {
-      background: var(--accent);
+    .btn:hover {
+      text-decoration: none;
       border-color: var(--accent);
-      color: #ffffff;
     }
 
-    .button.primary:hover {
-      opacity: 0.9;
-    }
+    /* Sections */
 
-    .quick-command {
-      display: inline-flex;
-      align-items: center;
-      gap: 12px;
-      max-width: 100%;
-      padding: 10px 16px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-    }
-
-    .prompt {
-      color: var(--accent);
-      font-family: var(--mono);
-      font-weight: 700;
-    }
-
-    code {
-      color: var(--text);
-      font-family: var(--mono);
-      font-size: 13px;
-    }
-
-    .quick-command code {
-      overflow-wrap: anywhere;
-    }
-
-    .section {
-      padding: 92px 32px;
-    }
-
-    .hero+.section {
-      padding-top: 0;
-    }
-
-    .section.surface {
-      background: var(--surface);
-    }
-
-    .hero+.section.surface {
-      background: linear-gradient(180deg, var(--bg) 0%, var(--surface) 42%, var(--surface) 100%);
-    }
-
-    .section-inner {
-      width: min(1040px, 100%);
-      margin: 0 auto;
-      padding: 0 32px;
-    }
-
-    .section-header {
-      margin-bottom: 36px;
-    }
-
-    .center {
-      text-align: center;
-    }
-
-    .eyebrow {
-      margin: 0 0 10px;
-      color: var(--accent);
-      font-family: var(--mono);
-      font-size: 11px;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
+    section {
+      padding-block: 44px 8px;
     }
 
     h2 {
+      margin: 0 0 14px;
+      font-family: var(--display);
+      font-size: 15px;
+      font-stretch: 90%;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+    }
+
+    .body {
+      max-width: calc(var(--measure) + var(--indent));
+      padding-left: var(--indent);
+    }
+
+    .body p {
+      max-width: var(--measure);
+      margin: 0 0 16px;
+    }
+
+    .synopsis {
       margin: 0;
-      color: var(--text);
-      font-size: clamp(26px, 3vw, 38px);
-      font-weight: 760;
-      letter-spacing: 0;
-      line-height: 1.2;
+      font-family: var(--mono);
+      font-size: 16px;
+      line-height: 1.7;
     }
 
-    .demo-frame {
-      position: relative;
+    .synopsis b {
+      font-weight: 700;
+    }
+
+    .synopsis i {
+      color: var(--ink-2);
+    }
+
+    /* Demo: terminal and the KEYS list next to it */
+
+    .demo {
       display: grid;
-      width: min(900px, 100%);
-      aspect-ratio: 16 / 9;
-      margin: 0 auto;
+      grid-template-columns: minmax(0, 1fr) 330px;
+      gap: 28px;
+      align-items: start;
+      padding-top: 36px;
+    }
+
+    .demo>* {
+      min-width: 0;
+    }
+
+    .term {
       overflow: hidden;
-      place-items: center;
-      background: var(--surface-2);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      corner-shape: squircle;
+      border: 1px solid var(--t-border);
+      border-radius: 10px;
+      background: var(--t-bg);
     }
 
-    .demo-video {
-      display: block;
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      background: #000;
-    }
-
-    .tabs {
+    .term-bar {
       display: flex;
-      gap: 8px;
-      margin-bottom: 24px;
-      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+      height: 40px;
+      padding: 0 10px 0 14px;
+      border-bottom: 1px solid var(--t-border);
+      background: var(--t-panel);
+      color: var(--t-muted);
+      font-family: var(--mono);
+      font-size: 12px;
     }
 
-    .tab {
+    .term-title {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .kb-state {
+      color: var(--t-muted);
+    }
+
+    .term:focus-within .kb-state {
+      color: var(--t-accent);
+    }
+
+    .seg {
       display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      min-height: 40px;
-      padding: 8px 14px;
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      background: transparent;
-      color: var(--text-muted);
-      cursor: pointer;
-      font-family: var(--sans);
-      font-size: 14px;
-      font-weight: 500;
-      transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
-    }
-
-    .tab:hover,
-    .tab[aria-selected="true"] {
-      background: var(--surface-2);
-      border-color: var(--border-strong);
-      color: var(--text);
-    }
-
-    .tab-icon {
-      width: 16px;
-      height: 16px;
-      stroke-width: 2;
-    }
-
-    .tab-panel[hidden] {
-      display: none;
-    }
-
-    .source-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 16px;
-    }
-
-    .platform-label {
-      margin: 0 0 10px;
-      color: var(--text-muted);
-      font-family: var(--mono);
-      font-size: 13px;
-    }
-
-    .code-block {
+      border: 1px solid var(--t-border);
+      border-radius: 6px;
       overflow: hidden;
-      background: var(--surface-2);
-      border: 1px solid var(--border);
-      border-radius: 8px;
     }
 
-    .code-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      min-height: 30px;
-      padding: 3px 8px 3px 10px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .code-label {
-      color: var(--text-soft);
+    .seg button {
+      padding: 4px 10px;
+      border: 0;
+      background: transparent;
+      color: var(--t-muted);
+      cursor: pointer;
       font-family: var(--mono);
-      font-size: 11px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
+      font-size: 12px;
     }
 
-    .code-body {
-      margin: 0;
-      padding: 12px 10px 8px;
-      overflow-x: auto;
+    .seg button+button {
+      border-left: 1px solid var(--t-border);
     }
 
-    .code-line {
-      display: block;
-      color: var(--text-muted);
+    .seg button[aria-pressed="true"] {
+      background: var(--t-sel);
+      color: var(--t-text);
+    }
+
+    .screen {
+      position: relative;
+      height: clamp(420px, 60vh, 540px);
+      padding: 8px;
+      overflow: hidden;
+      background: var(--t-bg);
+      color: var(--t-text);
       font-family: var(--mono);
       font-size: 13px;
+      line-height: 1.55;
+      cursor: text;
+      outline: none;
+      container-type: inline-size;
+    }
+
+    .caption {
+      margin: 10px 0 0;
+      color: var(--ink-2);
+      font-size: 15px;
+    }
+
+    /* Shell */
+
+    .sh {
+      height: 100%;
+      overflow-y: auto;
+      padding: 4px 6px;
+      scrollbar-width: none;
+    }
+
+    .sh-line {
+      min-height: 1.55em;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .sh-ps {
+      color: var(--t-accent);
+    }
+
+    .sh-path {
+      color: #7f9cf5;
+    }
+
+    .sh-err {
+      color: #ff7b86;
+    }
+
+    .sh-dim {
+      color: var(--t-muted);
+    }
+
+    .ghost {
+      color: #41465c;
+    }
+
+    .cur {
+      display: inline-block;
+      width: 0.6em;
+      height: 1.15em;
+      margin-bottom: -0.2em;
+      background: var(--t-text);
+      animation: blink 1.1s steps(1) infinite;
+    }
+
+    @keyframes blink {
+      50% {
+        opacity: 0;
+      }
+    }
+
+    /* TUI */
+
+    .t-page {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      border: 1px solid var(--t-border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .t-page.dim {
+      filter: saturate(0.3) brightness(0.45);
+    }
+
+    .t-top,
+    .t-head,
+    .t-loghead {
+      display: flex;
+      background: var(--t-panel);
       white-space: pre;
     }
 
-    .code-line.comment {
-      color: var(--text-soft);
+    .t-brand {
+      color: var(--t-accent);
+      font-weight: 700;
     }
 
-    .code-line.command {
-      color: var(--text);
+    .t-fill {
+      flex: 1;
     }
 
-    .code-line.success {
-      color: var(--accent);
-    }
-
-    .copy-button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 28px;
-      padding: 3px 7px;
-      border: 1px solid transparent;
-      border-radius: 8px;
-      background: transparent;
-      color: var(--text-soft);
+    .t-btn {
+      color: var(--t-muted);
       cursor: pointer;
-      font-family: var(--sans);
-      font-size: 12px;
-      transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
     }
 
-    .copy-button:hover,
-    .copy-button.copied {
-      background: var(--accent-soft);
-      border-color: var(--accent);
-      color: var(--accent);
+    .t-btn:hover {
+      color: var(--t-text);
     }
 
-    .usage {
-      margin-top: 32px;
+    .t-btn.off {
+      opacity: 0.55;
+      cursor: default;
     }
 
-    .contribute {
+    .t-warn {
+      color: var(--t-warn);
+    }
+
+    .t-sep {
+      flex: 0 0 1px;
+      background: var(--t-border);
+    }
+
+    .t-list {
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .t-list.compact {
+      flex: 0 0 auto;
+    }
+
+    .t-grid {
+      display: grid;
+      grid-template-columns: 1ch minmax(0, 1fr) 11ch 7ch 7ch 8ch;
+      padding-right: 1ch;
+      white-space: pre;
+    }
+
+    .t-head {
+      color: var(--t-header);
+    }
+
+    .t-body {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .t-row {
+      cursor: pointer;
+    }
+
+    .t-row>span,
+    .t-head>span {
+      overflow: hidden;
+    }
+
+    .t-row .r,
+    .t-head .r {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .t-row .n {
+      color: var(--t-muted);
+    }
+
+    .t-row.sel {
+      background: var(--t-sel);
+    }
+
+    .t-row.sel .name {
+      color: #fff;
+      font-weight: 700;
+    }
+
+    .t-row .bar {
+      color: var(--t-accent);
+    }
+
+    .on {
+      color: var(--t-accent);
+      font-weight: 700;
+    }
+
+    .offs {
+      color: var(--t-stopped);
+    }
+
+    .t-empty {
+      display: grid;
+      flex: 1;
+      place-items: center;
+      opacity: 0.5;
+    }
+
+    .t-logs {
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      min-height: 0;
+      background: var(--t-panel);
+    }
+
+    .t-loghead .lbl {
+      color: var(--t-header);
+    }
+
+    .t-logbody {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .t-logbody div {
+      overflow: hidden;
+      white-space: pre;
+    }
+
+    .t-status {
+      overflow: hidden;
+      color: var(--t-muted);
+      white-space: pre;
+    }
+
+    .t-status.err {
+      color: var(--t-err);
+    }
+
+    .t-filter {
+      display: flex;
+      color: var(--t-muted);
+      white-space: pre;
+    }
+
+    .t-filter .f {
+      overflow: hidden;
+      color: var(--t-accent);
+    }
+
+    .t-filter .count {
+      flex: 0 0 auto;
+    }
+
+    .dialog {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      z-index: 3;
+      width: max-content;
+      max-width: calc(100% - 24px);
+      padding: 4px 12px 8px;
+      border: 1px solid var(--t-border);
+      border-radius: 6px;
+      background: var(--t-bg);
+      transform: translate(-50%, -50%);
+      white-space: pre;
+    }
+
+    .dialog.auth {
+      min-width: min(44ch, calc(100% - 24px));
+      background: var(--t-panel);
+    }
+
+    .dialog .ttl {
+      font-weight: 700;
       text-align: center;
     }
 
-    .contribute .section-inner {
+    .dialog hr {
+      height: 1px;
+      margin: 2px 0;
+      border: 0;
+      background: var(--t-border);
+    }
+
+    .dialog .b {
+      color: #fff;
+      font-weight: 700;
+    }
+
+    .dialog .c {
+      color: var(--t-muted);
+      text-align: center;
+    }
+
+    .dialog .acc {
+      color: var(--t-accent);
+      font-weight: 700;
+    }
+
+    .vim {
       display: flex;
       flex-direction: column;
-      align-items: center;
+      height: 100%;
+      padding: 0 4px;
     }
 
-    .contribute p:not(.eyebrow) {
-      max-width: 480px;
-      margin: 16px auto 36px;
-      color: var(--text-muted);
+    .vim-body {
+      flex: 1;
+      overflow: hidden;
     }
 
-    footer {
-      width: min(800px, calc(100% - 96px));
-      margin: 0 auto;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+    .vim-body div {
+      white-space: pre;
+    }
+
+    .vim .ln {
+      display: inline-block;
+      width: 4ch;
+      color: #4a5070;
+    }
+
+    .vim .sec {
+      color: #c792ea;
+    }
+
+    .vim .key {
+      color: #82aaff;
+    }
+
+    .vim .tilde {
+      color: #3b4fa0;
+    }
+
+    .vim-status {
+      white-space: pre;
+    }
+
+    @container (max-width: 560px) {
+      .t-grid {
+        grid-template-columns: 1ch minmax(0, 1fr) 11ch 7ch;
+      }
+
+      .c-cpu,
+      .c-mem {
+        display: none;
+      }
+
+      .t-filter .hints {
+        display: none;
+      }
+    }
+
+    @container (max-width: 340px) {
+      .t-grid {
+        grid-template-columns: 1ch minmax(0, 1fr) 11ch;
+      }
+
+      .c-pid {
+        display: none;
+      }
+    }
+
+    /* KEYS */
+
+    .keys h2 {
+      margin-bottom: 4px;
+    }
+
+    .keys .hint {
+      margin: 0 0 12px;
+      color: var(--ink-2);
+      font-size: 15px;
+    }
+
+    .keylist {
+      display: grid;
+      border-top: 1px solid var(--rule);
+    }
+
+    .key {
+      display: grid;
+      grid-template-columns: 12ch minmax(0, 1fr);
       gap: 12px;
-      flex-wrap: wrap;
-      padding: 28px 0;
-      border-top: 1px solid var(--border);
-      color: var(--text-soft);
+      align-items: baseline;
+      min-height: 40px;
+      padding: 8px 6px;
+      border: 0;
+      border-bottom: 1px solid var(--rule);
+      background: transparent;
+      color: var(--ink);
+      cursor: pointer;
+      font: inherit;
+      font-size: 15.5px;
+      line-height: 1.35;
+      text-align: left;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .key kbd {
       font-size: 13px;
     }
 
-    footer strong {
-      color: var(--text-soft);
+    .key:hover {
+      background: var(--mark);
+    }
+
+    .key.hit {
+      background: var(--mark);
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+
+    .type-row {
+      display: none;
+      gap: 8px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .type-row label {
+      color: var(--ink-2);
       font-family: var(--mono);
-      font-weight: 600;
+      font-size: 13px;
+      align-self: center;
     }
 
-    footer a {
-      color: var(--text-muted);
-      text-decoration: none;
+    .type-row input {
+      flex: 1;
+      min-width: 0;
+      min-height: 42px;
+      padding: 8px 10px;
+      border: 1px solid var(--rule);
+      border-radius: 6px;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 16px;
     }
 
-    .icon {
-      width: 18px;
-      height: 18px;
+    @media (hover: none) and (pointer: coarse) {
+      .type-row {
+        display: flex;
+      }
+
+      .kb-state {
+        display: none;
+      }
     }
 
-    @media (max-width: 760px) {
-      .site-nav {
-        width: calc(100% - 40px);
-        padding: 14px 18px;
-      }
+    .touch .type-row {
+      display: flex;
+    }
 
-      .nav-links {
-        gap: 16px;
-      }
+    .touch .kb-state {
+      display: none;
+    }
 
-      .hero {
-        min-height: auto;
-        padding: 104px 20px 32px;
-      }
+    /* Definition lists (OPTIONS, ENVIRONMENT) */
 
-      .quick-command {
-        align-items: flex-start;
-        width: 100%;
-      }
+    dl {
+      margin: 0;
+    }
 
-      .section {
-        padding: 72px 20px;
-      }
+    dt {
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 4px 14px;
+      margin-top: 14px;
+      font-family: var(--mono);
+      font-size: 15px;
+      font-weight: 700;
+    }
 
-      .section-inner {
-        padding: 0;
-      }
+    dt:first-child {
+      margin-top: 0;
+    }
 
-      .source-grid {
+    dt i {
+      color: var(--ink-2);
+      font-weight: 400;
+    }
+
+    dd {
+      max-width: var(--measure);
+      margin: 2px 0 0 var(--indent);
+    }
+
+    .run {
+      padding: 0;
+      border: 0;
+      background: none;
+      color: var(--accent);
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      font-weight: 400;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    /* SCREENCAST */
+
+    .video {
+      max-width: 100%;
+      margin-top: 4px;
+      overflow: hidden;
+      border: 1px solid var(--rule);
+      border-radius: 10px;
+      background: #000;
+    }
+
+    .video video {
+      display: block;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: #000;
+    }
+
+    /* INSTALL */
+
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 22px;
+      margin-bottom: 14px;
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .tab {
+      padding: 8px 0;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      background: none;
+      color: var(--ink-2);
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 14px;
+    }
+
+    .tab[aria-selected="true"] {
+      border-bottom-color: var(--accent);
+      color: var(--ink);
+    }
+
+    .code {
+      position: relative;
+      border-radius: 6px;
+      background: var(--code);
+    }
+
+    .code pre {
+      margin: 0;
+      padding: 16px 84px 16px 16px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      font-size: 14px;
+      line-height: 1.75;
+    }
+
+    .code .p {
+      color: var(--ink-2);
+      user-select: none;
+    }
+
+    .code .c {
+      color: var(--ink-2);
+    }
+
+    .copy {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 4px 10px;
+      border: 1px solid var(--rule);
+      border-radius: 5px;
+      background: var(--paper);
+      color: var(--ink-2);
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+
+    .copy:hover {
+      color: var(--ink);
+    }
+
+    .note {
+      margin: 10px 0 0;
+      color: var(--ink-2);
+      font-size: 15.5px;
+    }
+
+    footer.running {
+      margin-top: 64px;
+      border-top: 1px solid var(--rule);
+      border-bottom: 0;
+    }
+
+    @media (max-width: 960px) {
+      .demo {
         grid-template-columns: 1fr;
       }
+    }
 
-      footer {
-        width: calc(100% - 40px);
-        padding: 24px 0;
+    @media (max-width: 720px) {
+      :root {
+        --indent: 0px;
+      }
+
+      body {
+        font-size: 17px;
+      }
+
+      .running {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .running> :nth-child(2) {
+        display: none;
+      }
+
+      .screen {
+        height: 400px;
+        padding: 4px;
+        font-size: 11.5px;
+      }
+
+      .term-title {
+        display: none;
+      }
+
+      .term-bar {
+        justify-content: space-between;
+      }
+
+      .demo {
+        gap: 20px;
+        padding-top: 24px;
+      }
+
+      .code pre {
+        padding-right: 16px;
+        padding-top: 44px;
+      }
+
+      dd {
+        margin-left: 0;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .cur {
+        animation: none;
       }
     }
   </style>
 </head>
 
 <body>
-  <nav class="site-nav" aria-label="Primary navigation">
-    <a class="brand" href="#">g-systemctl</a>
-    <div class="nav-links">
-      <a href="#install">Install</a>
-      <a href="https://github.com/shakg/g-systemctl" target="_blank" rel="noopener">
-        <svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <path
-            d="M12 2C6.48 2 2 6.58 2 12.26c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49 0-.24-.01-1.05-.01-1.9-2.78.62-3.37-1.22-3.37-1.22-.45-1.18-1.11-1.49-1.11-1.49-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.64-1.37-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.04 1.03-2.75-.1-.26-.45-1.3.1-2.72 0 0 .84-.28 2.75 1.05A9.34 9.34 0 0 1 12 6.97c.85 0 1.7.12 2.5.34 1.91-1.33 2.75-1.05 2.75-1.05.55 1.42.2 2.46.1 2.72.64.71 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .27.18.59.69.49A10.14 10.14 0 0 0 22 12.26C22 6.58 17.52 2 12 2Z" />
-        </svg>
-        GitHub
-      </a>
-    </div>
-  </nav>
+  <div class="page">
+    <header class="running">
+      <span>G-SYSTEMCTL(1)</span>
+      <span>User Commands</span>
+      <a href="https://github.com/shakg/g-systemctl">shakg/g-systemctl</a>
+    </header>
 
-  <main>
-    <section class="hero">
-      <div class="hero-inner">
-        <h1>Graphical Service Manager <span>for Linux and macOS</span></h1>
-        <p class="hero-copy">View, search, and control system services right in your terminal.</p>
+    <nav class="toc" aria-label="Sections">
+      <a href="#name">NAME</a>
+      <a href="#synopsis">SYNOPSIS</a>
+      <a href="#keys">KEYS</a>
+      <a href="#description">DESCRIPTION</a>
+      <a href="#options">OPTIONS</a>
+      <a href="#environment">ENVIRONMENT</a>
+      <a href="#install">INSTALL</a>
+      <a href="#screencast">SCREENCAST</a>
+      <a href="#see-also">SEE ALSO</a>
+    </nav>
+
+    <main>
+      <div class="mast" id="name">
+        <h1>g-systemctl<span>(1)</span></h1>
+        <p class="lede">A terminal UI for systemd and launchd services. List, filter, start, stop and restart them,
+          read their journal and edit their unit files from one screen.</p>
         <div class="actions">
-          <a class="button primary" href="https://github.com/shakg/g-systemctl" target="_blank" rel="noopener">
-            <svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <path
-                d="M12 2C6.48 2 2 6.58 2 12.26c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49 0-.24-.01-1.05-.01-1.9-2.78.62-3.37-1.22-3.37-1.22-.45-1.18-1.11-1.49-1.11-1.49-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.64-1.37-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.04 1.03-2.75-.1-.26-.45-1.3.1-2.72 0 0 .84-.28 2.75 1.05A9.34 9.34 0 0 1 12 6.97c.85 0 1.7.12 2.5.34 1.91-1.33 2.75-1.05 2.75-1.05.55 1.42.2 2.46.1 2.72.64.71 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .27.18.59.69.49A10.14 10.14 0 0 0 22 12.26C22 6.58 17.52 2 12 2Z" />
-            </svg>
-            View on GitHub
-          </a>
-          <a class="button" href="#install">Install &amp; Build</a>
+          <a class="btn" href="#install">Install</a>
+          <a class="btn quiet" href="https://github.com/shakg/g-systemctl">Source on GitHub</a>
         </div>
       </div>
-    </section>
 
-    <section class="section surface" aria-labelledby="demo-title">
-      <div class="section-inner">
-        <div class="demo-frame">
-          <video class="demo-video" controls autoplay muted playsinline preload="metadata">
-            <source src="assets/demo.mp4" type="video/mp4" />
-            Your browser does not support the video tag.
-          </video>
+      <section id="synopsis" style="padding-top:8px">
+        <h2>SYNOPSIS</h2>
+        <div class="body">
+          <p class="synopsis"><b>g-systemctl</b> [<b>--system</b> | <b>--user</b>] [<b>-f</b> <i>text</i>]</p>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <section id="install" class="section surface" aria-labelledby="install-title">
-      <div class="section-inner">
-        <div class="section-header">
-          <p class="eyebrow">Get started</p>
-          <h2 id="install-title">Install</h2>
-        </div>
-
-        <div class="tabs" role="tablist" aria-label="Install methods">
-          <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-macos" id="tab-macos"
-            data-tab="macos">
-            <svg class="tab-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <path
-                d="M16.9 12.6c0-2 1.7-3 1.8-3.1-1-1.4-2.4-1.6-2.9-1.6-1.2-.1-2.4.7-3 0-.6-.7-1.6-.9-2.6-.8-1.3 0-2.6.8-3.2 2-1.4 2.4-.4 5.9 1 7.8.7 1 1.5 2 2.6 2 1 0 1.4-.6 2.7-.6 1.2 0 1.6.6 2.7.6s1.8-1 2.5-1.9c.8-1.1 1.1-2.2 1.1-2.3 0 0-2.7-1-2.7-3.1Z" />
-              <path d="M15 5.9c.6-.7 1-1.7.9-2.7-.9 0-1.9.6-2.5 1.3-.6.6-1 1.6-.9 2.5.9.1 1.9-.4 2.5-1.1Z" />
-            </svg>
-            macOS - Homebrew
-          </button>
-          <button class="tab" type="button" role="tab" aria-selected="true" aria-controls="panel-deb" id="tab-deb"
-            data-tab="deb">
-            <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-              <path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Z" />
-              <path d="m4 7.5 8 4.5 8-4.5" />
-              <path d="M12 12v9" />
-            </svg>
-            Debian / Ubuntu
-          </button>
-          <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-binary"
-            id="tab-binary" data-tab="binary">
-            <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-              <path d="M12 3v12" />
-              <path d="m7 10 5 5 5-5" />
-              <path d="M5 21h14" />
-            </svg>
-            Linux binary
-          </button>
-          <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-source"
-            id="tab-source" data-tab="source">
-            <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-              <path d="m8 9-4 3 4 3" />
-              <path d="m16 9 4 3-4 3" />
-              <path d="m14 5-4 14" />
-            </svg>
-            Compile from source
-          </button>
-          <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-checksums"
-            id="tab-checksums" data-tab="checksums">
-            Checksums
-          </button>
-        </div>
-
-        <div class="tab-panel" id="panel-macos" role="tabpanel" aria-labelledby="tab-macos" hidden>
-          <div class="code-block">
-            <div class="code-head"><span class="code-label">Homebrew formula</span><button class="copy-button"
-                type="button" data-copy-target="macos-code">Copy</button></div>
-            <pre class="code-body" id="macos-code"><span class="code-line comment"># Download the formula from the latest release</span>
-<span class="code-line command">$ curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/g-systemctl.rb</span>
-<span class="code-line command">$ brew install ./g-systemctl.rb</span>
-<span class="code-line success">g-systemctl installed</span></pre>
-          </div>
-        </div>
-
-        <div class="tab-panel" id="panel-deb" role="tabpanel" aria-labelledby="tab-deb">
-          <div class="code-block">
-            <div class="code-head"><span class="code-label">Debian package</span><button class="copy-button"
-                type="button" data-copy-target="deb-code">Copy</button></div>
-            <pre class="code-body" id="deb-code"><span class="code-line command">$ curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/g-systemctl-linux-amd64.deb</span>
-<span class="code-line command">$ sudo apt install ./g-systemctl-linux-amd64.deb</span>
-<span class="code-line success">g-systemctl installed</span></pre>
-          </div>
-        </div>
-
-        <div class="tab-panel" id="panel-binary" role="tabpanel" aria-labelledby="tab-binary" hidden>
-          <div class="code-block">
-            <div class="code-head"><span class="code-label">Release tarball</span><button class="copy-button"
-                type="button" data-copy-target="binary-code">Copy</button></div>
-            <pre class="code-body" id="binary-code"><span class="code-line command">$ curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/g-systemctl-linux-x86_64.tar.gz</span>
-<span class="code-line command">$ tar -xzf g-systemctl-linux-x86_64.tar.gz</span>
-<span class="code-line command">$ sudo install -m 755 g-systemctl-*/g-systemctl /usr/local/bin/g-systemctl</span>
-<span class="code-line success">Installed to /usr/local/bin/g-systemctl</span></pre>
-          </div>
-        </div>
-
-        <div class="tab-panel" id="panel-source" role="tabpanel" aria-labelledby="tab-source" hidden>
-          <div class="source-grid">
-            <div>
-              <p class="platform-label">Linux</p>
-              <div class="code-block">
-                <div class="code-head"><span class="code-label">Clone &amp; build</span><button class="copy-button"
-                    type="button" data-copy-target="linux-source-code">Copy</button></div>
-                <pre class="code-body" id="linux-source-code"><span class="code-line comment"># Prerequisites: CMake 3.14+, GCC 7+ or Clang 5+</span>
-<span class="code-line command">$ git clone https://github.com/shakg/g-systemctl.git</span>
-<span class="code-line command">$ cd g-systemctl</span>
-<span class="code-line command">$ mkdir build &amp;&amp; cd build</span>
-<span class="code-line command">$ cmake -DCMAKE_BUILD_TYPE=Release ..</span>
-<span class="code-line command">$ make -j$(nproc)</span>
-<span class="code-line command">$ sudo make install</span>
-<span class="code-line success">Installed to /usr/local/bin/g-systemctl</span></pre>
+      <div class="demo">
+        <div>
+          <div class="term" id="term">
+            <div class="term-bar">
+              <span class="term-title" id="term-title">user@prod-01: ~</span>
+              <span class="kb-state" id="kb-state">click to type</span>
+              <div class="seg" role="group" aria-label="Platform">
+                <button type="button" data-platform="linux" aria-pressed="true">Linux</button>
+                <button type="button" data-platform="mac" aria-pressed="false">macOS</button>
               </div>
             </div>
-            <div>
-              <p class="platform-label">macOS</p>
-              <div class="code-block">
-                <div class="code-head"><span class="code-label">Clone &amp; build</span><button class="copy-button"
-                    type="button" data-copy-target="macos-source-code">Copy</button></div>
-                <pre class="code-body" id="macos-source-code"><span class="code-line comment"># Prerequisites: Xcode CLT, CMake 3.14+</span>
-<span class="code-line command">$ git clone https://github.com/shakg/g-systemctl.git</span>
-<span class="code-line command">$ cd g-systemctl</span>
-<span class="code-line command">$ mkdir build &amp;&amp; cd build</span>
-<span class="code-line command">$ cmake -DCMAKE_BUILD_TYPE=Release ..</span>
-<span class="code-line command">$ make</span>
-<span class="code-line command">$ sudo make install</span>
-<span class="code-line success">Installed to /usr/local/bin/g-systemctl</span></pre>
-              </div>
+            <div class="screen" id="screen" tabindex="0" role="application"
+              aria-label="g-systemctl demo terminal. Focus it and use the keys listed next to it.">
+            </div>
+          </div>
+          <p class="caption">A simulation that runs in your browser, with made-up services. Press Esc to get a
+            shell and try the options below.</p>
+        </div>
+
+        <section class="keys" id="keys" style="padding:0">
+          <h2>KEYS</h2>
+          <p class="hint">Click a row to send that key.</p>
+          <div class="keylist">
+            <div class="type-row">
+              <label for="m-type">Type</label>
+              <input id="m-type" type="text" autocomplete="off" autocapitalize="off" autocorrect="off"
+                spellcheck="false" enterkeyhint="go" placeholder="filter by name" />
+            </div>
+            <button class="key" type="button" data-k="up"><kbd>↑ Alt+K</kbd><span>Move up</span></button>
+            <button class="key" type="button" data-k="down"><kbd>↓ Alt+J</kbd><span>Move down</span></button>
+            <button class="key" type="button" data-k="enter"><kbd>Enter</kbd><span>Start or stop the unit</span></button>
+            <button class="key" type="button" data-k="alt-r"><kbd>Alt+R</kbd><span>Restart the unit</span></button>
+            <button class="key" type="button" data-k="alt-l"><kbd>Alt+L</kbd><span>Show the unit's journal</span></button>
+            <button class="key" type="button" data-k="alt-c"><kbd>Alt+C</kbd><span>Close the journal</span></button>
+            <button class="key" type="button" data-k="pgup"><kbd>PgUp</kbd><span>Scroll the journal back</span></button>
+            <button class="key" type="button" data-k="alt-e"><kbd>Alt+E</kbd><span>Edit the unit file</span></button>
+            <button class="key" type="button" data-k="alt-R"><kbd>Alt+Shift+R</kbd><span>Reload systemd</span></button>
+            <button class="key" type="button" data-k="help"><kbd>?</kbd><span>List all keys</span></button>
+            <button class="key" type="button" data-k="esc"><kbd>Esc</kbd><span>Quit</span></button>
+          </div>
+        </section>
+      </div>
+
+      <section id="description">
+        <h2>DESCRIPTION</h2>
+        <div class="body">
+          <p><b>g-systemctl</b> shows the services that <code>systemctl list-units</code> reports, one per row, with
+            their state, PID, CPU and memory. On macOS it shows the jobs from <code>launchctl list</code>. Typing
+            filters the list by name.</p>
+          <p><kbd>Enter</kbd> starts a stopped unit and stops a running one. <kbd>Alt+R</kbd> restarts it. When an
+            action needs root and you did not start the program with sudo, it asks for your password in a small
+            dialog and runs the command with <code>sudo</code>.</p>
+          <p><kbd>Alt+L</kbd> runs <code>journalctl -u <i>unit</i> -f -n 100</code> and shows the output under the
+            list until you press <kbd>Alt+C</kbd>. <kbd>Alt+E</kbd> runs <code>systemctl edit --full</code> on the
+            unit, which reloads it when you save. <kbd>Alt+Shift+R</kbd> runs <code>systemctl daemon-reload</code>.
+          </p>
+          <p>Log streaming, unit editing and daemon-reload are Linux only. The mouse works too: click a row to select
+            it, scroll to move, click <b>Reload</b> or <b>Shortcuts</b> in the top bar.</p>
+        </div>
+      </section>
+
+      <section id="options">
+        <h2>OPTIONS</h2>
+        <div class="body">
+          <dl>
+            <dt>--system <button class="run" type="button" data-play="g-systemctl --system">run in demo</button></dt>
+            <dd>Show system services. This is the default.</dd>
+            <dt>--user <button class="run" type="button" data-play="g-systemctl --user">run in demo</button></dt>
+            <dd>Show the services of your user session, as <code>systemctl --user</code> does. No password is needed.
+            </dd>
+            <dt>-f, --filter <i>text</i> <button class="run" type="button" data-play="g-systemctl -f docker">run in
+                demo</button></dt>
+            <dd>Start with <i>text</i> already typed into the filter.</dd>
+            <dt>-v, --version <button class="run" type="button" data-play="g-systemctl --version">run in
+                demo</button></dt>
+            <dd>Print the version and platform, then exit.</dd>
+            <dt>-h, --help <button class="run" type="button" data-play="g-systemctl --help">run in demo</button></dt>
+            <dd>Print usage, then exit.</dd>
+          </dl>
+          <p class="note" style="margin-top:18px">Run <code>sudo g-systemctl</code> to start and stop system services
+            without the password dialog.</p>
+        </div>
+      </section>
+
+      <section id="environment">
+        <h2>ENVIRONMENT</h2>
+        <div class="body">
+          <dl>
+            <dt>GSYSTEMCTL_EDITOR</dt>
+            <dd>Editor used by <kbd>Alt+E</kbd>. Defaults to <code>vim</code>.</dd>
+          </dl>
+        </div>
+      </section>
+
+      <section id="install">
+        <h2>INSTALL</h2>
+        <div class="body">
+          <div class="tabs" role="tablist" aria-label="Install method">
+            <button class="tab" type="button" role="tab" id="tab-deb" aria-controls="panel-deb" aria-selected="true"
+              data-tab="deb">Debian, Ubuntu</button>
+            <button class="tab" type="button" role="tab" id="tab-macos" aria-controls="panel-macos"
+              aria-selected="false" data-tab="macos">macOS</button>
+            <button class="tab" type="button" role="tab" id="tab-binary" aria-controls="panel-binary"
+              aria-selected="false" data-tab="binary">Linux binary</button>
+            <button class="tab" type="button" role="tab" id="tab-source" aria-controls="panel-source"
+              aria-selected="false" data-tab="source">From source</button>
+          </div>
+
+          <div class="tab-panel" id="panel-deb" role="tabpanel" aria-labelledby="tab-deb">
+            <div class="code"><button class="copy" type="button" data-copy-target="code-deb">Copy</button>
+              <pre id="code-deb"><span class="p">$ </span>curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/g-systemctl-linux-amd64.deb
+<span class="p">$ </span>sudo apt install ./g-systemctl-linux-amd64.deb</pre>
+            </div>
+            <p class="note">For amd64 on Ubuntu 22.04 or later and Debian 12 or later.</p>
+          </div>
+
+          <div class="tab-panel" id="panel-macos" role="tabpanel" aria-labelledby="tab-macos" hidden>
+            <div class="code"><button class="copy" type="button" data-copy-target="code-macos">Copy</button>
+              <pre id="code-macos"><span class="p">$ </span>curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/g-systemctl.rb
+<span class="p">$ </span>brew install ./g-systemctl.rb</pre>
+            </div>
+            <p class="note">The formula builds from the tagged source, so Homebrew installs CMake first if you don't
+              have it.</p>
+          </div>
+
+          <div class="tab-panel" id="panel-binary" role="tabpanel" aria-labelledby="tab-binary" hidden>
+            <div class="code"><button class="copy" type="button" data-copy-target="code-binary">Copy</button>
+              <pre id="code-binary"><span class="p">$ </span>curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/g-systemctl-linux-x86_64.tar.gz
+<span class="p">$ </span>tar -xzf g-systemctl-linux-x86_64.tar.gz
+<span class="p">$ </span>sudo install -m 755 g-systemctl-*/g-systemctl /usr/local/bin/g-systemctl</pre>
+            </div>
+            <p class="note">One x86_64 binary that needs glibc 2.34 or later: Ubuntu 22.04, Debian 12, Fedora 35 and
+              newer. Checksums are in <code>SHA256SUMS.txt</code> on each release.</p>
+          </div>
+
+          <div class="tab-panel" id="panel-source" role="tabpanel" aria-labelledby="tab-source" hidden>
+            <div class="code"><button class="copy" type="button" data-copy-target="code-source">Copy</button>
+              <pre id="code-source"><span class="c"># Needs git, CMake 3.14+ and a C++17 compiler</span>
+<span class="p">$ </span>git clone https://github.com/shakg/g-systemctl.git
+<span class="p">$ </span>cd g-systemctl
+<span class="p">$ </span>cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+<span class="p">$ </span>cmake --build build --parallel
+<span class="p">$ </span>sudo cmake --install build</pre>
             </div>
           </div>
         </div>
+      </section>
 
-        <div class="tab-panel" id="panel-checksums" role="tabpanel" aria-labelledby="tab-checksums" hidden>
-          <div class="code-block">
-            <div class="code-head"><span class="code-label">Release checksums</span><button class="copy-button"
-                type="button" data-copy-target="checksums-code">Copy</button></div>
-            <pre class="code-body" id="checksums-code"><span class="code-line command">$ curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/SHA256SUMS.txt</span>
-<span class="code-line command">$ grep g-systemctl-linux-x86_64.tar.gz SHA256SUMS.txt | shasum -a 256 -c -</span></pre>
+      <section id="screencast">
+        <h2>SCREENCAST</h2>
+        <div class="body" style="max-width:none">
+          <p>g-systemctl running on a real machine.</p>
+          <div class="video">
+            <video controls muted playsinline loop preload="metadata" id="video">
+              <source src="assets/demo.mp4" type="video/mp4" />
+            </video>
           </div>
         </div>
+      </section>
 
-        <div class="usage">
-          <div class="code-block">
-            <div class="code-head"><span class="code-label">Basic usage</span><button class="copy-button" type="button"
-                data-copy-target="usage-code">Copy</button></div>
-            <pre class="code-body" id="usage-code">
-<span class="code-line command">$ g-systemctl</span>
-<span class="code-line command">$ g-systemctl -f nginx</span>
-<span class="code-line comment"># Target system services explicitly</span>
-<span class="code-line command">$ g-systemctl --system -f postgres</span></pre>
-          </div>
+      <section id="bugs">
+        <h2>BUGS</h2>
+        <div class="body">
+          <p>Report bugs and ask for features at <a
+              href="https://github.com/shakg/g-systemctl/issues">github.com/shakg/g-systemctl/issues</a>. Pull
+            requests are welcome; see <a
+              href="https://github.com/shakg/g-systemctl/blob/main/docs/CONTRIBUTING.md">CONTRIBUTING.md</a>.</p>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <section class="section contribute">
-      <div class="section-inner">
-        <p class="eyebrow">Open source</p>
-        <h2>Built in the open</h2>
-        <p>g-systemctl is MIT licensed and welcomes contributions. Bug reports, feature ideas, and pull requests are all
-          appreciated.</p>
-        <a class="button" href="https://github.com/shakg/g-systemctl" target="_blank" rel="noopener">
-          <svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path
-              d="M12 2C6.48 2 2 6.58 2 12.26c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49 0-.24-.01-1.05-.01-1.9-2.78.62-3.37-1.22-3.37-1.22-.45-1.18-1.11-1.49-1.11-1.49-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.64-1.37-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.04 1.03-2.75-.1-.26-.45-1.3.1-2.72 0 0 .84-.28 2.75 1.05A9.34 9.34 0 0 1 12 6.97c.85 0 1.7.12 2.5.34 1.91-1.33 2.75-1.05 2.75-1.05.55 1.42.2 2.46.1 2.72.64.71 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .27.18.59.69.49A10.14 10.14 0 0 0 22 12.26C22 6.58 17.52 2 12 2Z" />
-          </svg>
-          Star on GitHub
-        </a>
-      </div>
-    </section>
-  </main>
+      <section id="see-also">
+        <h2>SEE ALSO</h2>
+        <div class="body">
+          <p><a href="https://man7.org/linux/man-pages/man1/systemctl.1.html">systemctl(1)</a>, <a
+              href="https://man7.org/linux/man-pages/man1/journalctl.1.html">journalctl(1)</a>, <a
+              href="https://man7.org/linux/man-pages/man5/systemd.unit.5.html">systemd.unit(5)</a>, <a
+              href="https://ss64.com/mac/launchctl.html">launchctl(1)</a></p>
+        </div>
+      </section>
 
-  <footer>
-    <strong>g-systemctl</strong>
-    <span>MIT License - <a href="https://github.com/shakg/g-systemctl">github.com/shakg/g-systemctl</a></span>
-  </footer>
+      <section id="license">
+        <h2>LICENSE</h2>
+        <div class="body">
+          <p>MIT. See <a href="https://github.com/shakg/g-systemctl/blob/main/LICENSE">LICENSE</a>.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="running">
+      <span>g-systemctl <span id="foot-version">1.1.0</span></span>
+      <span id="foot-date">October 2026</span>
+      <span>G-SYSTEMCTL(1)</span>
+    </footer>
+  </div>
 
   <script>
-    const nav = document.querySelector(".site-nav");
-    const setNavState = () => nav.classList.toggle("scrolled", window.scrollY > 40);
-    setNavState();
-    window.addEventListener("scroll", setNavState, { passive: true });
+    (() => {
+      "use strict";
 
-    const tabs = Array.from(document.querySelectorAll("[data-tab]"));
-    const panels = Array.from(document.querySelectorAll(".tab-panel"));
+      const $ = (s, r = document) => r.querySelector(s);
+      const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+      const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+      const rnd = (a, b) => Math.floor(a + Math.random() * (b - a + 1));
+      const pick = (a) => a[Math.floor(Math.random() * a.length)];
+      const hex = (n) => Array.from({ length: n }, () => "0123456789abcdef"[rnd(0, 15)]).join("");
+      const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const canHover = window.matchMedia("(hover: hover)").matches;
 
-    tabs.forEach((tab) => {
-      tab.addEventListener("click", () => {
-        const selected = tab.dataset.tab;
-        tabs.forEach((item) => item.setAttribute("aria-selected", String(item === tab)));
-        panels.forEach((panel) => {
-          panel.hidden = panel.id !== `panel-${selected}`;
-        });
+      let VERSION = "1.1.0";
+
+      // ---------------------------------------------------------------
+      // Made-up services: [unit, active, description, ExecStart]
+      // ---------------------------------------------------------------
+      const DATA = {
+        linux: {
+          system: [
+            ["apache2.service", 0, "The Apache HTTP Server", "/usr/sbin/apachectl start"],
+            ["avahi-daemon.service", 1, "Avahi mDNS/DNS-SD Stack", "/usr/sbin/avahi-daemon -s"],
+            ["bluetooth.service", 0, "Bluetooth service", "/usr/libexec/bluetooth/bluetoothd"],
+            ["containerd.service", 1, "containerd container runtime", "/usr/bin/containerd"],
+            ["cron.service", 1, "Regular background program processing daemon", "/usr/sbin/cron -f"],
+            ["cups.service", 0, "CUPS Scheduler", "/usr/sbin/cupsd -l"],
+            ["dbus.service", 1, "D-Bus System Message Bus", "/usr/bin/dbus-daemon --system"],
+            ["docker.service", 1, "Docker Application Container Engine", "/usr/bin/dockerd -H fd://"],
+            ["fail2ban.service", 1, "Fail2Ban Service", "/usr/bin/fail2ban-server -xf start"],
+            ["grafana-server.service", 1, "Grafana instance", "/usr/share/grafana/bin/grafana server"],
+            ["mysql.service", 0, "MySQL Community Server", "/usr/sbin/mysqld"],
+            ["NetworkManager.service", 1, "Network Manager", "/usr/sbin/NetworkManager --no-daemon"],
+            ["nginx.service", 1, "A high performance web server and a reverse proxy server", "/usr/sbin/nginx -g 'daemon on;'"],
+            ["node-exporter.service", 1, "Prometheus exporter for machine metrics", "/usr/bin/prometheus-node-exporter"],
+            ["polkit.service", 1, "Authorization Manager", "/usr/lib/polkit-1/polkitd --no-debug"],
+            ["postgresql@16-main.service", 1, "PostgreSQL Cluster 16-main", "/usr/bin/pg_ctlcluster --skip-systemctl-redirect 16-main start"],
+            ["prometheus.service", 1, "Monitoring system and time series database", "/usr/bin/prometheus"],
+            ["redis-server.service", 1, "Advanced key-value store", "/usr/bin/redis-server /etc/redis/redis.conf"],
+            ["rsyslog.service", 1, "System Logging Service", "/usr/sbin/rsyslogd -n -iNONE"],
+            ["snapd.service", 0, "Snap Daemon", "/usr/lib/snapd/snapd"],
+            ["ssh.service", 1, "OpenBSD Secure Shell server", "/usr/sbin/sshd -D"],
+            ["systemd-journald.service", 1, "Journal Service", "/usr/lib/systemd/systemd-journald"],
+            ["systemd-logind.service", 1, "User Login Management", "/usr/lib/systemd/systemd-logind"],
+            ["systemd-resolved.service", 1, "Network Name Resolution", "/usr/lib/systemd/systemd-resolved"],
+            ["systemd-timesyncd.service", 1, "Network Time Synchronization", "/usr/lib/systemd/systemd-timesyncd"],
+            ["systemd-udevd.service", 1, "Rule-based Manager for Device Events and Files", "/usr/lib/systemd/systemd-udevd"],
+            ["thermald.service", 0, "Thermal Daemon Service", "/usr/sbin/thermald --systemd --dbus-enable"],
+            ["ufw.service", 1, "Uncomplicated firewall", "/lib/ufw/ufw-init start quiet"],
+            ["unattended-upgrades.service", 1, "Unattended Upgrades Shutdown", "/usr/share/unattended-upgrades/unattended-upgrade-shutdown"],
+          ],
+          user: [
+            ["at-spi-dbus-bus.service", 1, "Accessibility services bus", "/usr/libexec/at-spi-bus-launcher"],
+            ["dbus.service", 1, "D-Bus User Message Bus", "/usr/bin/dbus-daemon --session"],
+            ["emacs.service", 0, "Emacs text editor", "/usr/bin/emacs --fg-daemon"],
+            ["gnome-keyring-daemon.service", 1, "GNOME Keyring daemon", "/usr/bin/gnome-keyring-daemon --foreground"],
+            ["gpg-agent.service", 0, "GnuPG cryptographic agent", "/usr/bin/gpg-agent --supervised"],
+            ["pipewire-pulse.service", 1, "PipeWire PulseAudio", "/usr/bin/pipewire-pulse"],
+            ["pipewire.service", 1, "PipeWire Multimedia Service", "/usr/bin/pipewire"],
+            ["podman.service", 0, "Podman API Service", "/usr/bin/podman system service"],
+            ["ssh-agent.service", 0, "OpenSSH Agent", "/usr/bin/ssh-agent -D -a $SSH_AUTH_SOCK"],
+            ["syncthing.service", 1, "Syncthing - Open Source Continuous File Synchronization", "/usr/bin/syncthing serve --no-browser"],
+            ["wireplumber.service", 1, "Multimedia Service Session Manager", "/usr/bin/wireplumber"],
+            ["xdg-desktop-portal.service", 1, "Portal service", "/usr/libexec/xdg-desktop-portal"],
+          ],
+        },
+        mac: {
+          system: [
+            ["com.apple.backupd", 0, "Time Machine", ""],
+            ["com.apple.cfprefsd.xpc.daemon", 1, "Preferences daemon", ""],
+            ["com.apple.metadata.mds", 1, "Spotlight", ""],
+            ["com.apple.mDNSResponder", 1, "Bonjour", ""],
+            ["com.apple.syslogd", 1, "System log", ""],
+            ["com.apple.timed", 1, "Time sync", ""],
+            ["com.docker.vmnetd", 1, "Docker networking", ""],
+            ["com.openssh.sshd", 0, "Remote Login", ""],
+            ["homebrew.mxcl.nginx", 1, "nginx", ""],
+            ["homebrew.mxcl.postgresql@16", 1, "PostgreSQL 16", ""],
+            ["org.cups.cupsd", 0, "CUPS", ""],
+          ],
+          user: [
+            ["com.apple.Spotlight", 1, "Spotlight", ""],
+            ["com.apple.cloudd", 1, "iCloud", ""],
+            ["com.docker.helper", 1, "Docker Desktop helper", ""],
+            ["homebrew.mxcl.grafana", 0, "Grafana", ""],
+            ["homebrew.mxcl.mysql", 0, "MySQL", ""],
+            ["homebrew.mxcl.postgresql@16", 1, "PostgreSQL 16", ""],
+            ["homebrew.mxcl.redis", 1, "Redis", ""],
+            ["homebrew.mxcl.syncthing", 1, "Syncthing", ""],
+          ],
+        },
+      };
+
+      const fmtMem = () => {
+        const m = Math.random() * 380 + 4;
+        return m > 100 ? `${Math.round(m)}M` : `${m.toFixed(1)}M`;
+      };
+      const fmtCpu = () => `${(Math.random() ** 3 * 4).toFixed(1)}%`;
+      const makeService = ([unit, active, desc, exec]) => ({
+        unit, active: !!active, desc, exec,
+        pid: active ? String(rnd(300, 9800)) : "",
+        cpu: active ? fmtCpu() : "",
+        mem: active ? fmtMem() : "",
       });
-    });
 
-    const getCopyText = (button) => {
-      if (button.dataset.copy) {
-        return button.dataset.copy;
-      }
-      const target = document.getElementById(button.dataset.copyTarget);
-      if (!target) {
-        return "";
-      }
-      return Array.from(target.querySelectorAll(".code-line.command"))
-        .map((line) => line.textContent.replace(/^\$\s?/, ""))
-        .join("\n");
-    };
+      const serviceCache = {};
+      const servicesFor = (platform, mode) => {
+        const key = `${platform}:${mode}`;
+        if (!serviceCache[key]) serviceCache[key] = DATA[platform][mode].map(makeService);
+        return serviceCache[key];
+      };
 
-    const copyText = async (text) => {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text);
-        return;
-      }
-      const textarea = document.createElement("textarea");
-      textarea.value = text;
-      textarea.setAttribute("readonly", "");
-      textarea.style.position = "fixed";
-      textarea.style.left = "-9999px";
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand("copy");
-      textarea.remove();
-    };
+      // ---------------------------------------------------------------
+      // journalctl-style lines
+      // ---------------------------------------------------------------
+      const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const pad = (n, w = 2) => String(n).padStart(w, "0");
+      const clock = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+      const iso = () => new Date().toISOString().replace(/\.\d+Z$/, `.${pad(rnd(0, 999), 3)}Z`);
+      const ip = () => `10.0.${rnd(0, 9)}.${rnd(2, 254)}`;
+      const path = () => pick(["/", "/api/v1/orders", "/api/v1/users/42", "/healthz", "/static/app.js", "/login"]);
 
-    document.querySelectorAll(".copy-button").forEach((button) => {
-      button.addEventListener("click", async () => {
-        const text = getCopyText(button);
-        if (!text) {
+      const LOGS = [
+        [/nginx|apache/, () => `${ip()} - - "${pick(["GET", "GET", "GET", "POST", "PUT"])} ${path()} HTTP/2.0" ${pick([200, 200, 200, 201, 204, 304, 404, 502])} ${rnd(0, 9000)}`],
+        [/postgres|mysql/, () => pick([
+          "LOG:  checkpoint starting: time",
+          `LOG:  checkpoint complete: wrote ${rnd(10, 400)} buffers (${(Math.random() * 2).toFixed(1)}%)`,
+          "LOG:  connection authorized: user=app database=orders",
+          `LOG:  duration: ${(Math.random() * 90).toFixed(3)} ms  statement: SELECT * FROM orders WHERE id = $1`,
+          `LOG:  automatic vacuum of table "orders.public.events": index scans: 1`,
+        ])],
+        [/docker|containerd|podman/, () => `time="${iso()}" level=info msg="${pick(["Container health status changed", "Pulling image", "Starting container", "Network endpoint created"])}" container=${pick(["api", "worker", "web"])}-${hex(6)}`],
+        [/redis/, () => pick([
+          `* ${rnd(10, 400)} changes in 300 seconds. Saving...`,
+          `* Background saving started by pid ${rnd(2000, 9000)}`,
+          "* DB saved on disk",
+          "* Background saving terminated with success",
+        ])],
+        [/ssh/, () => pick([
+          `Accepted publickey for deploy from ${ip()} port ${rnd(40000, 65000)} ssh2: ED25519 SHA256:${hex(10)}`,
+          "pam_unix(sshd:session): session opened for user deploy(uid=1001) by (uid=0)",
+          `Connection closed by ${ip()} port ${rnd(40000, 65000)} [preauth]`,
+        ])],
+        [/cron/, () => pick(["(root) CMD (/usr/local/bin/backup.sh --incremental)", "(root) CMD (test -x /usr/sbin/anacron || run-parts --report /etc/cron.hourly)"])],
+        [/fail2ban/, () => pick([`NOTICE  [sshd] Ban 203.0.113.${rnd(2, 254)}`, `NOTICE  [sshd] Unban 198.51.100.${rnd(2, 254)}`])],
+        [/grafana|prometheus|exporter/, () => `level=info ts=${iso()} caller=${pick(["main.go:512", "scrape.go:1280", "head.go:841"])} msg="${pick(["Head GC completed", "Completed loading of configuration file", "Request completed"])}"`],
+        [/ufw/, () => `[UFW BLOCK] IN=eth0 OUT= SRC=203.0.113.${rnd(2, 254)} DST=10.0.0.4 PROTO=TCP DPT=${pick([22, 23, 3389, 5432])}`],
+        [/pipewire|wireplumber/, () => pick(["spa.alsa: hw:0: snd_pcm_avail after recover: Broken pipe", "pw.node: (alsa_output.pci-0000_00_1f.3) suspended -> running"])],
+        [/./, () => pick([
+          `Watchdog keep-alive sent (${rnd(5, 60)}s interval)`,
+          `Processed ${rnd(1, 900)} events in ${rnd(1, 80)} ms`,
+          "Reloading configuration",
+        ])],
+      ];
+
+      const procName = (s) => s.unit.replace(/\.service$/, "").replace(/@.*$/, "");
+      const logPrefix = (s, proc = procName(s), pid = s.pid || "1") => {
+        const d = new Date();
+        return `${MONTHS[d.getMonth()]} ${pad(d.getDate())} ${clock(d)} prod-01 ${proc}[${pid}]: `;
+      };
+      const logLine = (s) => logPrefix(s) + LOGS.find(([re]) => re.test(s.unit))[1](s);
+      const systemdLine = (s, msg) => logPrefix(s, "systemd", "1") + msg;
+
+      // ---------------------------------------------------------------
+      // State
+      // ---------------------------------------------------------------
+      const scr = $("#screen");
+      const S = {
+        platform: "linux",
+        view: "shell",
+        mode: "system",
+        authed: false,
+        services: [],
+        filter: "",
+        sel: 0,
+        listTop: 0,
+        logsOpen: false,
+        logUnit: null,
+        logLines: [],
+        logOffset: 0,
+        help: false,
+        auth: null,
+        busy: null,
+        status: "",
+        error: "",
+        shell: { lines: [], input: "", history: [], hIdx: -1 },
+        vim: null,
+      };
+
+      const host = () => (S.platform === "mac" ? "macbook" : "prod-01");
+      const promptHtml = () => S.platform === "mac"
+        ? `<span class="sh-ps">user@macbook</span> <span class="sh-path">~</span> % `
+        : `<span class="sh-ps">user@prod-01</span>:<span class="sh-path">~</span>$ `;
+      const filtered = () => {
+        const f = S.filter.toLowerCase();
+        return S.services.filter((s) => s.unit.toLowerCase().includes(f));
+      };
+      const current = () => filtered()[S.sel];
+      const timers = new Set();
+      const later = (fn, ms) => {
+        const t = setTimeout(() => { timers.delete(t); fn(); }, ms);
+        timers.add(t);
+      };
+
+      // ---------------------------------------------------------------
+      // Rendering
+      // ---------------------------------------------------------------
+      const SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
+      const HELP_DIALOG = `<div class="dialog"><div class="ttl">g-systemctl - Help</div><hr>
+<div class="b">Navigation:</div><div>  Up / Alt+k   - Move selection up
+  Down / Alt+j - Move selection down
+  Enter        - Toggle selected service (start/stop)</div>
+<div class="b">Actions:</div><div>  Alt+r        - Restart selected service
+  Alt+e        - Edit unit file of selected service (vim)
+  Alt+Shift+r  - Reload systemd daemon (daemon-reload)
+  Alt+l        - Stream logs for selected unit
+  Alt+c        - Close log stream
+  Alt+q / Esc  - Quit</div>
+<div class="c">Press ? to close</div></div>`;
+
+      function renderTui() {
+        const list = filtered();
+        let reload;
+        if (S.busy) reload = `<span class="t-warn">${SPIN[S.busy.frame % SPIN.length]} ${esc(S.busy.msg)} </span>`;
+        else if (S.platform === "mac") reload = `<span class="t-btn off"> Reload (n/a on macOS) </span>`;
+        else reload = `<span class="t-btn" data-act="alt-R"> Reload(Alt+R) </span>`;
+
+        let html = `<div class="t-page${S.help || S.auth ? " dim" : ""}">`;
+        html += `<div class="t-top"><span class="t-brand"> g-systemctl </span><span class="t-fill"></span>${reload}<span class="t-btn" data-act="help"> Shortcuts(?) </span></div><div class="t-sep"></div>`;
+
+        if (!list.length) {
+          html += `<div class="t-empty">No services found</div>`;
+        } else {
+          const rows = (S.logsOpen ? [S.sel] : list.map((_, i) => i)).map((i) => {
+            const s = list[i];
+            const sel = i === S.sel;
+            const status = s.active ? `<span class="on">● active</span>` : `<span class="offs">○ inactive</span>`;
+            return `<div class="t-row t-grid${sel ? " sel" : ""}" data-i="${i}"><span class="bar">${sel ? "▌" : " "}</span><span class="name">${esc(s.unit)}</span>${status}<span class="r n c-pid">${s.pid || "-"}</span><span class="r n c-cpu">${s.cpu || "-"}</span><span class="r n c-mem">${s.mem || "-"}</span></div>`;
+          }).join("");
+          html += `<div class="t-list${S.logsOpen ? " compact" : ""}"><div class="t-head t-grid"><span> </span><span>SERVICE</span><span>STATUS</span><span class="r c-pid">PID</span><span class="r c-cpu">CPU</span><span class="r c-mem">MEM</span></div><div class="t-body">${rows}</div></div>`;
+        }
+
+        if (S.logsOpen) {
+          const lines = S.logLines.map((l) => `<div>${esc(l)}</div>`).join("");
+          html += `<div class="t-sep"></div><div class="t-logs"><div class="t-loghead"><span class="lbl"> LOGS </span><span class="t-warn">${esc(S.logUnit.unit)}</span><span class="t-fill"></span><span class="t-btn" data-act="alt-c">Alt+c close </span></div><div class="t-sep"></div><div class="t-logbody">${lines}</div></div>`;
+        }
+        if (S.status || S.error) {
+          html += `<div class="t-sep"></div><div class="t-status${S.error ? " err" : ""}"> ${esc(S.error || S.status)}</div>`;
+        }
+        html += `<div class="t-sep"></div><div class="t-filter"><span> Filter: </span><span class="f">${esc(S.filter)}█</span><span class="t-fill"></span><span class="count">${list.length}/${S.services.length} services</span><span class="hints">  ·  ↑↓ navigate  ·  type to filter  </span></div></div>`;
+
+        if (S.help) html += HELP_DIALOG;
+        if (S.auth) {
+          html += `<div class="dialog auth"><div class="acc">Authentication required</div><hr><div>${esc(S.auth.label)}</div><div><span style="color:var(--t-muted)">Password: </span>${"•".repeat(S.auth.pw.length)}<span class="cur"></span>${S.auth.pw ? "" : '<span class="ghost"> sudo password</span>'}</div><hr><div style="color:var(--t-muted)">Enter submit  Esc cancel</div></div>`;
+        }
+        return html;
+      }
+
+      function renderShell() {
+        const sh = S.shell;
+        const ghost = suggestion();
+        const lines = sh.lines.map((l) => `<div class="sh-line ${l.c || ""}">${l.h != null ? l.h : esc(l.t)}</div>`).join("");
+        return `<div class="sh">${lines}<div class="sh-line">${promptHtml()}${esc(sh.input)}<span class="cur"></span><span class="ghost">${esc(ghost.slice(sh.input.length))}</span></div></div>`;
+      }
+
+      function renderVim() {
+        const v = S.vim;
+        const body = v.lines.map((l, i) => {
+          let h = esc(l);
+          if (/^\[.*\]$/.test(l)) h = `<span class="sec">${h}</span>`;
+          else h = h.replace(/^(\w+)=/, '<span class="key">$1</span>=');
+          return `<div><span class="ln">${i + 1}</span>${h}</div>`;
+        }).join("") + `<div class="tilde">~</div>`.repeat(40);
+        const status = v.cmd != null ? `:${esc(v.cmd)}<span class="cur"></span>` : `<span style="color:var(--t-muted)">${esc(v.msg)}</span>`;
+        return `<div class="vim"><div class="vim-body">${body}</div><div class="vim-status">${status}</div></div>`;
+      }
+
+      function render() {
+        if (S.view === "tui") scr.innerHTML = renderTui();
+        else if (S.view === "vim") scr.innerHTML = renderVim();
+        else scr.innerHTML = renderShell();
+        afterRender();
+        syncTypeInput();
+      }
+
+      function afterRender() {
+        if (S.view === "shell") {
+          const sh = $(".sh", scr);
+          sh.scrollTop = sh.scrollHeight;
           return;
         }
-        const previous = button.textContent;
-        try {
-          await copyText(text);
-          button.textContent = "Copied";
-          button.classList.add("copied");
-        } catch {
-          button.textContent = "Copy failed";
+        if (S.view !== "tui") return;
+        const body = $(".t-body", scr);
+        if (body && !S.logsOpen) {
+          body.scrollTop = S.listTop;
+          const row = body.children[S.sel];
+          if (row) {
+            const top = row.offsetTop;
+            const bottom = top + row.offsetHeight;
+            if (top < body.scrollTop) body.scrollTop = top;
+            else if (bottom > body.scrollTop + body.clientHeight) body.scrollTop = bottom - body.clientHeight;
+          }
+          S.listTop = body.scrollTop;
         }
-        window.setTimeout(() => {
-          button.textContent = previous;
-          button.classList.remove("copied");
-        }, 1600);
+        const logBody = $(".t-logbody", scr);
+        if (logBody) {
+          const lineH = logBody.firstElementChild ? logBody.firstElementChild.offsetHeight : 18;
+          const maxOffset = Math.max(0, Math.floor((logBody.scrollHeight - logBody.clientHeight) / lineH));
+          S.logOffset = Math.min(S.logOffset, maxOffset);
+          logBody.scrollTop = logBody.scrollHeight - logBody.clientHeight - S.logOffset * lineH;
+        }
+      }
+
+      // ---------------------------------------------------------------
+      // Shell
+      // ---------------------------------------------------------------
+      const HELP_TEXT = `g-systemctl - Terminal UI for system service management
+
+Usage: g-systemctl [options]
+
+Options:
+  -h, --help              Show this help message
+  -v, --version           Show version information
+  --system                Show system services (default)
+  --user                  Show user services
+  -f, --filter <text>     Set the initial filter text
+
+Note: Run with sudo for full functionality (start/stop services)`;
+
+      const out = (t, c = "") => S.shell.lines.push({ t, c });
+
+      function suggestion() {
+        const sh = S.shell;
+        if (!sh.input) return sh.history.length ? sh.history[sh.history.length - 1] : "";
+        const pool = [...sh.history].reverse().concat(["g-systemctl"]);
+        return pool.find((h) => h.startsWith(sh.input) && h !== sh.input) || "";
+      }
+
+      function runCommand(line) {
+        const sh = S.shell;
+        sh.lines.push({ h: promptHtml() + esc(line) });
+        sh.input = "";
+        sh.hIdx = -1;
+        const cmd = line.trim();
+        if (!cmd) return render();
+        if (sh.history[sh.history.length - 1] !== cmd) sh.history.push(cmd);
+        if (sh.lines.length > 200) sh.lines.splice(0, sh.lines.length - 200);
+
+        const tokens = cmd.match(/"[^"]*"|'[^']*'|\S+/g).map((t) => t.replace(/^(["'])(.*)\1$/, "$2"));
+        let sudo = false;
+        if (tokens[0] === "sudo") {
+          sudo = true;
+          tokens.shift();
+        }
+        const prog = tokens.shift() || "";
+
+        if (prog === "g-systemctl" || prog === "./g-systemctl") {
+          let mode = "system";
+          let filter = "";
+          for (let i = 0; i < tokens.length; i++) {
+            const a = tokens[i];
+            if (a === "-h" || a === "--help") { out(HELP_TEXT); return render(); }
+            if (a === "-v" || a === "--version") {
+              out(`g-systemctl version ${VERSION}`);
+              out(`Platform: ${S.platform === "mac" ? "macOS" : "Linux"}`);
+              return render();
+            }
+            if (a === "--system") mode = "system";
+            if (a === "--user") mode = "user";
+            if ((a === "-f" || a === "--filter") && i + 1 < tokens.length) filter = tokens[++i];
+          }
+          return launch(mode, filter, sudo);
+        }
+        if (prog === "clear") sh.lines = [];
+        else if (prog === "help") out("This shell only runs g-systemctl and clear. Try g-systemctl --help.", "sh-dim");
+        else out(S.platform === "mac" ? `zsh: command not found: ${prog}` : `bash: ${prog}: command not found`, "sh-err");
+        render();
+      }
+
+      // ---------------------------------------------------------------
+      // TUI actions
+      // ---------------------------------------------------------------
+      let logTimer = null;
+      let tickTimer = null;
+
+      function launch(mode, filter, sudo) {
+        Object.assign(S, {
+          view: "tui", mode, authed: sudo, services: servicesFor(S.platform, mode), filter,
+          sel: 0, listTop: 0, logsOpen: false, help: false, auth: null, status: "", error: "",
+        });
+        startTicks();
+        render();
+      }
+
+      function quit() {
+        closeLogs();
+        clearInterval(tickTimer);
+        timers.forEach(clearTimeout);
+        timers.clear();
+        S.busy = null;
+        S.view = "shell";
+        render();
+      }
+
+      function startTicks() {
+        clearInterval(tickTimer);
+        tickTimer = setInterval(() => {
+          if (S.view !== "tui" || document.hidden) return;
+          S.services.forEach((s) => {
+            if (s.active && Math.random() < 0.35) s.cpu = fmtCpu();
+          });
+          render();
+        }, 2200);
+      }
+
+      const setStatus = (msg) => { S.status = msg; S.error = ""; };
+      const setError = (msg) => { S.error = msg; S.status = ""; };
+
+      function pushLog(svc, line) {
+        if (!S.logsOpen || S.logUnit !== svc || S.platform !== "linux") return;
+        S.logLines.push(line);
+        if (S.logLines.length > 300) S.logLines.shift();
+      }
+
+      function privileged(action, svc, label) {
+        if (S.mode === "system" && !S.authed) {
+          S.auth = { action, svc, label, pw: "" };
+          S.status = "";
+          S.error = "";
+          return render();
+        }
+        action(svc);
+      }
+
+      function toggle(svc) {
+        setStatus(`Toggling ${svc.unit}...`);
+        render();
+        later(() => {
+          pushLog(svc, systemdLine(svc, `${svc.active ? "Stopping" : "Starting"} ${svc.desc}...`));
+          svc.active = !svc.active;
+          svc.pid = svc.active ? String(rnd(300, 9800)) : "";
+          svc.cpu = svc.active ? fmtCpu() : "";
+          svc.mem = svc.active ? fmtMem() : "";
+          pushLog(svc, systemdLine(svc, svc.active ? `Started ${svc.desc}.` : `Stopped ${svc.desc}.`));
+          setStatus(`Successfully toggled ${svc.unit}`);
+          render();
+        }, 450);
+      }
+
+      function restart(svc) {
+        setStatus(`Restarting ${svc.unit}...`);
+        render();
+        later(() => {
+          if (svc.active) pushLog(svc, systemdLine(svc, `Stopping ${svc.desc}...`));
+          Object.assign(svc, { active: true, pid: String(rnd(300, 9800)), cpu: fmtCpu(), mem: fmtMem() });
+          pushLog(svc, systemdLine(svc, `Started ${svc.desc}.`));
+          setStatus(`Successfully restarted ${svc.unit}`);
+          render();
+        }, 700);
+      }
+
+      function daemonReload() {
+        S.status = "";
+        S.error = "";
+        S.busy = { msg: "Reloading systemd daemon...", frame: 0 };
+        const spin = setInterval(() => {
+          if (!S.busy) return clearInterval(spin);
+          S.busy.frame++;
+          render();
+        }, 80);
+        render();
+        later(() => {
+          clearInterval(spin);
+          S.busy = null;
+          setStatus("Daemon reloaded successfully.");
+          render();
+        }, 1300);
+      }
+
+      function openLogs(svc) {
+        closeLogs();
+        S.logsOpen = true;
+        S.logUnit = svc;
+        S.logOffset = 0;
+        if (S.platform === "mac") {
+          S.logLines = ["Log streaming is not supported on macOS"];
+        } else {
+          S.logLines = [`Starting: journalctl ${S.mode === "system" ? "-u" : "--user-unit"} ${svc.unit} -f -n 100`];
+          for (let i = 0; i < 16; i++) S.logLines.push(logLine(svc));
+          if (!svc.active) S.logLines.push(systemdLine(svc, `Stopped ${svc.desc}.`));
+          const tick = () => {
+            if (!S.logsOpen) return;
+            if (S.logUnit.active && !document.hidden) {
+              pushLog(S.logUnit, logLine(S.logUnit));
+              if (S.view === "tui") render();
+            }
+            logTimer = setTimeout(tick, rnd(400, 1500));
+          };
+          logTimer = setTimeout(tick, 600);
+        }
+        setStatus(`Streaming logs for ${svc.unit}...`);
+        render();
+      }
+
+      function closeLogs() {
+        clearTimeout(logTimer);
+        logTimer = null;
+        S.logsOpen = false;
+        S.logUnit = null;
+      }
+
+      function openEditor(svc) {
+        if (S.platform === "mac") {
+          setError("Editing service files is not supported on this platform");
+          return render();
+        }
+        const lines = [
+          "[Unit]", `Description=${svc.desc}`, "After=network-online.target", "Wants=network-online.target", "",
+          "[Service]", "Type=simple", `ExecStart=${svc.exec}`, "Restart=on-failure", "RestartSec=5", "",
+          "[Install]", "WantedBy=multi-user.target",
+        ];
+        const dir = S.mode === "system" ? "/etc/systemd/system" : "~/.config/systemd/user";
+        S.vim = { svc, lines, cmd: null, file: `${dir}/${svc.unit}`, msg: `"${dir}/${svc.unit}" ${lines.length}L, ${lines.join("\n").length + 1}B` };
+        S.view = "vim";
+        render();
+      }
+
+      function vimCommand(c) {
+        const v = S.vim;
+        if (["wq", "x", "wq!", "x!"].includes(c)) {
+          S.view = "tui";
+          S.vim = null;
+          setStatus(`Edited ${v.svc.unit} (daemon reloaded)`);
+        } else if (["q", "q!"].includes(c)) {
+          S.view = "tui";
+          S.vim = null;
+          S.status = "";
+          S.error = "";
+        } else if (c === "w") {
+          v.cmd = null;
+          v.msg = `"${v.file}" ${v.lines.length}L written`;
+        } else {
+          v.cmd = null;
+          v.msg = `E492: Not an editor command: ${c}`;
+        }
+        render();
+      }
+
+      // ---------------------------------------------------------------
+      // Input
+      // ---------------------------------------------------------------
+      function press(k) {
+        cancelAutoType();
+        if (S.view === "shell") return shellKey(k);
+        if (S.view === "vim") return vimKey(k);
+        return tuiKey(k);
+      }
+
+      function shellKey(k) {
+        const sh = S.shell;
+        if (k.ch != null) sh.input += k.ch;
+        else if (k === "backspace") sh.input = sh.input.slice(0, -1);
+        else if (k === "enter") {
+          const ghost = suggestion();
+          return runCommand(!sh.input && ghost ? ghost : sh.input);
+        } else if (k === "right" || k === "tab") {
+          const ghost = suggestion();
+          if (!ghost || !ghost.startsWith(sh.input)) return false;
+          sh.input = ghost;
+        } else if (k === "up" || k === "down") {
+          if (!sh.history.length) return true;
+          if (k === "up") sh.hIdx = sh.hIdx < 0 ? sh.history.length - 1 : Math.max(0, sh.hIdx - 1);
+          else sh.hIdx = sh.hIdx < 0 ? -1 : sh.hIdx + 1;
+          if (sh.hIdx >= sh.history.length) sh.hIdx = -1;
+          sh.input = sh.hIdx < 0 ? "" : sh.history[sh.hIdx];
+        } else if (k === "esc") sh.input = "";
+        else return false;
+        render();
+        return true;
+      }
+
+      function vimKey(k) {
+        const v = S.vim;
+        if (v.cmd != null) {
+          if (k.ch != null) v.cmd += k.ch;
+          else if (k === "backspace") v.cmd = v.cmd ? v.cmd.slice(0, -1) : null;
+          else if (k === "esc") v.cmd = null;
+          else if (k === "enter") { vimCommand(v.cmd.trim()); return true; }
+          else return false;
+        } else if (k.ch === ":") v.cmd = "";
+        else if (k.ch != null || k === "enter" || k === "esc") v.msg = "Type :wq to save and quit, or :q to quit";
+        else return false;
+        render();
+        return true;
+      }
+
+      function tuiKey(k) {
+        if (S.busy) return true;
+
+        if (S.auth) {
+          const a = S.auth;
+          if (k.ch != null) a.pw += k.ch;
+          else if (k === "backspace") a.pw = a.pw.slice(0, -1);
+          else if (k === "esc") S.auth = null;
+          else if (k === "enter") {
+            S.auth = null;
+            if (!a.pw) setError("Sudo password is required");
+            else {
+              S.authed = true;
+              a.action(a.svc);
+              return true;
+            }
+          } else return false;
+          render();
+          return true;
+        }
+
+        if (S.help) {
+          if (k.ch === "?" || k === "help" || k === "esc") {
+            S.help = false;
+            render();
+          }
+          return true;
+        }
+
+        const list = filtered();
+        const svc = current();
+        switch (k) {
+          case "esc":
+          case "alt-q":
+            quit();
+            return true;
+          case "help":
+            S.help = true;
+            break;
+          case "alt-r":
+            if (svc) privileged(restart, svc, `Restart ${svc.unit}`);
+            return true;
+          case "alt-R":
+            if (S.platform === "linux") privileged(daemonReload, null, "Reload systemd daemon");
+            return true;
+          case "alt-e":
+            if (svc) openEditor(svc);
+            return true;
+          case "pgup":
+            if (!S.logsOpen) return true;
+            S.logOffset += 10;
+            break;
+          case "pgdn":
+            if (!S.logsOpen) return true;
+            S.logOffset = Math.max(0, S.logOffset - 10);
+            break;
+          case "up":
+          case "alt-k":
+            if (S.logsOpen) S.logOffset += 1;
+            else S.sel = Math.max(0, S.sel - 1);
+            break;
+          case "down":
+          case "alt-j":
+            if (S.logsOpen) S.logOffset = Math.max(0, S.logOffset - 1);
+            else S.sel = Math.min(list.length - 1, S.sel + 1);
+            break;
+          case "enter":
+            if (svc) privileged(toggle, svc, `Toggle ${svc.unit}`);
+            return true;
+          case "alt-l":
+            if (svc) openLogs(svc);
+            return true;
+          case "alt-c":
+            if (!S.logsOpen) return true;
+            closeLogs();
+            S.status = "";
+            break;
+          case "backspace":
+            S.filter = S.filter.slice(0, -1);
+            S.sel = 0;
+            break;
+          default:
+            if (k.ch === "?") S.help = true;
+            else if (k.ch != null) {
+              S.filter += k.ch;
+              S.sel = 0;
+              S.listTop = 0;
+            } else return false;
+        }
+        render();
+        return true;
+      }
+
+      function normalize(e) {
+        if (e.metaKey || e.ctrlKey) return null;
+        if (e.altKey) {
+          const m = /^Key([A-Z])$/.exec(e.code || "");
+          return m ? `alt-${e.shiftKey ? m[1] : m[1].toLowerCase()}` : null;
+        }
+        const map = {
+          ArrowUp: "up", ArrowDown: "down", ArrowRight: "right", Enter: "enter", Escape: "esc",
+          Backspace: "backspace", PageUp: "pgup", PageDown: "pgdn", Tab: "tab",
+        };
+        if (map[e.key]) return map[e.key];
+        return e.key.length === 1 ? { ch: e.key } : null;
+      }
+
+      const ALIAS = { "alt-k": "up", "alt-j": "down", "alt-q": "esc", pgdn: "pgup" };
+      function flashKey(k) {
+        const name = k && k.ch === "?" ? "help" : ALIAS[k] || k;
+        if (typeof name !== "string") return;
+        const row = $(`.key[data-k="${name}"]`);
+        if (!row) return;
+        row.classList.add("hit");
+        setTimeout(() => row.classList.remove("hit"), 220);
+      }
+
+      scr.addEventListener("keydown", (e) => {
+        const k = normalize(e);
+        if (!k) return;
+        if (k === "tab" && S.view !== "shell") return;
+        if (press(k) !== false) {
+          e.preventDefault();
+          flashKey(k);
+        }
       });
-    });
+
+      const kbState = $("#kb-state");
+      scr.addEventListener("focus", () => (kbState.textContent = "keyboard captured, Tab to leave"));
+      scr.addEventListener("blur", () => (kbState.textContent = "click to type"));
+      scr.addEventListener("mousedown", () => {
+        if (document.activeElement !== scr) scr.focus({ preventScroll: true });
+      });
+
+      scr.addEventListener("click", (e) => {
+        if (S.view !== "tui") return;
+        const act = e.target.closest("[data-act]");
+        if (act) return press(act.dataset.act);
+        if (S.help) return press("help");
+        const row = e.target.closest(".t-row");
+        if (row && !S.auth && !S.busy) {
+          S.sel = Number(row.dataset.i);
+          render();
+        }
+      });
+
+      scr.addEventListener("wheel", (e) => {
+        if (S.view !== "tui" || S.help || S.auth) return;
+        e.preventDefault();
+        const dir = e.deltaY > 0 ? 1 : -1;
+        if (e.target.closest(".t-logs")) {
+          S.logOffset = Math.max(0, S.logOffset - dir * 3);
+          render();
+        } else if (!S.logsOpen) {
+          press(dir > 0 ? "down" : "up");
+        }
+      }, { passive: false });
+
+      // KEYS rows. pointerdown keeps focus (and a phone keyboard) where it is.
+      $$(".key").forEach((btn) => {
+        btn.addEventListener("pointerdown", (e) => e.preventDefault());
+        btn.addEventListener("click", () => {
+          press(btn.dataset.k);
+          flashKey(btn.dataset.k);
+          if (canHover) scr.focus({ preventScroll: true });
+        });
+      });
+
+      window.addEventListener("pointerdown", (e) => {
+        if (e.pointerType === "touch") document.documentElement.classList.add("touch");
+      }, { passive: true });
+
+      // Phone text field: mirrors whatever currently takes text.
+      const typeInput = $("#m-type");
+      const textTarget = () => {
+        if (S.view === "shell") return { get: () => S.shell.input, set: (v) => (S.shell.input = v), ph: "type a command", pw: false };
+        if (S.view === "vim") return { get: () => (S.vim.cmd != null ? `:${S.vim.cmd}` : ""), set: (v) => (S.vim.cmd = v.startsWith(":") ? v.slice(1) : v || null), ph: ":wq to save", pw: false };
+        if (S.auth) return { get: () => S.auth.pw, set: (v) => (S.auth.pw = v), ph: "sudo password", pw: true };
+        return {
+          get: () => S.filter,
+          set: (v) => { S.filter = v.replace(/\?/g, ""); S.sel = 0; S.listTop = 0; },
+          ph: "filter by name", pw: false,
+        };
+      };
+      function syncTypeInput() {
+        const t = textTarget();
+        if (typeInput.value !== t.get()) typeInput.value = t.get();
+        typeInput.placeholder = t.ph;
+        const type = t.pw ? "password" : "text";
+        if (typeInput.type !== type) typeInput.type = type;
+      }
+      typeInput.addEventListener("input", () => {
+        cancelAutoType();
+        if (S.view === "tui" && (S.help || S.busy)) return syncTypeInput();
+        textTarget().set(typeInput.value);
+        render();
+      });
+      typeInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          press("enter");
+        } else if (e.key === "Escape") press("esc");
+      });
+
+      // Platform switch
+      $$(".seg button").forEach((b) => b.addEventListener("click", () => {
+        if (S.platform === b.dataset.platform) return;
+        cancelAutoType();
+        const wasTui = S.view !== "shell";
+        quit();
+        S.platform = b.dataset.platform;
+        $$(".seg button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+        $("#term-title").textContent = `user@${host()}: ~`;
+        S.shell.lines = [];
+        if (wasTui) runCommand("g-systemctl");
+        else render();
+      }));
+
+      // ---------------------------------------------------------------
+      // Typed commands
+      // ---------------------------------------------------------------
+      let autoTimer = null;
+      function cancelAutoType() {
+        clearTimeout(autoTimer);
+        autoTimer = null;
+      }
+      function typeCommand(cmd, delay = 0) {
+        cancelAutoType();
+        if (S.view !== "shell") quit();
+        S.shell.input = "";
+        render();
+        let i = 0;
+        const step = () => {
+          if (i < cmd.length) {
+            S.shell.input += cmd[i++];
+            render();
+            autoTimer = setTimeout(step, reduced ? 0 : rnd(35, 85));
+          } else {
+            autoTimer = setTimeout(() => {
+              autoTimer = null;
+              runCommand(S.shell.input);
+            }, reduced ? 0 : 300);
+          }
+        };
+        autoTimer = setTimeout(step, delay);
+      }
+
+      $$("[data-play]").forEach((b) => b.addEventListener("click", () => {
+        $("#term").scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" });
+        typeCommand(b.dataset.play, 400);
+        if (canHover) scr.focus({ preventScroll: true });
+      }));
+
+      render();
+
+      // Type the first command once the terminal is on screen.
+      new IntersectionObserver(([en], obs) => {
+        if (!en.isIntersecting) return;
+        obs.disconnect();
+        if (S.view === "shell" && !S.shell.history.length && !S.shell.input) typeCommand("g-systemctl", 700);
+      }, { threshold: 0.3 }).observe($("#term"));
+
+      // ---------------------------------------------------------------
+      // Copy buttons
+      // ---------------------------------------------------------------
+      $$(".copy").forEach((btn) => btn.addEventListener("click", () => {
+        const pre = document.getElementById(btn.dataset.copyTarget);
+        const text = pre.textContent.split("\n").filter((l) => l.startsWith("$ ")).map((l) => l.slice(2)).join("\n");
+        const done = (label) => {
+          btn.textContent = label;
+          setTimeout(() => (btn.textContent = "Copy"), 1500);
+        };
+        const fallback = () => {
+          const range = document.createRange();
+          range.selectNodeContents(pre);
+          const sel = getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+          done("Selected");
+        };
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(text).then(() => done("Copied"), fallback);
+        } else {
+          fallback();
+        }
+      }));
+
+      // ---------------------------------------------------------------
+      // Install tabs
+      // ---------------------------------------------------------------
+      const tabs = $$("[data-tab]");
+      const selectTab = (name) => {
+        tabs.forEach((t) => t.setAttribute("aria-selected", String(t.dataset.tab === name)));
+        $$(".tab-panel").forEach((p) => (p.hidden = p.id !== `panel-${name}`));
+      };
+      tabs.forEach((t) => t.addEventListener("click", () => selectTab(t.dataset.tab)));
+      if (/Mac/.test(navigator.platform || navigator.userAgent)) selectTab("macos");
+
+      // Play the screencast only while it's visible.
+      const video = $("#video");
+      new IntersectionObserver(([en]) => {
+        if (en.isIntersecting && !reduced) video.play().catch(() => { });
+        else video.pause();
+      }, { threshold: 0.5 }).observe(video);
+
+      // Version and date for the footer, from the latest release.
+      fetch("https://api.github.com/repos/shakg/g-systemctl/releases/latest")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (!d || !d.tag_name) return;
+          VERSION = d.tag_name.replace(/^v/, "");
+          $("#foot-version").textContent = VERSION;
+          if (d.published_at) {
+            $("#foot-date").textContent = new Date(d.published_at).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+          }
+        })
+        .catch(() => { });
+    })();
   </script>
 </body>
 

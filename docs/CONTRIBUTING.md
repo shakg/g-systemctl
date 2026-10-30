@@ -46,7 +46,7 @@ This project uses GitHub Actions for continuous integration and release automati
 
 - **Test** (`.github/workflows/test.yml`): Runs on every push to `main` and pull requests. It builds the project and runs tests on Ubuntu.
 
-- **Build and Release** (`.github/workflows/release.yml`): Creates GitHub Releases automatically when you push a version tag (e.g., `v1.0.0`). It builds and attaches binaries for both Linux and macOS.
+- **Build and Release** (`.github/workflows/release.yml`): Builds Linux and macOS packages on every push to `main`. When you push a version tag (e.g., `v1.0.0`), it also creates the GitHub Release and attaches the packages.
 
 ### Creating a Release
 
@@ -60,3 +60,5 @@ git push origin v1.0.0
 ```
 
 This will trigger the release workflow, which builds binaries for Linux and macOS and creates a GitHub Release with the artifacts attached.
+
+Do not create the release or upload files by hand in the GitHub UI. The install instructions in the README download fixed file names (`g-systemctl-linux-amd64.deb`, `g-systemctl-linux-x86_64.tar.gz`, `g-systemctl.rb`) from the latest release, and only the workflow produces them. The Linux build runs in an `ubuntu:22.04` container so the binary works on older distros; a local build will usually require a newer glibc.
