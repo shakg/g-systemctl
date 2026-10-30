@@ -43,7 +43,7 @@ brew install ./g-systemctl.rb
 
 ### Debian / Ubuntu
 
-Download the `.deb` package from the latest release and install it:
+For amd64 on Ubuntu 22.04+ or Debian 12+. Download the `.deb` package from the latest release and install it:
 
 ```bash
 curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/g-systemctl-linux-amd64.deb
@@ -51,6 +51,8 @@ sudo apt install ./g-systemctl-linux-amd64.deb
 ```
 
 ### Linux Binary
+
+For x86_64 with glibc 2.34+ (Ubuntu 22.04+, Debian 12+, Fedora 35+, and similar).
 
 ```bash
 curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/g-systemctl-linux-x86_64.tar.gz
@@ -71,9 +73,11 @@ sudo make install
 
 ### Release Checksums
 
+Run in the directory holding the downloaded file:
+
 ```bash
 curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/SHA256SUMS.txt
-grep g-systemctl-linux-x86_64.tar.gz SHA256SUMS.txt | shasum -a 256 -c -
+sha256sum --ignore-missing -c SHA256SUMS.txt
 ```
 
 ## Usage
