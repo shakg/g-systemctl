@@ -14,4 +14,10 @@ TEST(CommandResultTest, ConstructionWithValues) {
     EXPECT_EQ(result.stderr_output, "error");
 }
 
+TEST(SystemCommandExecutorTest, ExecuteInteractiveReturnsExitCode) {
+    SystemCommandExecutor executor;
+    EXPECT_EQ(executor.execute_interactive("true", false), 0);
+    EXPECT_EQ(executor.execute_interactive("exit 3", false), 3);
+}
+
 } // namespace gsystemctl

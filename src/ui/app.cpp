@@ -5,8 +5,11 @@
 #include "g-systemctl/platform/platform.hpp"
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstdlib>
+#include <ftxui/component/animation.hpp>
 #include <ftxui/component/component_options.hpp>
+#include <iostream>
 #include <mutex>
 
 using namespace ftxui;
@@ -57,6 +60,14 @@ namespace gsystemctl::ui
         service_manager_ = ServiceManager::create(executor_, system_mode_);
         logging_manager_ = LoggingManager::create(executor_);
         refresh_services();
+    }
+
+    App::~App()
+    {
+        if (worker_.joinable())
+        {
+            worker_.join();
+        }
     }
 
     int App::run()
@@ -187,12 +198,106 @@ namespace gsystemctl::ui
         }
     }
 
+    void App::request_daemon_reload()
+    {
+        if (!service_manager_->supports_unit_files())
+        {
+            return;
+        }
+        if (system_mode_ && !executor_->can_execute_privileged_without_password())
+        {
+            open_auth_dialog(AuthAction::DaemonReload);
+            return;
+        }
+        daemon_reload();
+    }
+
+    void App::daemon_reload(const std::string& password)
+    {
+        busy_ = true;
+        busy_message_ = "Reloading systemd daemon...";
+        status_message_.clear();
+        error_message_.clear();
+
+        if (worker_.joinable())
+        {
+            worker_.join();
+        }
+        worker_ = std::thread([this, password] {
+            auto result = service_manager_->daemon_reload(password);
+            screen_.Post([this, result] {
+                busy_ = false;
+                busy_message_.clear();
+                if (result.first)
+                {
+                    refresh_services();
+                    status_message_ = "Daemon reloaded successfully.";
+                }
+                else
+                {
+                    error_message_ = "Daemon reload failed: " + result.second;
+                }
+            });
+            screen_.PostEvent(Event::Custom);
+        });
+    }
+
+    void App::edit_selected_service()
+    {
+        if (filtered_services_.empty() || selected_index_ < 0 ||
+            selected_index_ >= static_cast<int>(filtered_services_.size()))
+        {
+            return;
+        }
+
+        const auto service = filtered_services_[selected_index_];
+        if (!service_manager_->supports_unit_files())
+        {
+            error_message_ = "Editing service files is not supported on this platform";
+            return;
+        }
+
+        // Hand the terminal to the editor, then take it back.
+        std::pair<bool, std::string> result;
+        screen_.WithRestoredIO([this, &service, &result] {
+            result = service_manager_->edit_service(service.unit);
+            if (!result.first)
+            {
+                // Keep the editor/systemctl error on screen until the user has read it.
+                std::cout << "\n" << result.second << ". Press Enter to return to g-systemctl..." << std::flush;
+                std::string line;
+                std::getline(std::cin, line);
+            }
+        })();
+
+        if (result.first)
+        {
+            refresh_services();
+            status_message_ = "Edited " + service.unit + " (daemon reloaded)";
+        }
+        else
+        {
+            error_message_ = "Failed to edit " + service.unit + ": " + result.second;
+        }
+    }
+
     void App::open_auth_dialog(AuthAction action, const ServiceUnit& service)
     {
         pending_auth_action_ = action;
         pending_auth_service_ = service;
         auth_password_.clear();
-        auth_dialog_message_ = (action == AuthAction::Restart ? "Restart " : "Toggle ") + service.unit;
+        switch (action)
+        {
+        case AuthAction::Restart:
+            auth_dialog_message_ = "Restart " + service.unit;
+            break;
+        case AuthAction::DaemonReload:
+            auth_dialog_message_ = "Reload systemd daemon";
+            break;
+        default:
+            auth_dialog_message_ = "Toggle " + service.unit;
+            break;
+        }
         auth_dialog_open_ = true;
         status_message_.clear();
         error_message_.clear();
@@ -219,6 +324,10 @@ namespace gsystemctl::ui
         else if (action == AuthAction::Restart)
         {
             restart_service(service, password);
+        }
+        else if (action == AuthAction::DaemonReload)
+        {
+            daemon_reload(password);
         }
     }
 
@@ -332,6 +441,9 @@ namespace gsystemctl::ui
 
         auto main_component = CatchEvent(renderer, [this, input](Event event)
                           {
+        if (busy_) {
+            return true;
+        }
         if (auth_dialog_open_) {
             return false;
         }
@@ -349,6 +461,14 @@ namespace gsystemctl::ui
         }
         if (event == Event::Special("\x1b" "r")) {
             restart_selected_service();
+            return true;
+        }
+        if (event == Event::Special("\x1b" "R")) {
+            request_daemon_reload();
+            return true;
+        }
+        if (event == Event::Special("\x1b" "e")) {
+            edit_selected_service();
             return true;
         }
         if (log_panel_open_ && event == Event::PageUp) {
@@ -442,6 +562,10 @@ namespace gsystemctl::ui
             if (mouse.button == Mouse::Left && mouse.motion == Mouse::Pressed) {
                 if (shortcuts_box_.Contain(mouse.x, mouse.y)) {
                     show_help_ = true;
+                    return true;
+                }
+                if (reload_button_box_.Contain(mouse.x, mouse.y)) {
+                    request_daemon_reload();
                     return true;
                 }
                 for (size_t i = 0; i < toggle_button_boxes_.size(); ++i) {
@@ -556,9 +680,31 @@ namespace gsystemctl::ui
 
     Element App::render_top_bar()
     {
+        Element reload_button;
+        if (busy_)
+        {
+            // Braille spinner, advanced by wall clock so speed is independent of frame rate.
+            auto now = std::chrono::steady_clock::now().time_since_epoch();
+            auto frame = static_cast<size_t>(std::chrono::duration_cast<std::chrono::milliseconds>(now).count() / 80);
+            reload_button = hbox({
+                spinner(15, frame) | color(WarningColor()),
+                text(" " + busy_message_ + " ") | color(WarningColor()),
+            });
+            animation::RequestAnimationFrame();
+        }
+        else if (service_manager_->supports_unit_files())
+        {
+            reload_button = text(" Reload(Alt+R) ") | color(MutedColor());
+        }
+        else
+        {
+            reload_button = text(" Reload (n/a on macOS) ") | color(MutedColor()) | dim;
+        }
+
         return hbox({
                    text(" g-systemctl ") | color(AccentColor()) | bold,
                    filler(),
+                   reload_button | reflect(reload_button_box_),
                    text(" Shortcuts(?) ") | color(MutedColor()) | reflect(shortcuts_box_),
                }) |
                bgcolor(PanelColor());
@@ -697,6 +843,8 @@ namespace gsystemctl::ui
                    text(""),
                    text("Actions:") | bold,
                    text("  Alt+r        - Restart selected service"),
+                   text("  Alt+e        - Edit unit file of selected service (vim)"),
+                   text("  Alt+Shift+r  - Reload systemd daemon (daemon-reload)"),
                    text("  Alt+l        - Stream logs for selected unit"),
                    text("  Alt+c        - Close log stream"),
                    text("  Alt+q / Esc  - Quit"),
