@@ -1,10 +1,55 @@
 #include "g-systemctl/platform/linux_service_manager.hpp"
 #include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include <map>
 #include <sstream>
 #include <stdexcept>
 
 namespace gsystemctl {
+
+namespace {
+
+std::string shell_quote(const std::string& value) {
+    std::string quoted = "'";
+    for (char c : value) {
+        if (c == '\'') {
+            quoted += "'\\''";
+        } else {
+            quoted += c;
+        }
+    }
+    return quoted + "'";
+}
+
+std::string trim(const std::string& value) {
+    auto begin = std::find_if_not(value.begin(), value.end(), [](unsigned char c) { return std::isspace(c); });
+    auto end = std::find_if_not(value.rbegin(), value.rend(), [](unsigned char c) { return std::isspace(c); }).base();
+    return begin < end ? std::string(begin, end) : std::string();
+}
+
+std::string describe_failure(const CommandResult& result) {
+    std::string output = trim(result.stdout_output + result.stderr_output);
+    std::string lower = output;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return std::tolower(c); });
+    if (lower.find("incorrect password") != std::string::npos || lower.find("sorry, try again") != std::string::npos) {
+        return "incorrect password";
+    }
+    if (lower.find("timed out") != std::string::npos) {
+        return "sudo password prompt timed out";
+    }
+    if (output.empty()) {
+        return "exit code " + std::to_string(result.exit_code);
+    }
+    return output;
+}
+
+std::string editor_command() {
+    const char* editor = std::getenv("GSYSTEMCTL_EDITOR");
+    return editor && *editor ? editor : "vim";
+}
+
+} // namespace
 
 LinuxServiceManager::LinuxServiceManager(std::shared_ptr<CommandExecutor> executor, bool system_mode)
     : executor_(std::move(executor)), system_mode_(system_mode) {}
@@ -233,6 +278,28 @@ std::pair<bool, std::string> LinuxServiceManager::toggle_service(const ServiceUn
         return stop_service(service.unit, password);
     }
     return start_service(service.unit, password);
+}
+
+std::pair<bool, std::string> LinuxServiceManager::daemon_reload(const std::string& password) {
+    auto result = system_mode_
+        ? executor_->execute_privileged("systemctl daemon-reload", password)
+        : executor_->execute("systemctl --user daemon-reload");
+    if (result.exit_code == 0) {
+        return {true, ""};
+    }
+    return {false, describe_failure(result)};
+}
+
+std::pair<bool, std::string> LinuxServiceManager::edit_service(const std::string& name) {
+    // `systemctl edit` copies the unit to /etc (or ~/.config) on first edit and
+    // runs daemon-reload after a successful save. `env` keeps SYSTEMD_EDITOR across sudo.
+    std::string command = "env SYSTEMD_EDITOR=" + shell_quote(editor_command()) +
+        (system_mode_ ? " systemctl" : " systemctl --user") + " edit --full " + shell_quote(name);
+    int exit_code = executor_->execute_interactive(command, system_mode_);
+    if (exit_code == 0) {
+        return {true, ""};
+    }
+    return {false, "systemctl edit exited with code " + std::to_string(exit_code)};
 }
 
 } // namespace gsystemctl

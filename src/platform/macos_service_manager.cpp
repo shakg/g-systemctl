@@ -80,4 +80,14 @@ std::pair<bool, std::string> MacOSServiceManager::toggle_service(const ServiceUn
     return start_service(service.unit, password);
 }
 
+std::pair<bool, std::string> MacOSServiceManager::daemon_reload(const std::string& password) {
+    (void)password;
+    return {true, ""};
+}
+
+std::pair<bool, std::string> MacOSServiceManager::edit_service(const std::string& name) {
+    (void)name;
+    return {false, "editing service files is not supported on macOS"};
+}
+
 } // namespace gsystemctl

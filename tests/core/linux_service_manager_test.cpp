@@ -46,6 +46,12 @@ public:
     bool can_execute_privileged_without_password() override {
         return true;
     }
+
+    int execute_interactive(const std::string& command, bool privileged) override {
+        (void)privileged;
+        commands.push_back(command);
+        return 0;
+    }
 };
 
 } // namespace

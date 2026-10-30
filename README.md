@@ -96,6 +96,8 @@ sudo g-systemctl
 | `Down` / `Alt+j` | Move selection down |
 | `Enter` | Toggle selected service (start/stop) |
 | `Alt+r` | Restart selected service |
+| `Alt+e` | Edit the selected service's unit file in vim (`systemctl edit --full`); set `GSYSTEMCTL_EDITOR` to use another editor |
+| `Alt+Shift+r` | Reload systemd (`systemctl daemon-reload`) |
 | `Alt+l` | Stream logs for selected service |
 | `Alt+c` | Close log stream |
 | `Page Up` / `Page Down` | Scroll the log stream by page |
@@ -111,6 +113,7 @@ sudo g-systemctl
 | Scroll up/down | Navigate the service list, or scroll the log panel when the pointer is over it |
 | Left click service | Select a service |
 | Left click action buttons | Toggle a service or open its logs |
+| Left click `Reload(Alt+R)` | Reload systemd |
 | Left click `Shortcuts(?)` | Show help |
 
 ## Command Line Options

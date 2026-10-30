@@ -10,6 +10,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace gsystemctl::ui
@@ -19,6 +20,7 @@ namespace gsystemctl::ui
     {
     public:
         App(bool system_mode = false, const std::string &initial_filter = "");
+        ~App();
         int run();
 
     private:
@@ -51,6 +53,7 @@ namespace gsystemctl::ui
             None,
             Toggle,
             Restart,
+            DaemonReload,
         };
         AuthAction pending_auth_action_ = AuthAction::None;
         ServiceUnit pending_auth_service_;
@@ -58,6 +61,11 @@ namespace gsystemctl::ui
         std::vector<ftxui::Box> toggle_button_boxes_;
         std::vector<ftxui::Box> log_button_boxes_;
         std::unique_ptr<LogStream> log_stream_;
+        ftxui::Box reload_button_box_;
+        // Set while a background operation runs; all input is ignored meanwhile.
+        bool busy_ = false;
+        std::string busy_message_;
+        std::thread worker_;
 
         void refresh_services();
         void apply_filter();
@@ -65,7 +73,10 @@ namespace gsystemctl::ui
         void restart_selected_service();
         void toggle_service(const ServiceUnit& service, const std::string& password = "");
         void restart_service(const ServiceUnit& service, const std::string& password = "");
-        void open_auth_dialog(AuthAction action, const ServiceUnit& service);
+        void request_daemon_reload();
+        void daemon_reload(const std::string& password = "");
+        void edit_selected_service();
+        void open_auth_dialog(AuthAction action, const ServiceUnit& service = ServiceUnit{});
         void submit_auth_dialog();
         void close_auth_dialog();
         void open_logs_for_selected_service();

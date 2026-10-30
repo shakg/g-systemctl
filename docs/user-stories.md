@@ -248,6 +248,111 @@ And only nginx-related services are displayed
 
 ---
 
+### Story CTL-004: Reload systemd Daemon [DONE]
+
+**Narrative**: As a system administrator, I want to run `systemctl daemon-reload` from the TUI, so that new or changed unit files take effect without typing the command in another shell.
+
+**Gherkin Scenarios**:
+
+**Scenario: Reload with a sudo password**
+```gherkin
+Given g-systemctl runs in system mode
+And sudo requires a password
+When I press Alt+Shift+r or click "Reload(Alt+R)" in the top bar
+Then the sudo password dialog opens
+When I enter the correct password
+Then a spinner with "Reloading systemd daemon..." is shown in the top bar
+And all keyboard and mouse input is ignored until the reload finishes
+And the status bar shows "Daemon reloaded successfully."
+And the service list is refreshed
+```
+
+**Scenario: Reload with passwordless sudo**
+```gherkin
+Given sudo does not require a password
+When I press Alt+Shift+r
+Then the reload runs without a password dialog
+And the status bar shows "Daemon reloaded successfully."
+```
+
+**Scenario: Incorrect sudo password**
+```gherkin
+Given the sudo password dialog is open for a daemon reload
+When I enter an incorrect password
+Then the status bar shows "Daemon reload failed: incorrect password" in red
+And the service list is not refreshed
+```
+
+**Scenario: User mode**
+```gherkin
+Given g-systemctl runs with --user
+When I press Alt+Shift+r
+Then "systemctl --user daemon-reload" runs without sudo
+```
+
+**Scenario: macOS**
+```gherkin
+Given g-systemctl runs on macOS
+Then the top bar shows "Reload (n/a on macOS)" dimmed
+When I press Alt+Shift+r or click it
+Then nothing happens
+```
+
+**Priority**: Should Have  
+**Dependencies**: CTL-003
+
+**Definition of Done**:
+- [x] All Gherkin scenarios implemented
+- [x] Unit tests for success, sudo failure and macOS no-op
+- [ ] Scenarios verified manually on a real systemd host and on macOS
+
+---
+
+### Story CTL-005: Edit a Service Unit File [DONE]
+
+**Narrative**: As a system administrator, I want to edit the selected service's unit file in vim from inside g-systemctl, so that I can change a service and return to the list without leaving the terminal.
+
+**Gherkin Scenarios**:
+
+**Scenario: Edit and save**
+```gherkin
+Given a service is selected
+When I press Alt+e
+Then the TUI is suspended and vim opens the full unit file in the same terminal (via "systemctl edit --full")
+And sudo prompts for a password in the terminal if needed (system mode)
+When I save and quit vim
+Then systemd reloads the unit files
+And g-systemctl returns with the service list refreshed
+And the status bar shows "Edited <unit> (daemon reloaded)"
+```
+
+**Scenario: Edit fails**
+```gherkin
+Given a service is selected
+When I press Alt+e
+And systemctl edit fails (e.g. wrong sudo password, no unit file)
+Then its error stays visible with "Press Enter to return to g-systemctl..."
+When I press Enter
+Then g-systemctl returns and shows the failure in red in the status bar
+```
+
+**Scenario: Custom editor**
+```gherkin
+Given GSYSTEMCTL_EDITOR is set to "nvim"
+When I press Alt+e
+Then nvim is used instead of vim
+```
+
+**Priority**: Should Have  
+**Dependencies**: CTL-004
+
+**Definition of Done**:
+- [x] All Gherkin scenarios implemented
+- [x] Unit tests for the generated systemctl edit command
+- [ ] Scenarios verified manually on a real systemd host
+
+---
+
 ## Epic: User Interface & Experience
 
 ### Story UI-001: Display Help Screen [DONE]

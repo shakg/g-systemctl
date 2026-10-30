@@ -1,6 +1,7 @@
 #include "g-systemctl/core/command_executor.hpp"
 #include <array>
 #include <cstdio>
+#include <cstdlib>
 #include <unistd.h>
 #include <sys/wait.h>
 
@@ -58,6 +59,15 @@ bool SystemCommandExecutor::can_execute_privileged_without_password() {
         return true;
     }
     return execute("sudo -n true").exit_code == 0;
+}
+
+int SystemCommandExecutor::execute_interactive(const std::string& command, bool privileged) {
+    std::string full_command = privileged && !is_root() ? "sudo " + command : command;
+    int status = std::system(full_command.c_str());
+    if (status == -1 || !WIFEXITED(status)) {
+        return -1;
+    }
+    return WEXITSTATUS(status);
 }
 
 bool SystemCommandExecutor::is_root() const {
