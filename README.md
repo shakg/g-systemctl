@@ -2,6 +2,7 @@
 
 ![Test Status](https://github.com/shakg/g-systemctl/actions/workflows/test.yml/badge.svg)
 ![Build Status](https://github.com/shakg/g-systemctl/actions/workflows/release.yml/badge.svg)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 g-systemctl is a terminal user interface (TUI) for managing system services on Linux and macOS. View, search, filter, and control your service daemons directly from the terminal.
 
@@ -126,3 +127,7 @@ g-systemctl --filter <text>     # Start with an initial filter
 ## Contributing
 
 Contributions are welcome! Please follow the [Contributing Guidelines](docs/CONTRIBUTING.md) for details on how to contribute to this project.
+
+## License
+
+g-systemctl is released under the [MIT License](LICENSE).
