@@ -22,6 +22,7 @@ https://github.com/user-attachments/assets/1608dc3a-20aa-46fd-b3ea-db577f4c197c
 - Mouse support (scroll to navigate, click to select)
 - Initial filter via command line argument (`-f` / `--filter`)
 - Stream service logs in the TUI via `journalctl`
+- Containers tab for Docker: list with live CPU/memory/PIDs, start/stop/restart, follow logs, inspect env/ports/mounts, and change resource limits and restart policy in place (`docker update`)
 
 ## Prerequisites
 
@@ -29,6 +30,7 @@ https://github.com/user-attachments/assets/1608dc3a-20aa-46fd-b3ea-db577f4c197c
 - C++17 compatible compiler (GCC 7+, Clang 5+)
 - Linux with systemd or macOS
 - `journalctl` for Linux service log streaming
+- Optional: the `docker` CLI and a reachable daemon for the Containers tab (Linux or Docker Desktop on macOS)
 
 ## Installation
 
@@ -103,8 +105,28 @@ sudo g-systemctl
 | `Page Up` / `Page Down` | Scroll the log stream by page |
 | `?` | Show/hide help |
 | `Alt+q` / `Esc` | Quit |
+| `Tab` / `Alt+1` / `Alt+2` | Switch between the Services and Containers tabs |
 | Type | Filter services by name |
 | `Backspace` | Delete filter character |
+
+### Containers Tab
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Start / stop the selected container |
+| `Alt+r` | Restart |
+| `Alt+l` | Follow logs (`docker logs -f --tail 200`) |
+| `Alt+i` | Inspect: image, command, limits, ports, networks, mounts, environment |
+| `Alt+u` | Edit CPUs, memory, memory+swap, PIDs limit and restart policy (`docker update`) |
+| `Alt+s` | Show/hide env values whose names look secret (PASSWORD, TOKEN, KEY, ...) |
+| `Alt+Shift+r` | Refresh now (the list refreshes every 2 seconds while the tab is open) |
+| `Alt+c` | Close the logs/inspect panel |
+
+Type to filter by container name, image or Compose project.
+
+Environment variables, ports and volumes cannot be changed on an existing container; Docker requires recreating it. Docker also cannot remove a CPU or memory limit in place, so clearing those fields is rejected. Clearing PIDs limit or memory+swap sets them to unlimited.
+
+If your user cannot reach the Docker socket, add it to the `docker` group or run g-systemctl with sudo. Set `GSYSTEMCTL_DOCKER` to use a different CLI binary.
 
 ### Mouse Support
 
@@ -115,6 +137,7 @@ sudo g-systemctl
 | Left click action buttons | Toggle a service or open its logs |
 | Left click `Reload(Alt+R)` | Reload systemd |
 | Left click `Shortcuts(?)` | Show help |
+| Left click `Services` / `Containers` | Switch tab |
 
 ## Command Line Options
 
@@ -125,6 +148,7 @@ g-systemctl --system            # Show system services (default)
 g-systemctl --user              # Show user services
 g-systemctl -f <text>           # Start with an initial filter
 g-systemctl --filter <text>     # Start with an initial filter
+g-systemctl --containers        # Open the Containers tab (-c)
 ```
 
 ## Contributing

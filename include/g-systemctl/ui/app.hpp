@@ -4,6 +4,8 @@
 #include "g-systemctl/core/logging_manager.hpp"
 #include "g-systemctl/core/service.hpp"
 #include "g-systemctl/core/command_executor.hpp"
+#include "g-systemctl/ui/containers_view.hpp"
+#include "g-systemctl/ui/log_panel.hpp"
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/screen/box.hpp>
@@ -19,7 +21,13 @@ namespace gsystemctl::ui
     class App
     {
     public:
-        App(bool system_mode = false, const std::string &initial_filter = "");
+        enum class Tab
+        {
+            Services,
+            Containers,
+        };
+
+        App(bool system_mode = false, const std::string &initial_filter = "", Tab initial_tab = Tab::Services);
         ~App();
         int run();
 
@@ -36,15 +44,13 @@ namespace gsystemctl::ui
         int selected_index_ = 0;
         std::string status_message_;
         std::string error_message_;
-        std::string log_unit_;
-        std::vector<std::string> log_lines_;
-        mutable std::mutex log_mutex_;
-        bool log_panel_open_ = false;
-        int log_scroll_position_ = 0;
-        bool log_follow_tail_ = true;
+        LogPanel service_logs_;
         bool show_help_ = false;
         ftxui::Box shortcuts_box_;
-        ftxui::Box log_panel_box_;
+        Tab active_tab_ = Tab::Services;
+        std::unique_ptr<ContainersView> containers_view_;
+        ftxui::Box services_tab_box_;
+        ftxui::Box containers_tab_box_;
         bool auth_dialog_open_ = false;
         std::string auth_password_;
         std::string auth_dialog_message_;
@@ -60,7 +66,6 @@ namespace gsystemctl::ui
         std::vector<ftxui::Box> item_boxes_;
         std::vector<ftxui::Box> toggle_button_boxes_;
         std::vector<ftxui::Box> log_button_boxes_;
-        std::unique_ptr<LogStream> log_stream_;
         ftxui::Box reload_button_box_;
         // Set while a background operation runs; all input is ignored meanwhile.
         bool busy_ = false;
@@ -81,14 +86,15 @@ namespace gsystemctl::ui
         void close_auth_dialog();
         void open_logs_for_selected_service();
         void close_logs();
-        void scroll_logs(int delta);
+        void switch_tab(Tab tab);
+        bool handle_services_event(ftxui::Event event);
         ftxui::Component create_main_component();
         ftxui::Element render();
         ftxui::Element render_top_bar();
+        ftxui::Element render_tabs();
         ftxui::Element render_shortcuts_dialog();
         ftxui::Element render_service_list();
         ftxui::Element render_log_panel();
-        ftxui::Element render_status_bar();
         ftxui::Element render_help();
     };
 

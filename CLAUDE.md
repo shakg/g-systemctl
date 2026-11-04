@@ -33,12 +33,19 @@ g-systemctl/
 │   │   ├── service.hpp         # ServiceUnit data structure
 │   │   ├── service_manager.hpp # Abstract service manager interface
 │   │   └── command_executor.hpp # Shell command execution
+│   ├── container/              # Container runtime support
+│   │   ├── container.hpp       # Container, ContainerDetails, resource-limit diffing
+│   │   ├── container_manager.hpp # Abstract container runtime interface
+│   │   └── docker_container_manager.hpp # docker CLI implementation
 │   ├── platform/               # Platform-specific implementations
 │   │   ├── platform.hpp        # Platform detection
 │   │   ├── linux_service_manager.hpp
 │   │   └── macos_service_manager.hpp
 │   └── ui/
-│       ├── app.hpp             # Main application class
+│       ├── app.hpp             # Main application class, tabs
+│       ├── containers_view.hpp # Containers tab
+│       ├── log_panel.hpp       # Scrollable log panel shared by both tabs
+│       ├── theme.hpp           # Palette and table-cell helpers
 │       └── styles.hpp          # UI styling/colors
 └── src/                        # Implementation files
 ```
@@ -49,7 +56,10 @@ g-systemctl/
 - `LinuxServiceManager` - Uses `systemctl list-units` and `systemctl start/stop`
 - `MacOSServiceManager` - Uses `launchctl list` and `launchctl load/unload`
 - `CommandExecutor` - Wraps shell command execution, handles sudo for privileged operations
-- `App` - FTXUI-based TUI with service list, filtering, and keyboard navigation
+- `ContainerManager` - Abstract container runtime interface. `DockerContainerManager` drives the `docker` CLI with tab-separated Go-template `--format` output (no JSON dependency)
+- `ProcessLogStream` - Runs a command and streams its output lines from a background thread (journalctl, docker logs)
+- `App` - FTXUI-based TUI with Services and Containers tabs, filtering, and keyboard navigation
+- `ContainersView` - Containers tab. A poller thread refreshes `docker ps`/`docker stats` every 2s while the tab is visible; actions run on a worker thread and post results back with `ScreenInteractive::Post`
 
 **FTXUI Components Used:**
 - `ScreenInteractive::Fullscreen()` for terminal control

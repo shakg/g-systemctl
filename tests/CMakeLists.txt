@@ -14,7 +14,11 @@ file(GLOB_RECURSE PLATFORM_SOURCES
     ${PROJECT_SOURCE_DIR}/src/platform/*.cpp
 )
 
-add_executable(g-systemctl-tests ${TEST_SOURCES} ${CORE_SOURCES} ${PLATFORM_SOURCES})
+file(GLOB_RECURSE CONTAINER_SOURCES
+    ${PROJECT_SOURCE_DIR}/src/container/*.cpp
+)
+
+add_executable(g-systemctl-tests ${TEST_SOURCES} ${CORE_SOURCES} ${PLATFORM_SOURCES} ${CONTAINER_SOURCES})
 
 target_include_directories(g-systemctl-tests PRIVATE
     ${PROJECT_SOURCE_DIR}/include
