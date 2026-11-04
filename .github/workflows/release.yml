@@ -25,11 +25,23 @@ jobs:
 
   build-linux:
     needs: version
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            deb_arch: amd64
+            runner: ubuntu-latest
+          - arch: aarch64
+            deb_arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     # Build against an old glibc so the binary and .deb run on Ubuntu 22.04+ and Debian 12+.
     container: ubuntu:22.04
     env:
       VERSION: ${{ needs.version.outputs.version }}
+      ARCH: ${{ matrix.arch }}
+      DEB_ARCH: ${{ matrix.deb_arch }}
 
     steps:
       - name: Install dependencies
@@ -53,34 +65,37 @@ jobs:
         run: |
           mkdir -p "dist/g-systemctl-$VERSION"
           install -m 755 build/g-systemctl "dist/g-systemctl-$VERSION/g-systemctl"
-          tar -czf dist/g-systemctl-linux-x86_64.tar.gz -C dist "g-systemctl-$VERSION"
+          tar -czf "dist/g-systemctl-linux-$ARCH.tar.gz" -C dist "g-systemctl-$VERSION"
           rm -rf "dist/g-systemctl-$VERSION"
 
           (cd build && cpack -G DEB)
-          cp build/*.deb dist/g-systemctl-linux-amd64.deb
+          cp build/*.deb "dist/g-systemctl-linux-$DEB_ARCH.deb"
 
       - name: Verify packages install the way the README says
         shell: bash
         run: |
           set -x
-          dpkg-deb -I dist/g-systemctl-linux-amd64.deb
-          dpkg-deb -c dist/g-systemctl-linux-amd64.deb
-          apt-get install -y ./dist/g-systemctl-linux-amd64.deb
+          deb="dist/g-systemctl-linux-$DEB_ARCH.deb"
+          dpkg-deb -I "$deb"
+          dpkg-deb -c "$deb"
+          test "$(dpkg-deb -f "$deb" Architecture)" = "$DEB_ARCH"
+          file build/g-systemctl
+          apt-get install -y "./$deb"
           g-systemctl --version | grep -F "$VERSION"
           apt-get remove -y g-systemctl
 
           tmp="$(mktemp -d)"
-          tar -xzf dist/g-systemctl-linux-x86_64.tar.gz -C "$tmp"
+          tar -xzf "dist/g-systemctl-linux-$ARCH.tar.gz" -C "$tmp"
           install -m 755 "$tmp"/g-systemctl-*/g-systemctl /usr/local/bin/g-systemctl
           g-systemctl --version | grep -F "$VERSION"
 
       - name: Generate checksums
-        run: cd dist && sha256sum * > SHA256SUMS-linux-x86_64.txt
+        run: cd dist && sha256sum * > "SHA256SUMS-linux-$ARCH.txt"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: g-systemctl-linux-x86_64
+          name: g-systemctl-linux-${{ matrix.arch }}
           path: dist/*
           if-no-files-found: error
 
@@ -150,7 +165,13 @@ jobs:
       - name: Generate combined checksums
         run: |
           cd artifacts
-          sha256sum g-systemctl-linux-x86_64.tar.gz g-systemctl-macos.tar.gz g-systemctl-linux-amd64.deb g-systemctl.rb > SHA256SUMS.txt
+          sha256sum \
+            g-systemctl-linux-x86_64.tar.gz \
+            g-systemctl-linux-aarch64.tar.gz \
+            g-systemctl-macos.tar.gz \
+            g-systemctl-linux-amd64.deb \
+            g-systemctl-linux-arm64.deb \
+            g-systemctl.rb > SHA256SUMS.txt
 
       # Works whether or not a release for this tag was already created by hand.
       - name: Create or update release
@@ -160,9 +181,12 @@ jobs:
           fi
           gh release upload "$TAG" --clobber \
             artifacts/g-systemctl-linux-x86_64.tar.gz \
+            artifacts/g-systemctl-linux-aarch64.tar.gz \
             artifacts/g-systemctl-macos.tar.gz \
             artifacts/g-systemctl-linux-amd64.deb \
+            artifacts/g-systemctl-linux-arm64.deb \
             artifacts/g-systemctl.rb \
             artifacts/SHA256SUMS.txt \
             artifacts/SHA256SUMS-linux-x86_64.txt \
+            artifacts/SHA256SUMS-linux-aarch64.txt \
             artifacts/SHA256SUMS-macos.txt
