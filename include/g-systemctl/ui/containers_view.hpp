@@ -78,6 +78,14 @@ namespace gsystemctl::ui
 
         Panel panel_ = Panel::None;
         LogPanel logs_;
+        // Container the log panel follows. `docker logs -f` exits when the
+        // container stops, so the stream is reattached once it runs again.
+        std::string logs_id_;
+        std::string logs_name_;
+        // Bumped on every attach/detach; end notifications from older streams are ignored.
+        int logs_generation_ = 0;
+        bool logs_waiting_ = false;
+        std::string logs_ended_at_;
         ContainerDetails details_;
         int details_scroll_ = 0;
         int details_line_count_ = 0;
@@ -116,6 +124,12 @@ namespace gsystemctl::ui
         void toggle_selected();
         void restart_selected();
         void open_logs();
+        // `resume`: reattaching after the container restarted.
+        void attach_logs(int tail, const std::string &since, bool resume);
+        void stop_logs();
+        void on_logs_ended(int generation, const std::string &ended_at, bool quiet_retry);
+        // `listed_at`: when the container list was fetched (unix time).
+        void reattach_logs_if_running(const std::string &listed_at);
         void open_details();
         void reload_details();
         void close_panel();

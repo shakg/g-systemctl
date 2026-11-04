@@ -1,6 +1,7 @@
 #pragma once
 
 #include "g-systemctl/core/logging_manager.hpp"
+#include <functional>
 #include <string>
 #include <sys/types.h>
 #include <thread>
@@ -13,8 +14,13 @@ namespace gsystemctl {
 // process and joins the reader thread.
 class ProcessLogStream : public LogStream {
 public:
-    // Throws std::runtime_error if the process cannot be started.
-    ProcessLogStream(const std::vector<std::string>& argv, LoggingManager::LogCallback on_line);
+    using ExitCallback = std::function<void()>;
+
+    // Throws std::runtime_error if the process cannot be started. `on_exit`
+    // runs on the reader thread once output ends, whether the process exited
+    // by itself or was terminated by the destructor.
+    ProcessLogStream(const std::vector<std::string>& argv, LoggingManager::LogCallback on_line,
+                     ExitCallback on_exit = {});
     ~ProcessLogStream() override;
 
     ProcessLogStream(const ProcessLogStream&) = delete;
@@ -27,6 +33,7 @@ private:
     int read_fd_ = -1;
     std::thread reader_;
     LoggingManager::LogCallback on_line_;
+    ExitCallback on_exit_;
 };
 
 } // namespace gsystemctl

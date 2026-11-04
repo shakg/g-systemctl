@@ -166,6 +166,14 @@ TEST(DockerContainerManagerTest, BuildsUpdateCommandWithOnlySetFlags) {
     EXPECT_TRUE(executor->commands.empty());
 }
 
+TEST(DockerContainerManagerTest, BuildsLogsArgv) {
+    DockerContainerManager manager(std::make_shared<FakeExecutor>());
+    EXPECT_EQ(manager.build_logs_argv("web", 200, ""),
+              (std::vector<std::string>{"docker", "logs", "-f", "--tail", "200", "web"}));
+    EXPECT_EQ(manager.build_logs_argv("web", -1, "1730700000.5"),
+              (std::vector<std::string>{"docker", "logs", "-f", "--tail", "all", "--since", "1730700000.5", "web"}));
+}
+
 TEST(ContainerFormatTest, FormatsFlagValues) {
     EXPECT_EQ(format_cpus(0), "");
     EXPECT_EQ(format_cpus(500000000), "0.5");
@@ -232,6 +240,19 @@ TEST(ProcessLogStreamTest, DeliversLinesFromChildProcess) {
     ASSERT_EQ(lines.size(), 3u);
     EXPECT_EQ(lines[0], "one");
     EXPECT_EQ(lines[2], "three");
+}
+
+TEST(ProcessLogStreamTest, CallsOnExitWhenProcessEnds) {
+    std::mutex mutex;
+    std::condition_variable cv;
+    bool exited = false;
+    ProcessLogStream stream({"true"}, [](std::string) {}, [&] {
+        std::lock_guard<std::mutex> lock(mutex);
+        exited = true;
+        cv.notify_all();
+    });
+    std::unique_lock<std::mutex> lock(mutex);
+    EXPECT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return exited; }));
 }
 
 TEST(ProcessLogStreamTest, DestructorStopsLongRunningProcess) {

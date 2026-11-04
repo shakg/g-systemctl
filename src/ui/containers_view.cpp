@@ -2,8 +2,10 @@
 #include "g-systemctl/ui/styles.hpp"
 #include "g-systemctl/ui/theme.hpp"
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <chrono>
+#include <cstdio>
 #include <ftxui/component/component_options.hpp>
 
 using namespace ftxui;
@@ -60,6 +62,18 @@ namespace gsystemctl::ui
                 text(" " + label) | color(HeaderColor()) | size(WIDTH, EQUAL, 16),
                 paragraph(value.empty() ? "-" : value) | color(fg) | flex,
             });
+        }
+
+        // Unix timestamp with nanoseconds, the format `docker logs --since` takes.
+        std::string unix_time_now()
+        {
+            auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                          std::chrono::system_clock::now().time_since_epoch())
+                          .count();
+            char buffer[32];
+            std::snprintf(buffer, sizeof(buffer), "%lld.%09lld", static_cast<long long>(ns / 1000000000),
+                          static_cast<long long>(ns % 1000000000));
+            return buffer;
         }
 
         std::string limit_text(const std::string &value, const std::string &unlimited = "unlimited")
@@ -150,9 +164,11 @@ namespace gsystemctl::ui
 
         try
         {
+            auto listed_at = unix_time_now();
             auto containers = manager_->list_containers();
-            screen_.Post([this, containers = std::move(containers)]() mutable {
+            screen_.Post([this, containers = std::move(containers), listed_at]() mutable {
                 set_containers(std::move(containers));
+                reattach_logs_if_running(listed_at);
             });
             screen_.PostEvent(Event::Custom);
         }
@@ -323,14 +339,85 @@ namespace gsystemctl::ui
         if (!c)
             return;
         panel_ = Panel::Logs;
+        logs_id_ = c->id;
+        logs_name_ = c->name;
         logs_.open(c->name + " (" + c->id + ")",
                    "Starting: " + manager_->runtime_name() + " logs -f --tail " + std::to_string(kLogTail) + " " + c->name);
-        auto stream = manager_->stream_logs(c->id, kLogTail, logs_.sink());
+        attach_logs(kLogTail, "", false);
+    }
+
+    void ContainersView::attach_logs(int tail, const std::string &since, bool resume)
+    {
+        const int generation = ++logs_generation_;
+        logs_waiting_ = false;
+        // Docker can report a container as running for a moment after its log
+        // stream closed, so a resumed stream may end at once with no output.
+        // Announce the restart only once output actually arrives.
+        auto got_line = std::make_shared<std::atomic<bool>>(false);
+        auto announce = resume ? "── " + logs_name_ + " started ──" : std::string();
+        auto on_line = [this, got_line, announce](std::string line) {
+            if (!got_line->exchange(true) && !announce.empty())
+                logs_.append(announce);
+            logs_.append(std::move(line));
+        };
+        auto on_end = [this, generation, got_line, resume] {
+            auto ended_at = unix_time_now();
+            bool quiet_retry = resume && !got_line->load();
+            screen_.Post([this, generation, ended_at, quiet_retry] { on_logs_ended(generation, ended_at, quiet_retry); });
+            screen_.PostEvent(Event::Custom);
+        };
+        auto stream = manager_->stream_logs(logs_id_, tail, since, on_line, on_end);
         if (!stream)
         {
             error_message_ = "Unable to start log stream";
         }
         logs_.attach(std::move(stream));
+    }
+
+    void ContainersView::stop_logs()
+    {
+        ++logs_generation_;
+        logs_waiting_ = false;
+        logs_id_.clear();
+        logs_name_.clear();
+        logs_.close();
+    }
+
+    void ContainersView::on_logs_ended(int generation, const std::string &ended_at, bool quiet_retry)
+    {
+        if (generation != logs_generation_ || panel_ != Panel::Logs)
+            return;
+        logs_waiting_ = true;
+        if (quiet_retry)
+        {
+            // Keep the original end time so no lines are skipped; retry on the next poll.
+            return;
+        }
+        logs_ended_at_ = ended_at;
+        logs_.append("── " + logs_name_ + " is not running; logs resume when it starts ──");
+        refresh_now();
+    }
+
+    void ContainersView::reattach_logs_if_running(const std::string &listed_at)
+    {
+        // A list fetched before the stream ended may still show the container running.
+        if (panel_ != Panel::Logs || !logs_waiting_ || std::stold(listed_at) <= std::stold(logs_ended_at_))
+            return;
+        auto it = std::find_if(containers_.begin(), containers_.end(),
+                               [this](const Container &c) { return c.id == logs_id_; });
+        if (it == containers_.end())
+        {
+            // Recreated (e.g. `docker compose up`): same name, new ID.
+            it = std::find_if(containers_.begin(), containers_.end(),
+                              [this](const Container &c) { return c.name == logs_name_; });
+            if (it == containers_.end())
+                return;
+            logs_id_ = it->id;
+            logs_.set_title(it->name + " (" + it->id + ")");
+        }
+        if (!it->is_running())
+            return;
+        attach_logs(-1, logs_ended_at_, true);
     }
 
     void ContainersView::open_details()
@@ -343,7 +430,7 @@ namespace gsystemctl::ui
             details_ = manager_->inspect(c->id);
             if (details_.id.size() > 12)
                 details_.id.resize(12);
-            logs_.close();
+            stop_logs();
             panel_ = Panel::Details;
             details_scroll_ = 0;
         }
@@ -372,7 +459,7 @@ namespace gsystemctl::ui
 
     void ContainersView::close_panel()
     {
-        logs_.close();
+        stop_logs();
         panel_ = Panel::None;
         details_ = ContainerDetails{};
     }

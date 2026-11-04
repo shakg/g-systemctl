@@ -10,8 +10,9 @@
 
 namespace gsystemctl {
 
-ProcessLogStream::ProcessLogStream(const std::vector<std::string>& argv, LoggingManager::LogCallback on_line)
-    : on_line_(std::move(on_line)) {
+ProcessLogStream::ProcessLogStream(const std::vector<std::string>& argv, LoggingManager::LogCallback on_line,
+                                   ExitCallback on_exit)
+    : on_line_(std::move(on_line)), on_exit_(std::move(on_exit)) {
     if (argv.empty()) {
         throw std::runtime_error("empty command");
     }
@@ -99,6 +100,9 @@ void ProcessLogStream::read_loop() {
     }
     close(read_fd_);
     read_fd_ = -1;
+    if (on_exit_) {
+        on_exit_();
+    }
 }
 
 } // namespace gsystemctl

@@ -28,6 +28,7 @@ namespace gsystemctl::ui
         LoggingManager::LogCallback sink();
         void append(std::string line);
         void close();
+        void set_title(const std::string &title);
 
         bool is_open() const;
         void scroll(int delta);

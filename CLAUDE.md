@@ -59,7 +59,7 @@ g-systemctl/
 - `ContainerManager` - Abstract container runtime interface. `DockerContainerManager` drives the `docker` CLI with tab-separated Go-template `--format` output (no JSON dependency)
 - `ProcessLogStream` - Runs a command and streams its output lines from a background thread (journalctl, docker logs)
 - `App` - FTXUI-based TUI with Services and Containers tabs, filtering, and keyboard navigation
-- `ContainersView` - Containers tab. A poller thread refreshes `docker ps`/`docker stats` every 2s while the tab is visible; actions run on a worker thread and post results back with `ScreenInteractive::Post`
+- `ContainersView` - Containers tab. A poller thread refreshes `docker ps`/`docker stats` every 2s while the tab is visible; actions run on a worker thread and post results back with `ScreenInteractive::Post`. `docker logs -f` exits when a container stops, so the log panel reattaches with `--since` once the container (or a recreated one with the same name) is running again
 
 **FTXUI Components Used:**
 - `ScreenInteractive::Fullscreen()` for terminal control

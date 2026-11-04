@@ -201,11 +201,21 @@ ContainerManager::Result DockerContainerManager::update_resources(const std::str
     return {true, ""};
 }
 
-std::unique_ptr<LogStream> DockerContainerManager::stream_logs(const std::string& id, int tail,
-                                                               LoggingManager::LogCallback on_line) {
+std::vector<std::string> DockerContainerManager::build_logs_argv(const std::string& id, int tail,
+                                                                 const std::string& since) const {
+    std::vector<std::string> argv = {binary_, "logs", "-f", "--tail", tail < 0 ? "all" : std::to_string(tail)};
+    if (!since.empty()) {
+        argv.insert(argv.end(), {"--since", since});
+    }
+    argv.push_back(id);
+    return argv;
+}
+
+std::unique_ptr<LogStream> DockerContainerManager::stream_logs(const std::string& id, int tail, const std::string& since,
+                                                               LoggingManager::LogCallback on_line,
+                                                               std::function<void()> on_end) {
     try {
-        return std::make_unique<ProcessLogStream>(
-            std::vector<std::string>{binary_, "logs", "-f", "--tail", std::to_string(tail), id}, on_line);
+        return std::make_unique<ProcessLogStream>(build_logs_argv(id, tail, since), on_line, std::move(on_end));
     } catch (const std::exception& e) {
         if (on_line) {
             on_line(std::string("Unable to start ") + binary_ + " logs: " + e.what());

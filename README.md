@@ -115,7 +115,7 @@ sudo g-systemctl
 |-----|--------|
 | `Enter` | Start / stop the selected container |
 | `Alt+r` | Restart |
-| `Alt+l` | Follow logs (`docker logs -f --tail 200`) |
+| `Alt+l` | Follow logs (`docker logs -f --tail 200`); keeps following across restarts and recreates with the same name |
 | `Alt+i` | Inspect: image, command, limits, ports, networks, mounts, environment |
 | `Alt+u` | Edit CPUs, memory, memory+swap, PIDs limit and restart policy (`docker update`) |
 | `Alt+s` | Show/hide env values whose names look secret (PASSWORD, TOKEN, KEY, ...) |

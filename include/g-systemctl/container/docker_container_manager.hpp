@@ -21,14 +21,16 @@ public:
     Result stop(const std::string& id) override;
     Result restart(const std::string& id) override;
     Result update_resources(const std::string& id, const ResourceUpdate& update) override;
-    std::unique_ptr<LogStream> stream_logs(const std::string& id, int tail,
-                                           LoggingManager::LogCallback on_line) override;
+    std::unique_ptr<LogStream> stream_logs(const std::string& id, int tail, const std::string& since,
+                                           LoggingManager::LogCallback on_line,
+                                           std::function<void()> on_end) override;
 
     // Exposed for tests.
     static std::vector<Container> parse_ps_output(const std::string& output);
     static std::map<std::string, ContainerStats> parse_stats_output(const std::string& output);
     static ContainerDetails parse_inspect_output(const std::string& output);
     std::string build_update_command(const std::string& id, const ResourceUpdate& update) const;
+    std::vector<std::string> build_logs_argv(const std::string& id, int tail, const std::string& since) const;
 
 private:
     Result run_simple(const std::string& args);

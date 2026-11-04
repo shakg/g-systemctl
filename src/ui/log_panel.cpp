@@ -70,6 +70,12 @@ namespace gsystemctl::ui
         follow_tail_ = true;
     }
 
+    void LogPanel::set_title(const std::string &title)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        title_ = title;
+    }
+
     bool LogPanel::is_open() const
     {
         std::lock_guard<std::mutex> lock(mutex_);

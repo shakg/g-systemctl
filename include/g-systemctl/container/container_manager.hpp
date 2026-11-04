@@ -3,6 +3,7 @@
 #include "g-systemctl/container/container.hpp"
 #include "g-systemctl/core/command_executor.hpp"
 #include "g-systemctl/core/logging_manager.hpp"
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -41,9 +42,13 @@ public:
     // Applies limits to a running or stopped container without recreating it.
     virtual Result update_resources(const std::string& id, const ResourceUpdate& update) = 0;
 
-    // Follows the container's logs, starting with the last `tail` lines.
-    virtual std::unique_ptr<LogStream> stream_logs(const std::string& id, int tail,
-                                                   LoggingManager::LogCallback on_line) = 0;
+    // Follows the container's logs, starting with the last `tail` lines
+    // (tail < 0: all). A non-empty `since` (unix timestamp) skips older lines.
+    // The runtime stops following when the container stops; `on_end` runs on
+    // a background thread when that happens or the stream is destroyed.
+    virtual std::unique_ptr<LogStream> stream_logs(const std::string& id, int tail, const std::string& since,
+                                                   LoggingManager::LogCallback on_line,
+                                                   std::function<void()> on_end) = 0;
 
     // Uses $GSYSTEMCTL_DOCKER as the CLI binary if set, otherwise "docker".
     static std::unique_ptr<ContainerManager> create(std::shared_ptr<CommandExecutor> executor);
