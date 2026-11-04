@@ -311,26 +311,87 @@ namespace gsystemctl::ui
         });
     }
 
-    void ContainersView::toggle_selected()
+    const Container *ContainersView::action_target() const
     {
-        const auto *c = selected();
-        if (!c)
-            return;
-        auto container = *c;
-        bool stopping = container.is_active();
-        run_action((stopping ? "Stopping " : "Starting ") + container.name + "...",
-                   [this, container] { return manager_->toggle(container); },
-                   (stopping ? "Stopped " : "Started ") + container.name);
+        auto find = [this](auto pred) -> const Container * {
+            auto it = std::find_if(containers_.begin(), containers_.end(), pred);
+            return it == containers_.end() ? nullptr : &*it;
+        };
+        switch (panel_)
+        {
+        case Panel::Logs:
+            if (const auto *c = find([this](const Container &c) { return c.id == logs_id_; }))
+                return c;
+            // Recreated with a new ID and not reattached yet.
+            return find([this](const Container &c) { return c.name == logs_name_; });
+        case Panel::Details:
+            return find([this](const Container &c) { return c.id == details_target_id_; });
+        case Panel::None:
+            break;
+        }
+        return selected();
     }
 
-    void ContainersView::restart_selected()
+    void ContainersView::start_target()
     {
-        const auto *c = selected();
+        const auto *c = action_target();
         if (!c)
             return;
+        clear_messages();
+        if (c->is_active())
+        {
+            status_message_ = c->name + " is already running";
+            return;
+        }
         auto id = c->id;
         auto name = c->name;
-        run_action("Restarting " + name + "...", [this, id] { return manager_->restart(id); }, "Restarted " + name);
+        run_action("Starting " + name + "...", [this, id] { return manager_->start(id); }, "Started " + name);
+    }
+
+    void ContainersView::stop_target()
+    {
+        const auto *c = action_target();
+        if (!c)
+            return;
+        clear_messages();
+        if (!c->is_active())
+        {
+            status_message_ = c->name + " is not running (Alt+o to start)";
+            return;
+        }
+        if (!confirm_)
+        {
+            error_message_ = "Stop needs confirmation, which is unavailable";
+            return;
+        }
+        auto id = c->id;
+        auto name = c->name;
+        confirm_("Stop container " + name + "?", "Stop", [this, id, name] {
+            run_action("Stopping " + name + "...", [this, id] { return manager_->stop(id); }, "Stopped " + name);
+        });
+    }
+
+    void ContainersView::restart_target()
+    {
+        const auto *c = action_target();
+        if (!c)
+            return;
+        clear_messages();
+        if (!c->is_active())
+        {
+            status_message_ = c->name + " is not running (Alt+o to start)";
+            return;
+        }
+        if (!confirm_)
+        {
+            error_message_ = "Restart needs confirmation, which is unavailable";
+            return;
+        }
+        auto id = c->id;
+        auto name = c->name;
+        confirm_("Restart container " + name + "?", "Restart", [this, id, name] {
+            run_action("Restarting " + name + "...", [this, id] { return manager_->restart(id); }, "Restarted " + name);
+        });
     }
 
     void ContainersView::open_logs()
@@ -338,6 +399,10 @@ namespace gsystemctl::ui
         const auto *c = selected();
         if (!c)
             return;
+        if (panel_ == Panel::Logs && logs_id_ == c->id)
+            return;
+        clear_messages();
+        details_target_id_.clear();
         panel_ = Panel::Logs;
         logs_id_ = c->id;
         logs_name_ = c->name;
@@ -430,6 +495,7 @@ namespace gsystemctl::ui
             details_ = manager_->inspect(c->id);
             if (details_.id.size() > 12)
                 details_.id.resize(12);
+            details_target_id_ = c->id;
             stop_logs();
             panel_ = Panel::Details;
             details_scroll_ = 0;
@@ -462,6 +528,7 @@ namespace gsystemctl::ui
         stop_logs();
         panel_ = Panel::None;
         details_ = ContainerDetails{};
+        details_target_id_.clear();
     }
 
     void ContainersView::scroll_details(int delta)
@@ -656,24 +723,29 @@ namespace gsystemctl::ui
         }
 
         // Actions are ignored while a previous one is still running.
-        const bool is_action = event == Event::Return || event == Event::Special("\x1b" "r") ||
-                               event == Event::Special("\x1b" "u");
+        const bool is_action = event == Event::Special("\x1b" "o") || event == Event::Special("\x1b" "x") ||
+                               event == Event::Special("\x1b" "r") || event == Event::Special("\x1b" "u");
         if (is_action && busy_)
             return true;
 
-        if (event == Event::Return)
+        if (event == Event::Return || event == Event::Special("\x1b" "l"))
         {
-            toggle_selected();
+            open_logs();
+            return true;
+        }
+        if (event == Event::Special("\x1b" "o"))
+        {
+            start_target();
+            return true;
+        }
+        if (event == Event::Special("\x1b" "x"))
+        {
+            stop_target();
             return true;
         }
         if (event == Event::Special("\x1b" "r"))
         {
-            restart_selected();
-            return true;
-        }
-        if (event == Event::Special("\x1b" "l"))
-        {
-            open_logs();
+            restart_target();
             return true;
         }
         if (event == Event::Special("\x1b" "i"))
@@ -703,12 +775,11 @@ namespace gsystemctl::ui
         if (event.is_mouse())
         {
             auto &mouse = event.mouse();
-            bool in_panel = (panel_ == Panel::Logs && logs_.contains(mouse.x, mouse.y)) ||
-                            (panel_ == Panel::Details && details_box_.Contain(mouse.x, mouse.y));
             if (mouse.button == Mouse::WheelUp || mouse.button == Mouse::WheelDown)
             {
                 int delta = mouse.button == Mouse::WheelUp ? -1 : 1;
-                if (in_panel)
+                // While a panel is open the list only shows its container, so the wheel scrolls the panel.
+                if (panel_open)
                     scroll_panel(delta * 3);
                 else
                     select(selected_index_ + delta);
@@ -716,6 +787,27 @@ namespace gsystemctl::ui
             }
             if (mouse.button == Mouse::Left && mouse.motion == Mouse::Pressed)
             {
+                switch (actions_.hit(mouse.x, mouse.y))
+                {
+                case ActionBar::Action::Start:
+                    if (!busy_)
+                        start_target();
+                    return true;
+                case ActionBar::Action::Stop:
+                    if (!busy_)
+                        stop_target();
+                    return true;
+                case ActionBar::Action::Restart:
+                    if (!busy_)
+                        restart_target();
+                    return true;
+                case ActionBar::Action::Close:
+                    close_panel();
+                    clear_messages();
+                    return true;
+                case ActionBar::Action::None:
+                    break;
+                }
                 for (size_t i = 0; i < item_boxes_.size(); ++i)
                 {
                     if (item_boxes_[i].Contain(mouse.x, mouse.y))
@@ -732,8 +824,18 @@ namespace gsystemctl::ui
 
     // ---- rendering -------------------------------------------------------------
 
+    Element ContainersView::render_actions()
+    {
+        const auto *c = action_target();
+        if (!c)
+            return actions_.render("✕ removed", Colors::error_fg(), false);
+        auto style = state_style(c->state);
+        return actions_.render(style.label, style.fg, c->is_active());
+    }
+
     Element ContainersView::render_body()
     {
+        actions_.hide();
         if (!checked_)
         {
             return text("Connecting to " + manager_->runtime_name() + "...") | color(MutedColor()) | center | flex;
@@ -757,7 +859,7 @@ namespace gsystemctl::ui
             return vbox({
                        render_list() | size(HEIGHT, EQUAL, 2),
                        separator() | color(BorderColor()),
-                       logs_.render() | size(HEIGHT, GREATER_THAN, 8) | flex,
+                       logs_.render(render_actions()) | size(HEIGHT, GREATER_THAN, 8) | flex,
                    }) |
                    flex;
         case Panel::Details:
@@ -894,7 +996,7 @@ namespace gsystemctl::ui
                        text(" DETAILS ") | color(HeaderColor()),
                        text(d.name) | color(WarningColor()),
                        filler(),
-                       text("Alt+c close ") | color(MutedColor()),
+                       render_actions(),
                    }),
                    separator() | color(BorderColor()),
                    vbox(Elements(lines.begin() + details_scroll_, lines.end())) | yframe | flex,

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "g-systemctl/container/container_manager.hpp"
+#include "g-systemctl/ui/action_bar.hpp"
 #include "g-systemctl/ui/log_panel.hpp"
 #include <condition_variable>
 #include <ftxui/component/component.hpp>
@@ -22,6 +23,10 @@ namespace gsystemctl::ui
     class ContainersView
     {
     public:
+        // Shows a yes/no prompt; `on_confirm` runs on the UI thread if accepted.
+        using ConfirmFn = std::function<void(const std::string &question, const std::string &confirm_label,
+                                             std::function<void()> on_confirm)>;
+
         ContainersView(ftxui::ScreenInteractive &screen, std::shared_ptr<ContainerManager> manager);
         ~ContainersView();
 
@@ -32,6 +37,10 @@ namespace gsystemctl::ui
         void set_active(bool active);
         void set_filter(const std::string &filter);
         void refresh_now();
+        // Stop and restart go through this prompt; without one they are refused.
+        void set_confirm(ConfirmFn confirm) { confirm_ = std::move(confirm); }
+        bool panel_open() const { return panel_ != Panel::None; }
+        void close_panel();
 
         // Returns true if the event was consumed.
         bool handle_event(ftxui::Event event);
@@ -59,6 +68,7 @@ namespace gsystemctl::ui
 
         ftxui::ScreenInteractive &screen_;
         std::shared_ptr<ContainerManager> manager_;
+        ConfirmFn confirm_;
 
         // UI-thread state.
         bool available_ = false;
@@ -87,6 +97,9 @@ namespace gsystemctl::ui
         bool logs_waiting_ = false;
         std::string logs_ended_at_;
         ContainerDetails details_;
+        // Full ID of the inspected container (details_.id is shortened for display).
+        std::string details_target_id_;
+        ActionBar actions_;
         int details_scroll_ = 0;
         int details_line_count_ = 0;
         bool show_secrets_ = false;
@@ -121,8 +134,12 @@ namespace gsystemctl::ui
 
         void run_action(const std::string &busy_message, std::function<ContainerManager::Result()> action,
                         const std::string &success_message);
-        void toggle_selected();
-        void restart_selected();
+        // The container in the open logs/details panel, else the selected one.
+        const Container *action_target() const;
+        void start_target();
+        void stop_target();
+        void restart_target();
+        ftxui::Element render_actions();
         void open_logs();
         // `resume`: reattaching after the container restarted.
         void attach_logs(int tail, const std::string &since, bool resume);
@@ -132,7 +149,6 @@ namespace gsystemctl::ui
         void reattach_logs_if_running(const std::string &listed_at);
         void open_details();
         void reload_details();
-        void close_panel();
         void scroll_details(int delta);
         void open_edit_dialog();
         void submit_edit_dialog();

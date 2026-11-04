@@ -99,7 +99,7 @@ namespace gsystemctl::ui
         return box_.Contain(x, y);
     }
 
-    Element LogPanel::render(const std::string &hint)
+    Element LogPanel::render(Element actions)
     {
         std::string title;
         Elements rendered_lines;
@@ -129,8 +129,8 @@ namespace gsystemctl::ui
                        text(" LOGS ") | color(HeaderColor()),
                        text(title) | color(WarningColor()),
                        filler(),
-                       text(following ? "following " : "paused (scroll to end to follow) ") | color(MutedColor()),
-                       text(hint) | color(MutedColor()),
+                       text(following ? "following  " : "paused (scroll to end to follow)  ") | color(MutedColor()),
+                       std::move(actions),
                    }),
                    separator() | color(BorderColor()),
                    vbox(std::move(rendered_lines)) | color(TextColor()) | focusPosition(0, scroll_position) | vscroll_indicator | yframe | flex,

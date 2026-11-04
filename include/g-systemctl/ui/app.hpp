@@ -4,11 +4,14 @@
 #include "g-systemctl/core/logging_manager.hpp"
 #include "g-systemctl/core/service.hpp"
 #include "g-systemctl/core/command_executor.hpp"
+#include "g-systemctl/ui/action_bar.hpp"
+#include "g-systemctl/ui/confirm_dialog.hpp"
 #include "g-systemctl/ui/containers_view.hpp"
 #include "g-systemctl/ui/log_panel.hpp"
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/screen/box.hpp>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -45,6 +48,10 @@ namespace gsystemctl::ui
         std::string status_message_;
         std::string error_message_;
         LogPanel service_logs_;
+        // Unit shown in the log panel; actions target it while the panel is open.
+        std::string log_unit_;
+        ActionBar service_actions_;
+        ConfirmDialog confirm_;
         bool show_help_ = false;
         ftxui::Box shortcuts_box_;
         Tab active_tab_ = Tab::Services;
@@ -57,15 +64,14 @@ namespace gsystemctl::ui
         enum class AuthAction
         {
             None,
-            Toggle,
+            Start,
+            Stop,
             Restart,
             DaemonReload,
         };
         AuthAction pending_auth_action_ = AuthAction::None;
         ServiceUnit pending_auth_service_;
         std::vector<ftxui::Box> item_boxes_;
-        std::vector<ftxui::Box> toggle_button_boxes_;
-        std::vector<ftxui::Box> log_button_boxes_;
         ftxui::Box reload_button_box_;
         // Set while a background operation runs; all input is ignored meanwhile.
         bool busy_ = false;
@@ -74,10 +80,14 @@ namespace gsystemctl::ui
 
         void refresh_services();
         void apply_filter();
-        void toggle_selected_service();
-        void restart_selected_service();
-        void toggle_service(const ServiceUnit& service, const std::string& password = "");
-        void restart_service(const ServiceUnit& service, const std::string& password = "");
+        const ServiceUnit *selected_service() const;
+        // The unit in the log panel if it is open, else the selected one.
+        const ServiceUnit *action_target() const;
+        // `action` is Start, Stop or Restart. Stop and Restart ask for confirmation.
+        void request_service_action(AuthAction action);
+        void run_service_action(AuthAction action, const ServiceUnit& service, const std::string& password = "");
+        void run_in_background(const std::string& busy_message, std::function<std::pair<bool, std::string>()> work,
+                               const std::string& success_message, const std::string& failure_prefix);
         void request_daemon_reload();
         void daemon_reload(const std::string& password = "");
         void edit_selected_service();

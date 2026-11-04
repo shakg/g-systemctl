@@ -103,76 +103,121 @@ namespace gsystemctl::ui
         }
     }
 
-    void App::toggle_selected_service()
+    namespace
     {
-        if (filtered_services_.empty() || selected_index_ < 0 ||
-            selected_index_ >= static_cast<int>(filtered_services_.size()))
+        bool service_is_active(const ServiceUnit &service)
+        {
+            return service.active == "active" || service.is_running();
+        }
+    } // namespace
+
+    const ServiceUnit *App::selected_service() const
+    {
+        if (selected_index_ < 0 || selected_index_ >= static_cast<int>(filtered_services_.size()))
+        {
+            return nullptr;
+        }
+        return &filtered_services_[selected_index_];
+    }
+
+    const ServiceUnit *App::action_target() const
+    {
+        if (!service_logs_.is_open() || log_unit_.empty())
+        {
+            return selected_service();
+        }
+        auto it = std::find_if(services_.begin(), services_.end(),
+                               [this](const ServiceUnit &s) { return s.unit == log_unit_; });
+        return it == services_.end() ? nullptr : &*it;
+    }
+
+    void App::request_service_action(AuthAction action)
+    {
+        const auto *target = action_target();
+        if (!target)
         {
             return;
         }
+        const auto service = *target;
+        const bool active = service_is_active(service);
+        status_message_.clear();
+        error_message_.clear();
 
-        const auto &service = filtered_services_[selected_index_];
+        if (action == AuthAction::Start && active)
+        {
+            status_message_ = service.unit + " is already running";
+            return;
+        }
+        if ((action == AuthAction::Stop || action == AuthAction::Restart) && !active)
+        {
+            status_message_ = service.unit + " is not running (Alt+o to start)";
+            return;
+        }
+
+        // The password prompt is itself a deliberate step, so it replaces the confirmation.
         if (!executor_->can_execute_privileged_without_password())
         {
-            open_auth_dialog(AuthAction::Toggle, service);
+            open_auth_dialog(action, service);
             return;
         }
-
-        toggle_service(service);
+        if (action == AuthAction::Start)
+        {
+            run_service_action(action, service);
+            return;
+        }
+        const std::string verb = action == AuthAction::Stop ? "Stop" : "Restart";
+        confirm_.ask(verb + " service " + service.unit + "?", verb,
+                     [this, action, service] { run_service_action(action, service); });
     }
 
-    void App::toggle_service(const ServiceUnit& service, const std::string& password)
+    void App::run_service_action(AuthAction action, const ServiceUnit &service, const std::string &password)
     {
-        status_message_ = "Toggling " + service.unit + "...";
+        const bool start = action == AuthAction::Start;
+        const bool stop = action == AuthAction::Stop;
+        const std::string unit = service.unit;
+        const std::string busy = start ? "Starting " : stop ? "Stopping " : "Restarting ";
+        const std::string done = start ? "Started " : stop ? "Stopped " : "Restarted ";
+        run_in_background(
+            busy + unit + "...",
+            [this, start, stop, unit, password] {
+                if (start)
+                    return service_manager_->start_service(unit, password);
+                if (stop)
+                    return service_manager_->stop_service(unit, password);
+                return service_manager_->restart_service(unit, password);
+            },
+            done + unit, "Failed to " + std::string(start ? "start " : stop ? "stop " : "restart ") + unit);
+    }
+
+    void App::run_in_background(const std::string &busy_message, std::function<std::pair<bool, std::string>()> work,
+                                const std::string &success_message, const std::string &failure_prefix)
+    {
+        busy_ = true;
+        busy_message_ = busy_message;
+        status_message_.clear();
         error_message_.clear();
-        screen_.PostEvent(Event::Custom);
 
-        auto [success, message] = service_manager_->toggle_service(service, password);
-        if (success)
+        if (worker_.joinable())
         {
-            status_message_ = "Successfully toggled " + service.unit;
-            refresh_services();
+            worker_.join();
         }
-        else
-        {
-            error_message_ = "Failed to toggle " + service.unit + ": " + message;
-        }
-    }
-
-    void App::restart_selected_service()
-    {
-        if (filtered_services_.empty() || selected_index_ < 0 ||
-            selected_index_ >= static_cast<int>(filtered_services_.size()))
-        {
-            return;
-        }
-
-        const auto &service = filtered_services_[selected_index_];
-        if (!executor_->can_execute_privileged_without_password())
-        {
-            open_auth_dialog(AuthAction::Restart, service);
-            return;
-        }
-
-        restart_service(service);
-    }
-
-    void App::restart_service(const ServiceUnit& service, const std::string& password)
-    {
-        status_message_ = "Restarting " + service.unit + "...";
-        error_message_.clear();
-        screen_.PostEvent(Event::Custom);
-
-        auto [success, message] = service_manager_->restart_service(service.unit, password);
-        if (success)
-        {
-            status_message_ = "Successfully restarted " + service.unit;
-            refresh_services();
-        }
-        else
-        {
-            error_message_ = "Failed to restart " + service.unit + ": " + message;
-        }
+        worker_ = std::thread([this, work = std::move(work), success_message, failure_prefix] {
+            auto result = work();
+            screen_.Post([this, result, success_message, failure_prefix] {
+                busy_ = false;
+                busy_message_.clear();
+                refresh_services();
+                if (result.first)
+                {
+                    status_message_ = success_message;
+                }
+                else
+                {
+                    error_message_ = failure_prefix + ": " + result.second;
+                }
+            });
+            screen_.PostEvent(Event::Custom);
+        });
     }
 
     void App::request_daemon_reload()
@@ -189,34 +234,11 @@ namespace gsystemctl::ui
         daemon_reload();
     }
 
-    void App::daemon_reload(const std::string& password)
+    void App::daemon_reload(const std::string &password)
     {
-        busy_ = true;
-        busy_message_ = "Reloading systemd daemon...";
-        status_message_.clear();
-        error_message_.clear();
-
-        if (worker_.joinable())
-        {
-            worker_.join();
-        }
-        worker_ = std::thread([this, password] {
-            auto result = service_manager_->daemon_reload(password);
-            screen_.Post([this, result] {
-                busy_ = false;
-                busy_message_.clear();
-                if (result.first)
-                {
-                    refresh_services();
-                    status_message_ = "Daemon reloaded successfully.";
-                }
-                else
-                {
-                    error_message_ = "Daemon reload failed: " + result.second;
-                }
-            });
-            screen_.PostEvent(Event::Custom);
-        });
+        run_in_background(
+            "Reloading systemd daemon...", [this, password] { return service_manager_->daemon_reload(password); },
+            "Daemon reloaded successfully.", "Daemon reload failed");
     }
 
     void App::edit_selected_service()
@@ -265,14 +287,19 @@ namespace gsystemctl::ui
         auth_password_.clear();
         switch (action)
         {
+        case AuthAction::Start:
+            auth_dialog_message_ = "Start " + service.unit;
+            break;
+        case AuthAction::Stop:
+            auth_dialog_message_ = "Stop " + service.unit;
+            break;
         case AuthAction::Restart:
             auth_dialog_message_ = "Restart " + service.unit;
             break;
         case AuthAction::DaemonReload:
             auth_dialog_message_ = "Reload systemd daemon";
             break;
-        default:
-            auth_dialog_message_ = "Toggle " + service.unit;
+        case AuthAction::None:
             break;
         }
         auth_dialog_open_ = true;
@@ -294,13 +321,9 @@ namespace gsystemctl::ui
             return;
         }
 
-        if (action == AuthAction::Toggle)
+        if (action == AuthAction::Start || action == AuthAction::Stop || action == AuthAction::Restart)
         {
-            toggle_service(service, password);
-        }
-        else if (action == AuthAction::Restart)
-        {
-            restart_service(service, password);
+            run_service_action(action, service, password);
         }
         else if (action == AuthAction::DaemonReload)
         {
@@ -320,13 +343,18 @@ namespace gsystemctl::ui
 
     void App::open_logs_for_selected_service()
     {
-        if (filtered_services_.empty() || selected_index_ < 0 ||
-            selected_index_ >= static_cast<int>(filtered_services_.size()))
+        const auto *selected = selected_service();
+        if (!selected)
+        {
+            return;
+        }
+        const auto service = *selected;
+        if (service_logs_.is_open() && log_unit_ == service.unit)
         {
             return;
         }
 
-        const auto &service = filtered_services_[selected_index_];
+        log_unit_ = service.unit;
         status_message_ = "Streaming logs for " + service.unit + "...";
         error_message_.clear();
         screen_.PostEvent(Event::Custom);
@@ -359,6 +387,7 @@ namespace gsystemctl::ui
     void App::close_logs()
     {
         service_logs_.close();
+        log_unit_.clear();
     }
 
     void App::switch_tab(Tab tab)
@@ -370,8 +399,26 @@ namespace gsystemctl::ui
 
     bool App::handle_services_event(Event event)
     {
+        auto clear_messages = [this] {
+            status_message_.clear();
+            error_message_.clear();
+        };
+        const bool logs_open = service_logs_.is_open();
+
+        if (event == Event::Return) {
+            open_logs_for_selected_service();
+            return true;
+        }
+        if (event == Event::Special("\x1b" "o")) {
+            request_service_action(AuthAction::Start);
+            return true;
+        }
+        if (event == Event::Special("\x1b" "x")) {
+            request_service_action(AuthAction::Stop);
+            return true;
+        }
         if (event == Event::Special("\x1b" "r")) {
-            restart_selected_service();
+            request_service_action(AuthAction::Restart);
             return true;
         }
         if (event == Event::Special("\x1b" "R")) {
@@ -382,92 +429,65 @@ namespace gsystemctl::ui
             edit_selected_service();
             return true;
         }
-        if (service_logs_.is_open() && event == Event::PageUp) {
-            service_logs_.scroll(-10);
-            return true;
-        }
-        if (service_logs_.is_open() && event == Event::PageDown) {
-            service_logs_.scroll(10);
-            return true;
-        }
-        if (service_logs_.is_open() && (event == Event::ArrowUp || event == Event::Special("\x1b" "k"))) {
-            service_logs_.scroll(-1);
-            return true;
-        }
-        if (service_logs_.is_open() && (event == Event::ArrowDown || event == Event::Special("\x1b" "j"))) {
-            service_logs_.scroll(1);
-            return true;
-        }
-        if (event == Event::ArrowUp || event == Event::Special("\x1b" "k")) {
-            if (selected_index_ > 0) {
-                selected_index_--;
-            }
-            status_message_.clear();
-            error_message_.clear();
-            return true;
-        }
-        if (event == Event::ArrowDown || event == Event::Special("\x1b" "j")) {
-            if (selected_index_ < static_cast<int>(filtered_services_.size()) - 1) {
-                selected_index_++;
-            }
-            status_message_.clear();
-            error_message_.clear();
-            return true;
-        }
-        if (event == Event::Return) {
-            toggle_selected_service();
-            return true;
-        }
         if (event == Event::Special("\x1b" "l")) {
             open_logs_for_selected_service();
             return true;
         }
         if (event == Event::Special("\x1b" "c")) {
             close_logs();
-            status_message_.clear();
-            error_message_.clear();
+            clear_messages();
+            return true;
+        }
+        if (logs_open && event == Event::PageUp) {
+            service_logs_.scroll(-10);
+            return true;
+        }
+        if (logs_open && event == Event::PageDown) {
+            service_logs_.scroll(10);
+            return true;
+        }
+        if (event == Event::ArrowUp || event == Event::Special("\x1b" "k")) {
+            if (logs_open) {
+                service_logs_.scroll(-1);
+            } else if (selected_index_ > 0) {
+                selected_index_--;
+                clear_messages();
+            }
+            return true;
+        }
+        if (event == Event::ArrowDown || event == Event::Special("\x1b" "j")) {
+            if (logs_open) {
+                service_logs_.scroll(1);
+            } else if (selected_index_ < static_cast<int>(filtered_services_.size()) - 1) {
+                selected_index_++;
+                clear_messages();
+            }
             return true;
         }
         if (event.is_character()) {
             filter_text_ += event.character();
             apply_filter();
-            status_message_.clear();
-            error_message_.clear();
+            clear_messages();
             return true;
         }
         if (event == Event::Backspace && !filter_text_.empty()) {
             filter_text_.pop_back();
             apply_filter();
-            status_message_.clear();
-            error_message_.clear();
+            clear_messages();
             return true;
         }
         if (event.is_mouse()) {
             auto& mouse = event.mouse();
-            if (service_logs_.is_open() && service_logs_.contains(mouse.x, mouse.y)) {
-                if (mouse.button == Mouse::WheelUp) {
-                    service_logs_.scroll(-3);
-                    return true;
+            if (mouse.button == Mouse::WheelUp || mouse.button == Mouse::WheelDown) {
+                const int delta = mouse.button == Mouse::WheelUp ? -1 : 1;
+                // While logs are open the wheel scrolls them; the list only shows the followed unit.
+                if (logs_open) {
+                    service_logs_.scroll(delta * 3);
+                } else {
+                    selected_index_ = std::clamp(selected_index_ + delta, 0,
+                                                 std::max(0, static_cast<int>(filtered_services_.size()) - 1));
+                    clear_messages();
                 }
-                if (mouse.button == Mouse::WheelDown) {
-                    service_logs_.scroll(3);
-                    return true;
-                }
-            }
-            if (mouse.button == Mouse::WheelUp) {
-                if (selected_index_ > 0) {
-                    selected_index_--;
-                }
-                status_message_.clear();
-                error_message_.clear();
-                return true;
-            }
-            if (mouse.button == Mouse::WheelDown) {
-                if (selected_index_ < static_cast<int>(filtered_services_.size()) - 1) {
-                    selected_index_++;
-                }
-                status_message_.clear();
-                error_message_.clear();
                 return true;
             }
             if (mouse.button == Mouse::Left && mouse.motion == Mouse::Pressed) {
@@ -475,25 +495,27 @@ namespace gsystemctl::ui
                     request_daemon_reload();
                     return true;
                 }
-                for (size_t i = 0; i < toggle_button_boxes_.size(); ++i) {
-                    if (toggle_button_boxes_[i].Contain(mouse.x, mouse.y)) {
-                        selected_index_ = static_cast<int>(i);
-                        toggle_selected_service();
-                        return true;
-                    }
-                }
-                for (size_t i = 0; i < log_button_boxes_.size(); ++i) {
-                    if (log_button_boxes_[i].Contain(mouse.x, mouse.y)) {
-                        selected_index_ = static_cast<int>(i);
-                        open_logs_for_selected_service();
-                        return true;
-                    }
+                switch (service_actions_.hit(mouse.x, mouse.y)) {
+                case ActionBar::Action::Start:
+                    request_service_action(AuthAction::Start);
+                    return true;
+                case ActionBar::Action::Stop:
+                    request_service_action(AuthAction::Stop);
+                    return true;
+                case ActionBar::Action::Restart:
+                    request_service_action(AuthAction::Restart);
+                    return true;
+                case ActionBar::Action::Close:
+                    close_logs();
+                    clear_messages();
+                    return true;
+                case ActionBar::Action::None:
+                    break;
                 }
                 for (size_t i = 0; i < item_boxes_.size(); ++i) {
                     if (item_boxes_[i].Contain(mouse.x, mouse.y)) {
                         selected_index_ = static_cast<int>(i);
-                        status_message_.clear();
-                        error_message_.clear();
+                        clear_messages();
                         return true;
                     }
                 }
@@ -514,14 +536,30 @@ namespace gsystemctl::ui
         if (busy_) {
             return true;
         }
-        if (auth_dialog_open_ || containers_view_->edit_dialog_open()) {
+        if (auth_dialog_open_ || confirm_.is_open() || containers_view_->edit_dialog_open()) {
             return false;
         }
-        if (event == Event::Special("\x1b" "q") || event == Event::Escape) {
+        if (event == Event::Escape) {
+            // Close the innermost thing first; quit only from the plain list.
             if (show_help_) {
                 show_help_ = false;
-                return true;
+            } else if (active_tab_ == Tab::Containers && containers_view_->panel_open()) {
+                containers_view_->close_panel();
+            } else if (active_tab_ == Tab::Services && service_logs_.is_open()) {
+                close_logs();
+                status_message_.clear();
+                error_message_.clear();
+            } else if (active_tab_ == Tab::Containers && !containers_view_->filter_text().empty()) {
+                containers_view_->set_filter("");
+            } else if (active_tab_ == Tab::Services && !filter_text_.empty()) {
+                filter_text_.clear();
+                apply_filter();
+            } else {
+                screen_.Exit();
             }
+            return true;
+        }
+        if (event == Event::Special("\x1b" "q")) {
             screen_.Exit();
             return true;
         }
@@ -598,6 +636,11 @@ namespace gsystemctl::ui
 
         main_component |= Modal(auth_modal, &auth_dialog_open_);
         main_component |= Modal(containers_view_->edit_dialog(), containers_view_->edit_dialog_open_flag());
+        main_component |= Modal(confirm_.component(), confirm_.open_flag());
+        containers_view_->set_confirm([this](const std::string &question, const std::string &label,
+                                             std::function<void()> on_confirm) {
+            confirm_.ask(question, label, std::move(on_confirm));
+        });
         return main_component;
     }
 
@@ -607,6 +650,7 @@ namespace gsystemctl::ui
         const auto &status = containers ? containers_view_->status_message() : status_message_;
         const auto &error = containers ? containers_view_->error_message() : error_message_;
 
+        service_actions_.hide();
         Elements layout;
         layout.push_back(render_top_bar());
         layout.push_back(separator() | color(BorderColor()));
@@ -640,11 +684,11 @@ namespace gsystemctl::ui
             text(filter + "█") | color(AccentColor()),
             filler(),
             text(summary) | color(MutedColor()),
-            text("  ·  ↑↓ navigate  ·  type to filter  ·  Tab switch  ") | color(MutedColor()),
+            text("  ·  ↑↓ move  ·  Enter logs  ·  Alt+o start  ·  Alt+x stop  ·  Alt+r restart  ·  ? help  ") | color(MutedColor()),
         }));
 
         auto page = vbox(std::move(layout)) | borderStyled(ROUNDED, BorderColor()) | bgcolor(BackgroundColor());
-        auto dialog_open = show_help_ || auth_dialog_open_ || containers_view_->edit_dialog_open();
+        auto dialog_open = show_help_ || auth_dialog_open_ || confirm_.is_open() || containers_view_->edit_dialog_open();
         if (dialog_open)
         {
             page = page | color(Color::RGB(55, 59, 78)) | bgcolor(Color::RGB(4, 5, 9)) | dim;
@@ -743,14 +787,12 @@ namespace gsystemctl::ui
 
         Elements items;
         item_boxes_.resize(filtered_services_.size());
-        toggle_button_boxes_.resize(filtered_services_.size());
-        log_button_boxes_.resize(filtered_services_.size());
 
         for (size_t i = 0; i < filtered_services_.size(); ++i)
         {
             const auto &svc = filtered_services_[i];
             bool selected = (static_cast<int>(i) == selected_index_);
-            bool active = svc.active == "active" || svc.is_running();
+            bool active = service_is_active(svc);
             auto status_color = active ? Colors::running_fg() : Colors::stopped_fg();
             std::string status_text = active ? "● active" : "○ inactive";
 
@@ -788,30 +830,36 @@ namespace gsystemctl::ui
 
     Element App::render_log_panel()
     {
-        return service_logs_.render();
+        const auto *service = action_target();
+        const bool active = service && service_is_active(*service);
+        const std::string state = !service ? "? unknown" : active ? "● active" : "○ inactive";
+        return service_logs_.render(
+            service_actions_.render(state, active ? Colors::running_fg() : Colors::stopped_fg(), active));
     }
 
     Element App::render_help()
     {
         auto services = vbox({
             text("Services") | bold,
-            text("  Enter        Start / stop"),
-            text("  Alt+r        Restart"),
+            text("  Enter        View logs"),
+            text("  Alt+o        Start"),
+            text("  Alt+x        Stop (asks y/n)"),
+            text("  Alt+r        Restart (asks y/n)"),
             text("  Alt+e        Edit unit file ($GSYSTEMCTL_EDITOR)"),
             text("  Alt+Shift+r  systemctl daemon-reload"),
-            text("  Alt+l        Stream logs"),
-            text("  Alt+c        Close logs"),
+            text("  Esc / Alt+c  Close logs"),
         });
         auto containers = vbox({
             text("Containers") | bold,
-            text("  Enter        Start / stop"),
-            text("  Alt+r        Restart"),
-            text("  Alt+l        Stream logs"),
+            text("  Enter        View logs"),
+            text("  Alt+o        Start"),
+            text("  Alt+x        Stop (asks y/n)"),
+            text("  Alt+r        Restart (asks y/n)"),
             text("  Alt+i        Inspect (env, mounts, limits)"),
             text("  Alt+u        Edit resource limits"),
             text("  Alt+s        Show/hide secret env values"),
             text("  Alt+Shift+r  Refresh now"),
-            text("  Alt+c        Close panel"),
+            text("  Esc / Alt+c  Close panel"),
         });
         return vbox({
                    text("g-systemctl - Help") | bold | center,
@@ -821,7 +869,9 @@ namespace gsystemctl::ui
                    text("  Up/Down, Alt+k/j      Move selection (scroll when a panel is open)"),
                    text("  PgUp / PgDn           Scroll panel"),
                    text("  type / Backspace      Filter"),
-                   text("  Alt+q / Esc           Quit"),
+                   text("  Esc                   Close panel, clear filter, then quit"),
+                   text("  Alt+q                 Quit"),
+                   text("  With logs open, actions apply to the unit/container shown"),
                    text(""),
                    hbox({services, text("    "), containers}),
                    text(""),
