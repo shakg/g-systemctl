@@ -12,6 +12,9 @@ public:
     std::pair<bool, std::string> start_service(const std::string& name, const std::string& password = "") override;
     std::pair<bool, std::string> stop_service(const std::string& name, const std::string& password = "") override;
     std::pair<bool, std::string> restart_service(const std::string& name, const std::string& password = "") override;
+    ServiceDetails describe_service(const std::string& name) override;
+    // Turns the `launchctl list <label>` dictionary into display rows.
+    static ServiceDetails parse_launchctl_details(const std::string& output);
     std::pair<bool, std::string> toggle_service(const ServiceUnit& service, const std::string& password = "") override;
     std::pair<bool, std::string> daemon_reload(const std::string& password = "") override;
     std::pair<bool, std::string> edit_service(const std::string& name) override;

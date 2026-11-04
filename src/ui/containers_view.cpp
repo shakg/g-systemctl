@@ -56,14 +56,6 @@ namespace gsystemctl::ui
             return false;
         }
 
-        Element field_row(const std::string &label, const std::string &value, Color fg = TextColor())
-        {
-            return hbox({
-                text(" " + label) | color(HeaderColor()) | size(WIDTH, EQUAL, 16),
-                paragraph(value.empty() ? "-" : value) | color(fg) | flex,
-            });
-        }
-
         // Unix timestamp with nanoseconds, the format `docker logs --since` takes.
         std::string unix_time_now()
         {
@@ -303,7 +295,7 @@ namespace gsystemctl::ui
                 {
                     error_message_ = busy_message.substr(0, busy_message.size() - 3) + " failed: " + message;
                 }
-                if (panel_ == Panel::Details)
+                if (detail_open_)
                     reload_details();
                 refresh_now();
             });
@@ -317,19 +309,12 @@ namespace gsystemctl::ui
             auto it = std::find_if(containers_.begin(), containers_.end(), pred);
             return it == containers_.end() ? nullptr : &*it;
         };
-        switch (panel_)
-        {
-        case Panel::Logs:
-            if (const auto *c = find([this](const Container &c) { return c.id == logs_id_; }))
-                return c;
-            // Recreated with a new ID and not reattached yet.
-            return find([this](const Container &c) { return c.name == logs_name_; });
-        case Panel::Details:
-            return find([this](const Container &c) { return c.id == details_target_id_; });
-        case Panel::None:
-            break;
-        }
-        return selected();
+        if (!detail_open_)
+            return selected();
+        if (const auto *c = find([this](const Container &c) { return c.id == logs_id_; }))
+            return c;
+        // Recreated with a new ID and not reattached yet.
+        return find([this](const Container &c) { return c.name == logs_name_; });
     }
 
     void ContainersView::start_target()
@@ -394,21 +379,49 @@ namespace gsystemctl::ui
         });
     }
 
-    void ContainersView::open_logs()
+    void ContainersView::open_detail(bool logs_full)
     {
         const auto *c = selected();
         if (!c)
             return;
-        if (panel_ == Panel::Logs && logs_id_ == c->id)
+        logs_full_ = logs_full;
+        if (detail_open_ && logs_id_ == c->id)
             return;
         clear_messages();
-        details_target_id_.clear();
-        panel_ = Panel::Logs;
+        detail_open_ = true;
+        summary_.reset();
         logs_id_ = c->id;
         logs_name_ = c->name;
+        details_ = ContainerDetails{};
+        reload_details();
         logs_.open(c->name + " (" + c->id + ")",
                    "Starting: " + manager_->runtime_name() + " logs -f --tail " + std::to_string(kLogTail) + " " + c->name);
         attach_logs(kLogTail, "", false);
+    }
+
+    void ContainersView::close_detail()
+    {
+        stop_logs();
+        detail_open_ = false;
+        logs_full_ = false;
+        details_ = ContainerDetails{};
+        details_error_.clear();
+    }
+
+    bool ContainersView::back()
+    {
+        if (logs_full_)
+        {
+            logs_full_ = false;
+            return true;
+        }
+        if (detail_open_)
+        {
+            close_detail();
+            clear_messages();
+            return true;
+        }
+        return false;
     }
 
     void ContainersView::attach_logs(int tail, const std::string &since, bool resume)
@@ -450,7 +463,7 @@ namespace gsystemctl::ui
 
     void ContainersView::on_logs_ended(int generation, const std::string &ended_at, bool quiet_retry)
     {
-        if (generation != logs_generation_ || panel_ != Panel::Logs)
+        if (generation != logs_generation_ || !detail_open_)
             return;
         logs_waiting_ = true;
         if (quiet_retry)
@@ -466,7 +479,7 @@ namespace gsystemctl::ui
     void ContainersView::reattach_logs_if_running(const std::string &listed_at)
     {
         // A list fetched before the stream ended may still show the container running.
-        if (panel_ != Panel::Logs || !logs_waiting_ || std::stold(listed_at) <= std::stold(logs_ended_at_))
+        if (!detail_open_ || !logs_waiting_ || std::stold(listed_at) <= std::stold(logs_ended_at_))
             return;
         auto it = std::find_if(containers_.begin(), containers_.end(),
                                [this](const Container &c) { return c.id == logs_id_; });
@@ -479,68 +492,36 @@ namespace gsystemctl::ui
                 return;
             logs_id_ = it->id;
             logs_.set_title(it->name + " (" + it->id + ")");
+            reload_details();
         }
         if (!it->is_running())
             return;
         attach_logs(-1, logs_ended_at_, true);
     }
 
-    void ContainersView::open_details()
+    void ContainersView::reload_details()
     {
-        const auto *c = selected();
-        if (!c)
+        if (logs_id_.empty())
             return;
         try
         {
-            details_ = manager_->inspect(c->id);
+            details_ = manager_->inspect(logs_id_);
             if (details_.id.size() > 12)
                 details_.id.resize(12);
-            details_target_id_ = c->id;
-            stop_logs();
-            panel_ = Panel::Details;
-            details_scroll_ = 0;
+            details_error_.clear();
         }
         catch (const std::exception &e)
         {
-            error_message_ = "Inspect failed: " + std::string(e.what());
-        }
-    }
-
-    void ContainersView::reload_details()
-    {
-        if (details_.id.empty())
-            return;
-        try
-        {
-            auto id = details_.id;
-            details_ = manager_->inspect(id);
-            if (details_.id.size() > 12)
-                details_.id.resize(12);
-        }
-        catch (const std::exception &)
-        {
             // Container may have been removed; keep the last snapshot.
+            details_error_ = "Inspect failed: " + std::string(e.what());
         }
-    }
-
-    void ContainersView::close_panel()
-    {
-        stop_logs();
-        panel_ = Panel::None;
-        details_ = ContainerDetails{};
-        details_target_id_.clear();
-    }
-
-    void ContainersView::scroll_details(int delta)
-    {
-        details_scroll_ = std::clamp(details_scroll_ + delta, 0, std::max(0, details_line_count_ - 1));
     }
 
     // ---- resource editor -------------------------------------------------------
 
     void ContainersView::open_edit_dialog()
     {
-        const auto *c = selected();
+        const auto *c = action_target();
         if (!c)
             return;
         try
@@ -659,14 +640,6 @@ namespace gsystemctl::ui
 
     bool ContainersView::handle_event(Event event)
     {
-        const bool panel_open = panel_ != Panel::None;
-        auto scroll_panel = [this](int delta) {
-            if (panel_ == Panel::Logs)
-                logs_.scroll(delta);
-            else if (panel_ == Panel::Details)
-                scroll_details(delta);
-        };
-
         if (event == Event::Special("\x1b" "R"))
         {
             refresh_now();
@@ -675,45 +648,39 @@ namespace gsystemctl::ui
         }
         if (event == Event::Special("\x1b" "c"))
         {
-            close_panel();
+            close_detail();
             clear_messages();
             return true;
         }
-        if (event == Event::Special("\x1b" "s") && panel_ == Panel::Details)
+        if (detail_open_)
         {
-            show_secrets_ = !show_secrets_;
-            return true;
-        }
-        if (panel_open && event == Event::PageUp)
-        {
-            scroll_panel(-10);
-            return true;
-        }
-        if (panel_open && event == Event::PageDown)
-        {
-            scroll_panel(10);
-            return true;
-        }
-        if (event == Event::ArrowUp || event == Event::Special("\x1b" "k"))
-        {
-            if (panel_open)
-                scroll_panel(-1);
-            else
+            if (event == Event::Special("\x1b" "s"))
             {
-                select(selected_index_ - 1);
-                clear_messages();
+                show_secrets_ = !show_secrets_;
+                return true;
             }
-            return true;
-        }
-        if (event == Event::ArrowDown || event == Event::Special("\x1b" "j"))
-        {
-            if (panel_open)
-                scroll_panel(1);
-            else
+            if (event == Event::PageUp || event == Event::PageDown)
             {
-                select(selected_index_ + 1);
-                clear_messages();
+                logs_.scroll(event == Event::PageUp ? -10 : 10);
+                return true;
             }
+            // Arrows scroll the summary, or the logs when they fill the page.
+            const bool up = event == Event::ArrowUp || event == Event::Special("\x1b" "k");
+            if (up || event == Event::ArrowDown || event == Event::Special("\x1b" "j"))
+            {
+                if (logs_full_)
+                    logs_.scroll(up ? -1 : 1);
+                else
+                    summary_.scroll(up ? -1 : 1);
+                return true;
+            }
+        }
+        else if (event == Event::ArrowUp || event == Event::Special("\x1b" "k") || event == Event::ArrowDown ||
+                 event == Event::Special("\x1b" "j"))
+        {
+            const bool up = event == Event::ArrowUp || event == Event::Special("\x1b" "k");
+            select(selected_index_ + (up ? -1 : 1));
+            clear_messages();
             return true;
         }
 
@@ -728,9 +695,27 @@ namespace gsystemctl::ui
         if (is_action && busy_)
             return true;
 
-        if (event == Event::Return || event == Event::Special("\x1b" "l"))
+        // Enter drills down: list -> detail page -> full-size logs (and back).
+        if (event == Event::Return || event == Event::Special("\x1b" "f"))
         {
-            open_logs();
+            if (detail_open_)
+            {
+                logs_full_ = !logs_full_;
+                // The log frame settles on the second layout pass after a size change.
+                screen_.PostEvent(Event::Custom);
+            }
+            else if (event == Event::Return)
+                open_detail(false);
+            return true;
+        }
+        if (event == Event::Special("\x1b" "l"))
+        {
+            open_detail(true);
+            return true;
+        }
+        if (event == Event::Special("\x1b" "i"))
+        {
+            open_detail(false);
             return true;
         }
         if (event == Event::Special("\x1b" "o"))
@@ -748,26 +733,20 @@ namespace gsystemctl::ui
             restart_target();
             return true;
         }
-        if (event == Event::Special("\x1b" "i"))
-        {
-            open_details();
-            return true;
-        }
         if (event == Event::Special("\x1b" "u"))
         {
             open_edit_dialog();
             return true;
         }
-        if (event.is_character())
+        if (event.is_character() || event == Event::Backspace)
         {
-            filter_text_ += event.character();
-            apply_filter();
-            clear_messages();
-            return true;
-        }
-        if (event == Event::Backspace && !filter_text_.empty())
-        {
-            filter_text_.pop_back();
+            // The list is hidden on the detail page, so typing does not change the filter there.
+            if (detail_open_)
+                return true;
+            if (event.is_character())
+                filter_text_ += event.character();
+            else if (!filter_text_.empty())
+                filter_text_.pop_back();
             apply_filter();
             clear_messages();
             return true;
@@ -778,11 +757,12 @@ namespace gsystemctl::ui
             if (mouse.button == Mouse::WheelUp || mouse.button == Mouse::WheelDown)
             {
                 int delta = mouse.button == Mouse::WheelUp ? -1 : 1;
-                // While a panel is open the list only shows its container, so the wheel scrolls the panel.
-                if (panel_open)
-                    scroll_panel(delta * 3);
-                else
+                if (!detail_open_)
                     select(selected_index_ + delta);
+                else if (logs_.contains(mouse.x, mouse.y))
+                    logs_.scroll(delta * 3);
+                else if (summary_.contains(mouse.x, mouse.y))
+                    summary_.scroll(delta * 3);
                 return true;
             }
             if (mouse.button == Mouse::Left && mouse.motion == Mouse::Pressed)
@@ -801,18 +781,27 @@ namespace gsystemctl::ui
                     if (!busy_)
                         restart_target();
                     return true;
-                case ActionBar::Action::Close:
-                    close_panel();
-                    clear_messages();
+                case ActionBar::Action::Back:
+                    back();
+                    return true;
+                case ActionBar::Action::ToggleLogs:
+                    logs_full_ = !logs_full_;
+                    screen_.PostEvent(Event::Custom);
                     return true;
                 case ActionBar::Action::None:
                     break;
                 }
+                if (detail_open_)
+                    return true;
                 for (size_t i = 0; i < item_boxes_.size(); ++i)
                 {
                     if (item_boxes_[i].Contain(mouse.x, mouse.y))
                     {
-                        select(static_cast<int>(i));
+                        // Clicking the selected row opens it, like Enter.
+                        if (static_cast<int>(i) == selected_index_)
+                            open_detail(false);
+                        else
+                            select(static_cast<int>(i));
                         clear_messages();
                         return true;
                     }
@@ -823,15 +812,6 @@ namespace gsystemctl::ui
     }
 
     // ---- rendering -------------------------------------------------------------
-
-    Element ContainersView::render_actions()
-    {
-        const auto *c = action_target();
-        if (!c)
-            return actions_.render("✕ removed", Colors::error_fg(), false);
-        auto style = state_style(c->state);
-        return actions_.render(style.label, style.fg, c->is_active());
-    }
 
     Element ContainersView::render_body()
     {
@@ -852,27 +832,18 @@ namespace gsystemctl::ui
                    }) |
                    center | flex;
         }
+        return detail_open_ ? render_detail() : render_list() | flex;
+    }
 
-        switch (panel_)
-        {
-        case Panel::Logs:
-            return vbox({
-                       render_list() | size(HEIGHT, EQUAL, 2),
-                       separator() | color(BorderColor()),
-                       logs_.render(render_actions()) | size(HEIGHT, GREATER_THAN, 8) | flex,
-                   }) |
-                   flex;
-        case Panel::Details:
-            return vbox({
-                       render_list() | size(HEIGHT, EQUAL, 2),
-                       separator() | color(BorderColor()),
-                       render_details() | size(HEIGHT, GREATER_THAN, 8) | flex,
-                   }) |
-                   flex;
-        case Panel::None:
-            break;
-        }
-        return render_list() | flex;
+    Element ContainersView::render_detail()
+    {
+        const auto *c = action_target();
+        Element actions = c ? actions_.render(state_style(c->state).label, state_style(c->state).fg, c->is_active())
+                            : actions_.render("✕ removed", Colors::error_fg(), false);
+        auto title = detail_title_bar(logs_name_, c ? c->image : details_.image, std::move(actions));
+        Element summary = logs_full_ ? text("") : summary_.render(render_summary());
+        return detail_page(std::move(title), std::move(summary), logs_.render(actions_.render_logs_toggle(logs_full_)),
+                           logs_full_);
     }
 
     Element ContainersView::render_list()
@@ -933,21 +904,35 @@ namespace gsystemctl::ui
                flex;
     }
 
-    Element ContainersView::render_details()
+    Elements ContainersView::render_summary()
     {
         const auto &d = details_;
+        const auto *c = action_target();
         auto settings = d.resource_settings();
         Elements lines;
-        auto section = [&lines](const std::string &title) {
-            lines.push_back(text(""));
-            lines.push_back(text(" " + title) | bold | color(AccentColor()));
-        };
+        auto section = [&lines](const std::string &title) { lines.push_back(section_title(title)); };
 
+        if (!details_error_.empty())
+            lines.push_back(paragraph(" " + details_error_) | color(Colors::error_fg()));
+
+        lines.push_back(section_title("Overview", true));
+        if (c)
+        {
+            auto style = state_style(c->state);
+            lines.push_back(field_row("State", style.label + " · " + c->status, style.fg));
+            if (c->is_running() && !c->stats.cpu.empty())
+            {
+                lines.push_back(field_row("CPU", c->stats.cpu));
+                lines.push_back(field_row("Memory", c->stats.mem_usage + "  (" + c->stats.mem_percent + ")"));
+                lines.push_back(field_row("PIDs", c->stats.pids));
+                lines.push_back(field_row("Net I/O", c->stats.net_io));
+                lines.push_back(field_row("Block I/O", c->stats.block_io));
+            }
+        }
         lines.push_back(field_row("ID", d.id));
         lines.push_back(field_row("Image", d.image));
-        lines.push_back(field_row("Entrypoint", d.entrypoint));
-        lines.push_back(field_row("Command", d.command));
-        lines.push_back(field_row("State", d.state + " · started " + d.started_at + " · restarts " + d.restart_count));
+        lines.push_back(field_row("Command", d.entrypoint.empty() ? d.command : d.entrypoint + " " + d.command));
+        lines.push_back(field_row("Started", d.started_at + (d.restart_count.empty() ? "" : " · restarts " + d.restart_count)));
         lines.push_back(field_row("Created", d.created));
         if (!d.compose_project.empty())
         {
@@ -956,7 +941,7 @@ namespace gsystemctl::ui
 
         section("Resources (Alt+u to edit)");
         lines.push_back(field_row("CPUs", limit_text(settings.cpus)));
-        lines.push_back(field_row("Memory", d.memory > 0 ? format_bytes(d.memory) : "unlimited"));
+        lines.push_back(field_row("Memory limit", d.memory > 0 ? format_bytes(d.memory) : "unlimited"));
         lines.push_back(field_row("Memory+swap", d.memory_swap < 0 ? "unlimited" : d.memory_swap == 0 ? "default" : format_bytes(d.memory_swap)));
         lines.push_back(field_row("PIDs limit", limit_text(settings.pids_limit)));
         lines.push_back(field_row("Restart", settings.restart_policy));
@@ -987,21 +972,7 @@ namespace gsystemctl::ui
         }
         if (d.env.empty())
             lines.push_back(text(" none") | color(MutedColor()));
-
-        details_line_count_ = static_cast<int>(lines.size());
-        details_scroll_ = std::clamp(details_scroll_, 0, std::max(0, details_line_count_ - 1));
-
-        return vbox({
-                   hbox({
-                       text(" DETAILS ") | color(HeaderColor()),
-                       text(d.name) | color(WarningColor()),
-                       filler(),
-                       render_actions(),
-                   }),
-                   separator() | color(BorderColor()),
-                   vbox(Elements(lines.begin() + details_scroll_, lines.end())) | yframe | flex,
-               }) |
-               bgcolor(PanelColor()) | reflect(details_box_);
+        return lines;
     }
 
 } // namespace gsystemctl::ui

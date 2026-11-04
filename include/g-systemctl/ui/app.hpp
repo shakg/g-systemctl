@@ -7,6 +7,7 @@
 #include "g-systemctl/ui/action_bar.hpp"
 #include "g-systemctl/ui/confirm_dialog.hpp"
 #include "g-systemctl/ui/containers_view.hpp"
+#include "g-systemctl/ui/detail_page.hpp"
 #include "g-systemctl/ui/log_panel.hpp"
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
@@ -47,9 +48,15 @@ namespace gsystemctl::ui
         int selected_index_ = 0;
         std::string status_message_;
         std::string error_message_;
+        // Detail page: summary plus a log strip that can fill the page.
+        // Actions target detail_unit_ while it is open.
+        bool detail_open_ = false;
+        bool logs_full_ = false;
+        std::string detail_unit_;
+        ServiceDetails service_details_;
+        std::string service_details_error_;
+        SummaryPane service_summary_;
         LogPanel service_logs_;
-        // Unit shown in the log panel; actions target it while the panel is open.
-        std::string log_unit_;
         ActionBar service_actions_;
         ConfirmDialog confirm_;
         bool show_help_ = false;
@@ -81,7 +88,7 @@ namespace gsystemctl::ui
         void refresh_services();
         void apply_filter();
         const ServiceUnit *selected_service() const;
-        // The unit in the log panel if it is open, else the selected one.
+        // The unit on the open detail page, else the selected one.
         const ServiceUnit *action_target() const;
         // `action` is Start, Stop or Restart. Stop and Restart ask for confirmation.
         void request_service_action(AuthAction action);
@@ -94,8 +101,11 @@ namespace gsystemctl::ui
         void open_auth_dialog(AuthAction action, const ServiceUnit& service = ServiceUnit{});
         void submit_auth_dialog();
         void close_auth_dialog();
-        void open_logs_for_selected_service();
-        void close_logs();
+        void open_service_detail(bool logs_full);
+        void close_service_detail();
+        void load_service_details();
+        // Goes up one level (full logs -> detail -> list). False if already at the list.
+        bool services_back();
         void switch_tab(Tab tab);
         bool handle_services_event(ftxui::Event event);
         ftxui::Component create_main_component();
@@ -104,7 +114,8 @@ namespace gsystemctl::ui
         ftxui::Element render_tabs();
         ftxui::Element render_shortcuts_dialog();
         ftxui::Element render_service_list();
-        ftxui::Element render_log_panel();
+        ftxui::Element render_service_detail();
+        ftxui::Elements render_service_summary();
         ftxui::Element render_help();
     };
 
