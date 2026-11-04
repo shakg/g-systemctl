@@ -33,7 +33,8 @@ namespace gsystemctl::ui
         bool is_open() const;
         void scroll(int delta);
         bool contains(int x, int y) const;
-        ftxui::Element render(const std::string &hint = "Alt+c close ");
+        // `actions` is drawn at the right end of the header.
+        ftxui::Element render(ftxui::Element actions);
 
         // Strips ANSI escape sequences and carriage returns, expands tabs.
         static std::string sanitize(const std::string &line);

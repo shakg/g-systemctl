@@ -1,6 +1,8 @@
 #pragma once
 
 #include "g-systemctl/container/container_manager.hpp"
+#include "g-systemctl/ui/action_bar.hpp"
+#include "g-systemctl/ui/detail_page.hpp"
 #include "g-systemctl/ui/log_panel.hpp"
 #include <condition_variable>
 #include <ftxui/component/component.hpp>
@@ -16,12 +18,16 @@
 namespace gsystemctl::ui
 {
 
-    // The Containers tab: list with live stats, log streaming, inspect panel
-    // and an editor for resource limits. All methods run on the UI thread;
+    // The Containers tab: list with live stats, a detail page (summary plus a
+    // log strip that can expand to full size) and an editor for resource limits. All methods run on the UI thread;
     // runtime calls that may block run on background threads.
     class ContainersView
     {
     public:
+        // Shows a yes/no prompt; `on_confirm` runs on the UI thread if accepted.
+        using ConfirmFn = std::function<void(const std::string &question, const std::string &confirm_label,
+                                             std::function<void()> on_confirm)>;
+
         ContainersView(ftxui::ScreenInteractive &screen, std::shared_ptr<ContainerManager> manager);
         ~ContainersView();
 
@@ -32,6 +38,12 @@ namespace gsystemctl::ui
         void set_active(bool active);
         void set_filter(const std::string &filter);
         void refresh_now();
+        // Stop and restart go through this prompt; without one they are refused.
+        void set_confirm(ConfirmFn confirm) { confirm_ = std::move(confirm); }
+        bool detail_open() const { return detail_open_; }
+        bool logs_full() const { return logs_full_; }
+        // Goes up one level (full logs -> detail -> list). False if already at the list.
+        bool back();
 
         // Returns true if the event was consumed.
         bool handle_event(ftxui::Event event);
@@ -50,15 +62,9 @@ namespace gsystemctl::ui
         std::string summary() const;
 
     private:
-        enum class Panel
-        {
-            None,
-            Logs,
-            Details,
-        };
-
         ftxui::ScreenInteractive &screen_;
         std::shared_ptr<ContainerManager> manager_;
+        ConfirmFn confirm_;
 
         // UI-thread state.
         bool available_ = false;
@@ -76,10 +82,11 @@ namespace gsystemctl::ui
         std::string busy_message_;
         std::vector<ftxui::Box> item_boxes_;
 
-        Panel panel_ = Panel::None;
-        LogPanel logs_;
-        // Container the log panel follows. `docker logs -f` exits when the
+        // Detail page. It shows logs_id_; `docker logs -f` exits when the
         // container stops, so the stream is reattached once it runs again.
+        bool detail_open_ = false;
+        bool logs_full_ = false;
+        LogPanel logs_;
         std::string logs_id_;
         std::string logs_name_;
         // Bumped on every attach/detach; end notifications from older streams are ignored.
@@ -87,10 +94,10 @@ namespace gsystemctl::ui
         bool logs_waiting_ = false;
         std::string logs_ended_at_;
         ContainerDetails details_;
-        int details_scroll_ = 0;
-        int details_line_count_ = 0;
+        std::string details_error_;
+        SummaryPane summary_;
+        ActionBar actions_;
         bool show_secrets_ = false;
-        ftxui::Box details_box_;
 
         bool edit_open_ = false;
         std::string edit_target_id_;
@@ -121,25 +128,27 @@ namespace gsystemctl::ui
 
         void run_action(const std::string &busy_message, std::function<ContainerManager::Result()> action,
                         const std::string &success_message);
-        void toggle_selected();
-        void restart_selected();
-        void open_logs();
+        // The container on the open detail page, else the selected one.
+        const Container *action_target() const;
+        void start_target();
+        void stop_target();
+        void restart_target();
+        void open_detail(bool logs_full);
+        void close_detail();
         // `resume`: reattaching after the container restarted.
         void attach_logs(int tail, const std::string &since, bool resume);
         void stop_logs();
         void on_logs_ended(int generation, const std::string &ended_at, bool quiet_retry);
         // `listed_at`: when the container list was fetched (unix time).
         void reattach_logs_if_running(const std::string &listed_at);
-        void open_details();
         void reload_details();
-        void close_panel();
-        void scroll_details(int delta);
         void open_edit_dialog();
         void submit_edit_dialog();
         void close_edit_dialog();
 
         ftxui::Element render_list();
-        ftxui::Element render_details();
+        ftxui::Element render_detail();
+        ftxui::Elements render_summary();
     };
 
 } // namespace gsystemctl::ui

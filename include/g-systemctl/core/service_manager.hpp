@@ -21,6 +21,8 @@ public:
     virtual std::pair<bool, std::string> daemon_reload(const std::string& password = "") = 0;
     // Opens the unit file in an editor on the current terminal. Blocks until the editor exits.
     virtual std::pair<bool, std::string> edit_service(const std::string& name) = 0;
+    // Summary rows for the detail page (state, PID, memory, command, unit file...). Throws on failure.
+    virtual ServiceDetails describe_service(const std::string& name) = 0;
     // Whether daemon_reload/edit_service do anything on this platform.
     virtual bool supports_unit_files() const = 0;
 

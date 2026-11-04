@@ -16,7 +16,7 @@ https://github.com/user-attachments/assets/1608dc3a-20aa-46fd-b3ea-db577f4c197c
 
 - List all system services with status indicators
 - Filter services by name in real-time
-- Start/stop services with a single keypress
+- Start, stop and restart services and containers with explicit shortcuts or buttons; stop and restart ask for confirmation
 - Cross-platform support (Linux via systemctl, macOS via launchctl)
 - Keyboard-driven navigation
 - Mouse support (scroll to navigate, click to select)
@@ -94,37 +94,47 @@ For full functionality (start/stop services), run with sudo:
 sudo g-systemctl
 ```
 
+### Detail page
+
+`Enter` on a service or container opens its detail page: a summary on top and a short live log strip below. `Enter` again expands the logs to the full page, and `Esc` goes back one level (full logs → detail page → list).
+
+- Services: state and since when, unit file and enablement, main PID, tasks, memory, CPU time, restart policy and count, user, command, `WantedBy` (`systemctl show`; `launchctl list <label>` on macOS), with logs from `journalctl -f`.
+- Containers: state, live CPU/memory/PIDs/IO, image, command, resource limits, ports, networks, mounts and environment, with logs from `docker logs -f --tail 200`. Logs keep following across restarts and recreates with the same name.
+
 ### Keyboard Shortcuts
 
 | Key | Action |
 |-----|--------|
-| `Up` / `Alt+k` | Move selection up |
-| `Down` / `Alt+j` | Move selection down |
-| `Enter` | Toggle selected service (start/stop) |
-| `Alt+r` | Restart selected service |
-| `Alt+e` | Edit the selected service's unit file in vim (`systemctl edit --full`); set `GSYSTEMCTL_EDITOR` to use another editor |
-| `Alt+Shift+r` | Reload systemd (`systemctl daemon-reload`) |
-| `Alt+l` | Stream logs for selected service |
-| `Alt+c` | Close log stream |
-| `Page Up` / `Page Down` | Scroll the log stream by page |
+| `Up` / `Down`, `Alt+k` / `Alt+j` | Move selection; on the detail page, scroll the summary (or the logs when expanded) |
+| Type / `Backspace` | Filter the list |
+| `Enter` | Open the detail page; on it, expand / shrink the logs |
+| `Alt+f` | Expand / shrink the logs on the detail page |
+| `Alt+l` | Open the detail page with the logs expanded |
+| `Page Up` / `Page Down` | Scroll the logs |
+| `Alt+o` | Start |
+| `Alt+x` | Stop (asks for confirmation) |
+| `Alt+r` | Restart (asks for confirmation) |
+| `Esc` | Back one level: help, full logs, detail page, then clear the filter, then quit |
+| `Alt+c` | Close the detail page |
+| `Alt+q` | Quit |
 | `?` | Show/hide help |
-| `Alt+q` / `Esc` | Quit |
 | `Tab` / `Alt+1` / `Alt+2` | Switch between the Services and Containers tabs |
-| Type | Filter services by name |
-| `Backspace` | Delete filter character |
+
+Services tab only:
+
+| Key | Action |
+|-----|--------|
+| `Alt+e` | Edit the unit file in vim (`systemctl edit --full`); set `GSYSTEMCTL_EDITOR` to use another editor |
+| `Alt+Shift+r` | Reload systemd (`systemctl daemon-reload`) |
 
 ### Containers Tab
 
 | Key | Action |
 |-----|--------|
-| `Enter` | Start / stop the selected container |
-| `Alt+r` | Restart |
-| `Alt+l` | Follow logs (`docker logs -f --tail 200`); keeps following across restarts and recreates with the same name |
-| `Alt+i` | Inspect: image, command, limits, ports, networks, mounts, environment |
+| `Alt+i` | Open the detail page (same as `Enter`) |
 | `Alt+u` | Edit CPUs, memory, memory+swap, PIDs limit and restart policy (`docker update`) |
 | `Alt+s` | Show/hide env values whose names look secret (PASSWORD, TOKEN, KEY, ...) |
 | `Alt+Shift+r` | Refresh now (the list refreshes every 2 seconds while the tab is open) |
-| `Alt+c` | Close the logs/inspect panel |
 
 Type to filter by container name, image or Compose project.
 
@@ -132,13 +142,18 @@ Environment variables, ports and volumes cannot be changed on an existing contai
 
 If your user cannot reach the Docker socket, add it to the `docker` group or run g-systemctl with sudo. Set `GSYSTEMCTL_DOCKER` to use a different CLI binary.
 
+### Safe actions
+
+`Enter` only navigates; it never changes a service or container. Starting is `Alt+o`. Stopping (`Alt+x`) and restarting (`Alt+r`) open a prompt that runs only on `y` or a click on its confirm button; `Enter` is ignored there, and `n` or `Esc` cancels. When sudo needs a password, the password prompt replaces the confirmation. On the detail page, actions apply to the service or container shown, and its title bar shows the current state.
+
 ### Mouse Support
 
 | Action | Effect |
 |--------|--------|
-| Scroll up/down | Navigate the service list, or scroll the log panel when the pointer is over it |
-| Left click service | Select a service |
-| Left click action buttons | Toggle a service or open its logs |
+| Scroll up/down | Navigate the list; on the detail page, scroll the summary or logs under the pointer |
+| Left click a row | Select it; click the selected row again to open its detail page |
+| Left click `Start` / `Stop` / `Restart` / `Back` | Buttons in the detail page title bar |
+| Left click `Expand` / `Shrink` | Resize the logs on the detail page |
 | Left click `Reload(Alt+R)` | Reload systemd |
 | Left click `Shortcuts(?)` | Show help |
 | Left click `Services` / `Containers` | Switch tab |

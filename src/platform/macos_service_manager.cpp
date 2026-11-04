@@ -1,4 +1,6 @@
 #include "g-systemctl/platform/macos_service_manager.hpp"
+#include "g-systemctl/core/shell.hpp"
+#include <cctype>
 #include <sstream>
 #include <stdexcept>
 
@@ -71,6 +73,69 @@ std::pair<bool, std::string> MacOSServiceManager::restart_service(const std::str
         return stop_result;
     }
     return start_service(name, password);
+}
+
+ServiceDetails MacOSServiceManager::describe_service(const std::string& name) {
+    auto result = executor_->execute("launchctl list " + shell_quote(name));
+    if (result.exit_code != 0) {
+        throw std::runtime_error("launchctl list " + name + " failed: " + result.stderr_output);
+    }
+    return parse_launchctl_details(result.stdout_output);
+}
+
+ServiceDetails MacOSServiceManager::parse_launchctl_details(const std::string& output) {
+    // Lines look like `\t"PID" = 123;`. Nested arrays/dicts are joined into one value.
+    auto strip = [](std::string value) {
+        while (!value.empty() && (value.back() == ';' || std::isspace(static_cast<unsigned char>(value.back())))) {
+            value.pop_back();
+        }
+        size_t start = 0;
+        while (start < value.size() && std::isspace(static_cast<unsigned char>(value[start]))) {
+            ++start;
+        }
+        value = value.substr(start);
+        if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+            value = value.substr(1, value.size() - 2);
+        }
+        return value;
+    };
+
+    ServiceDetails rows;
+    std::istringstream stream(output);
+    std::string line;
+    std::string nested_key;
+    std::string nested_value;
+    int depth = 0;
+    while (std::getline(stream, line)) {
+        auto trimmed = strip(line);
+        if (depth == 0 && trimmed == "{") {
+            depth = 1;
+            continue;
+        }
+        if (depth == 1) {
+            auto eq = line.find(" = ");
+            if (eq == std::string::npos) {
+                continue;
+            }
+            auto key = strip(line.substr(0, eq));
+            auto value = strip(line.substr(eq + 3));
+            if (value == "(" || value == "{") {
+                nested_key = key;
+                nested_value.clear();
+                depth = 2;
+                continue;
+            }
+            rows.emplace_back(key, value);
+        } else if (depth == 2) {
+            if (trimmed == ")" || trimmed == "}") {
+                rows.emplace_back(nested_key, nested_value);
+                depth = 1;
+            } else if (!trimmed.empty()) {
+                nested_value += (nested_value.empty() ? "" : " ") + trimmed;
+            }
+        }
+    }
+    return rows;
 }
 
 std::pair<bool, std::string> MacOSServiceManager::toggle_service(const ServiceUnit& service, const std::string& password) {

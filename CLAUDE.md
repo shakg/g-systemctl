@@ -44,6 +44,9 @@ g-systemctl/
 │   └── ui/
 │       ├── app.hpp             # Main application class, tabs
 │       ├── containers_view.hpp # Containers tab
+│       ├── action_bar.hpp      # Start/Stop/Restart/Back and Expand/Shrink buttons on the detail page
+│       ├── detail_page.hpp     # Detail page layout: title bar, scrollable summary, log strip
+│       ├── confirm_dialog.hpp  # y/n prompt guarding stop and restart
 │       ├── log_panel.hpp       # Scrollable log panel shared by both tabs
 │       ├── theme.hpp           # Palette and table-cell helpers
 │       └── styles.hpp          # UI styling/colors
@@ -58,8 +61,10 @@ g-systemctl/
 - `CommandExecutor` - Wraps shell command execution, handles sudo for privileged operations
 - `ContainerManager` - Abstract container runtime interface. `DockerContainerManager` drives the `docker` CLI with tab-separated Go-template `--format` output (no JSON dependency)
 - `ProcessLogStream` - Runs a command and streams its output lines from a background thread (journalctl, docker logs)
-- `App` - FTXUI-based TUI with Services and Containers tabs, filtering, and keyboard navigation
-- `ContainersView` - Containers tab. A poller thread refreshes `docker ps`/`docker stats` every 2s while the tab is visible; actions run on a worker thread and post results back with `ScreenInteractive::Post`. `docker logs -f` exits when a container stops, so the log panel reattaches with `--since` once the container (or a recreated one with the same name) is running again
+- `App` - FTXUI-based TUI with Services and Containers tabs, filtering, and keyboard navigation. Navigation is three levels: list → detail page (summary + short log strip) → full-size logs. `Enter` goes down, `Esc` goes up. Start/stop/restart are `Alt+o`/`Alt+x`/`Alt+r`; on the detail page they target the item shown
+- `ServiceManager::describe_service` - Summary rows for the service detail page (`systemctl show -p ...` on Linux, `launchctl list <label>` on macOS); parsers are static and unit-tested
+- `ConfirmDialog` - Owned by `App`, handed to `ContainersView` via `set_confirm`. Stop and restart go through it (or through the sudo password prompt, which replaces it). Only `y` or a click confirms; Enter is swallowed
+- `ContainersView` - Containers tab. A poller thread refreshes `docker ps`/`docker stats` every 2s while the tab is visible; actions run on a worker thread and post results back with `ScreenInteractive::Post`. The detail page summary comes from `docker inspect` plus the live `docker stats` sample. `docker logs -f` exits when a container stops, so the log strip reattaches with `--since` once the container (or a recreated one with the same name) is running again
 
 **FTXUI Components Used:**
 - `ScreenInteractive::Fullscreen()` for terminal control

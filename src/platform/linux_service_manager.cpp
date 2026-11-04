@@ -33,6 +33,53 @@ std::string describe_failure(const CommandResult& result) {
     return output;
 }
 
+// systemctl prints these for counters that are unset or not tracked.
+bool is_unset(const std::string& value) {
+    return value.empty() || value == "[not set]" || value == "infinity" || value == "18446744073709551615";
+}
+
+std::string format_size(const std::string& bytes_text) {
+    double value = std::strtod(bytes_text.c_str(), nullptr);
+    const char* units[] = {"B", "KiB", "MiB", "GiB", "TiB"};
+    int unit = 0;
+    while (value >= 1024.0 && unit < 4) {
+        value /= 1024.0;
+        ++unit;
+    }
+    std::ostringstream out;
+    out.setf(std::ios::fixed);
+    out.precision(unit == 0 ? 0 : 1);
+    out << value << " " << units[unit];
+    return out.str();
+}
+
+std::string format_cpu_time(const std::string& nsec_text) {
+    double seconds = std::strtod(nsec_text.c_str(), nullptr) / 1e9;
+    std::ostringstream out;
+    out.setf(std::ios::fixed);
+    out.precision(3);
+    if (seconds >= 60.0) {
+        long minutes = static_cast<long>(seconds / 60.0);
+        out.precision(1);
+        out << minutes << "min " << (seconds - static_cast<double>(minutes) * 60.0) << "s";
+    } else {
+        out << seconds << "s";
+    }
+    return out.str();
+}
+
+// ExecStart looks like "{ path=/usr/bin/x ; argv[]=/usr/bin/x -a ; ignore_errors=no ; ... }".
+std::string exec_command(const std::string& value) {
+    const std::string marker = "argv[]=";
+    auto begin = value.find(marker);
+    if (begin == std::string::npos) {
+        return value;
+    }
+    begin += marker.size();
+    auto end = value.find(" ; ignore_errors=", begin);
+    return trim(value.substr(begin, end == std::string::npos ? std::string::npos : end - begin));
+}
+
 std::string editor_command() {
     const char* editor = std::getenv("GSYSTEMCTL_EDITOR");
     return editor && *editor ? editor : "vim";
@@ -147,6 +194,87 @@ void LinuxServiceManager::add_missing_unit_files(std::vector<ServiceUnit>& units
     std::sort(units.begin(), units.end(), [](const ServiceUnit& left, const ServiceUnit& right) {
         return left.unit < right.unit;
     });
+}
+
+ServiceDetails LinuxServiceManager::describe_service(const std::string& name) {
+    std::string prefix = system_mode_ ? "systemctl" : "systemctl --user";
+    auto result = executor_->execute(
+        prefix + " show " + shell_quote(name) + " --no-pager -p " +
+        "Description,LoadState,ActiveState,SubState,UnitFileState,FragmentPath,Type,MainPID,"
+        "ActiveEnterTimestamp,InactiveEnterTimestamp,TasksCurrent,MemoryCurrent,CPUUsageNSec,"
+        "Restart,NRestarts,User,ExecStart,WantedBy");
+    if (result.exit_code != 0) {
+        throw std::runtime_error(describe_failure(result));
+    }
+    return parse_show_output(result.stdout_output);
+}
+
+ServiceDetails LinuxServiceManager::parse_show_output(const std::string& output) {
+    std::map<std::string, std::string> props;
+    std::istringstream stream(output);
+    std::string line;
+    while (std::getline(stream, line)) {
+        auto eq = line.find('=');
+        if (eq != std::string::npos) {
+            props[line.substr(0, eq)] = trim(line.substr(eq + 1));
+        }
+    }
+    auto get = [&props](const std::string& key) {
+        auto it = props.find(key);
+        return it == props.end() ? std::string() : it->second;
+    };
+
+    ServiceDetails rows;
+    auto add = [&rows](const std::string& label, const std::string& value) {
+        if (!value.empty()) {
+            rows.emplace_back(label, value);
+        }
+    };
+
+    add("Description", get("Description"));
+
+    std::string state = get("ActiveState");
+    if (!get("SubState").empty()) {
+        state += " (" + get("SubState") + ")";
+    }
+    const bool active = get("ActiveState") == "active" || get("ActiveState") == "reloading";
+    const std::string since = active ? get("ActiveEnterTimestamp") : get("InactiveEnterTimestamp");
+    if (!is_unset(since)) {
+        state += " since " + since;
+    }
+    add("State", state);
+
+    std::string unit_file = get("UnitFileState");
+    if (!get("FragmentPath").empty()) {
+        unit_file += (unit_file.empty() ? "" : " · ") + get("FragmentPath");
+    }
+    add("Unit file", unit_file.empty() ? get("LoadState") : unit_file);
+    add("Type", get("Type"));
+
+    if (!is_unset(get("MainPID")) && get("MainPID") != "0") {
+        add("Main PID", get("MainPID"));
+    }
+    if (!is_unset(get("TasksCurrent"))) {
+        add("Tasks", get("TasksCurrent"));
+    }
+    if (!is_unset(get("MemoryCurrent"))) {
+        add("Memory", format_size(get("MemoryCurrent")));
+    }
+    if (!is_unset(get("CPUUsageNSec"))) {
+        add("CPU time", format_cpu_time(get("CPUUsageNSec")));
+    }
+
+    std::string restart = get("Restart");
+    if (!is_unset(get("NRestarts")) && get("NRestarts") != "0") {
+        restart += (restart.empty() ? "" : " · ") + get("NRestarts") + " restarts";
+    }
+    add("Restart", restart);
+    add("User", get("User"));
+    if (!get("ExecStart").empty()) {
+        add("Command", exec_command(get("ExecStart")));
+    }
+    add("Wanted by", get("WantedBy"));
+    return rows;
 }
 
 void LinuxServiceManager::populate_resource_usage(std::vector<ServiceUnit>& units) {

@@ -4,11 +4,15 @@
 #include "g-systemctl/core/logging_manager.hpp"
 #include "g-systemctl/core/service.hpp"
 #include "g-systemctl/core/command_executor.hpp"
+#include "g-systemctl/ui/action_bar.hpp"
+#include "g-systemctl/ui/confirm_dialog.hpp"
 #include "g-systemctl/ui/containers_view.hpp"
+#include "g-systemctl/ui/detail_page.hpp"
 #include "g-systemctl/ui/log_panel.hpp"
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/screen/box.hpp>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -44,7 +48,17 @@ namespace gsystemctl::ui
         int selected_index_ = 0;
         std::string status_message_;
         std::string error_message_;
+        // Detail page: summary plus a log strip that can fill the page.
+        // Actions target detail_unit_ while it is open.
+        bool detail_open_ = false;
+        bool logs_full_ = false;
+        std::string detail_unit_;
+        ServiceDetails service_details_;
+        std::string service_details_error_;
+        SummaryPane service_summary_;
         LogPanel service_logs_;
+        ActionBar service_actions_;
+        ConfirmDialog confirm_;
         bool show_help_ = false;
         ftxui::Box shortcuts_box_;
         Tab active_tab_ = Tab::Services;
@@ -57,15 +71,14 @@ namespace gsystemctl::ui
         enum class AuthAction
         {
             None,
-            Toggle,
+            Start,
+            Stop,
             Restart,
             DaemonReload,
         };
         AuthAction pending_auth_action_ = AuthAction::None;
         ServiceUnit pending_auth_service_;
         std::vector<ftxui::Box> item_boxes_;
-        std::vector<ftxui::Box> toggle_button_boxes_;
-        std::vector<ftxui::Box> log_button_boxes_;
         ftxui::Box reload_button_box_;
         // Set while a background operation runs; all input is ignored meanwhile.
         bool busy_ = false;
@@ -74,18 +87,25 @@ namespace gsystemctl::ui
 
         void refresh_services();
         void apply_filter();
-        void toggle_selected_service();
-        void restart_selected_service();
-        void toggle_service(const ServiceUnit& service, const std::string& password = "");
-        void restart_service(const ServiceUnit& service, const std::string& password = "");
+        const ServiceUnit *selected_service() const;
+        // The unit on the open detail page, else the selected one.
+        const ServiceUnit *action_target() const;
+        // `action` is Start, Stop or Restart. Stop and Restart ask for confirmation.
+        void request_service_action(AuthAction action);
+        void run_service_action(AuthAction action, const ServiceUnit& service, const std::string& password = "");
+        void run_in_background(const std::string& busy_message, std::function<std::pair<bool, std::string>()> work,
+                               const std::string& success_message, const std::string& failure_prefix);
         void request_daemon_reload();
         void daemon_reload(const std::string& password = "");
         void edit_selected_service();
         void open_auth_dialog(AuthAction action, const ServiceUnit& service = ServiceUnit{});
         void submit_auth_dialog();
         void close_auth_dialog();
-        void open_logs_for_selected_service();
-        void close_logs();
+        void open_service_detail(bool logs_full);
+        void close_service_detail();
+        void load_service_details();
+        // Goes up one level (full logs -> detail -> list). False if already at the list.
+        bool services_back();
         void switch_tab(Tab tab);
         bool handle_services_event(ftxui::Event event);
         ftxui::Component create_main_component();
@@ -94,7 +114,8 @@ namespace gsystemctl::ui
         ftxui::Element render_tabs();
         ftxui::Element render_shortcuts_dialog();
         ftxui::Element render_service_list();
-        ftxui::Element render_log_panel();
+        ftxui::Element render_service_detail();
+        ftxui::Elements render_service_summary();
         ftxui::Element render_help();
     };
 
