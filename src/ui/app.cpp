@@ -1,5 +1,7 @@
 #include "g-systemctl/ui/app.hpp"
 #include "g-systemctl/ui/styles.hpp"
+#include "g-systemctl/ui/theme.hpp"
+#include "g-systemctl/container/container_manager.hpp"
 #include "g-systemctl/core/command_executor.hpp"
 #include "g-systemctl/core/logging_manager.hpp"
 #include "g-systemctl/platform/platform.hpp"
@@ -16,50 +18,25 @@ using namespace ftxui;
 
 namespace gsystemctl::ui
 {
-    namespace
+    using namespace theme;
+
+    App::App(bool system_mode, const std::string &initial_filter, Tab initial_tab)
+        : screen_(ScreenInteractive::Fullscreen()), system_mode_(system_mode), service_logs_(screen_)
     {
-        Color BackgroundColor() { return Color::RGB(11, 12, 19); }
-        Color PanelColor() { return Color::RGB(16, 17, 27); }
-        Color BorderColor() { return Color::RGB(40, 43, 61); }
-        Color MutedColor() { return Color::RGB(103, 110, 140); }
-        Color TextColor() { return Color::RGB(180, 186, 208); }
-        Color HeaderColor() { return Color::RGB(112, 119, 150); }
-        Color AccentColor() { return Color::RGB(110, 171, 147); }
-        Color WarningColor() { return Color::RGB(255, 190, 45); }
-        Element cell(const std::string &value, int width, Color fg = TextColor(), bool bold_text = false)
-        {
-            auto element = text(value) | color(fg);
-            if (bold_text)
-            {
-                element = element | bold;
-            }
-            return element | size(WIDTH, EQUAL, width);
-        }
-
-        Element right_cell(const std::string &value, int width, Color fg = TextColor())
-        {
-            return text(value) | color(fg) | align_right | size(WIDTH, EQUAL, width);
-        }
-
-        Element service_cell(const std::string &value, Color fg = TextColor(), bool bold_text = false)
-        {
-            auto element = text(value) | color(fg);
-            if (bold_text)
-            {
-                element = element | bold;
-            }
-            return element | flex;
-        }
-
-    }
-
-    App::App(bool system_mode, const std::string &initial_filter) : screen_(ScreenInteractive::Fullscreen()), system_mode_(system_mode)
-    {
-        filter_text_ = initial_filter;
         executor_ = std::make_shared<SystemCommandExecutor>();
         service_manager_ = ServiceManager::create(executor_, system_mode_);
         logging_manager_ = LoggingManager::create(executor_);
+        containers_view_ = std::make_unique<ContainersView>(screen_, ContainerManager::create(executor_));
+        if (initial_tab == Tab::Containers)
+        {
+            containers_view_->set_filter(initial_filter);
+        }
+        else
+        {
+            filter_text_ = initial_filter;
+        }
         refresh_services();
+        switch_tab(initial_tab);
     }
 
     App::~App()
@@ -356,51 +333,22 @@ namespace gsystemctl::ui
 
         if (logging_manager_)
         {
-            log_stream_.reset();
-            {
-                std::lock_guard<std::mutex> lock(log_mutex_);
-                log_unit_ = service.unit;
-                log_lines_.clear();
-                log_lines_.push_back(system_mode_
-                                         ? "Starting: journalctl -u " + service.unit + " -f -n 100"
-                                         : "Starting: journalctl --user-unit " + service.unit + " -f -n 100");
-                log_scroll_position_ = 0;
-                log_follow_tail_ = true;
-                log_panel_open_ = true;
-            }
-
+            service_logs_.open(service.unit, system_mode_
+                                                 ? "Starting: journalctl -u " + service.unit + " -f -n 100"
+                                                 : "Starting: journalctl --user-unit " + service.unit + " -f -n 100");
             screen_.PostEvent(Event::Custom);
 
-            log_stream_ = logging_manager_->stream_logs(service.unit, system_mode_, [this](std::string line) {
-                {
-                    std::lock_guard<std::mutex> lock(log_mutex_);
-                    log_lines_.push_back(std::move(line));
-                    if (log_lines_.size() > 500)
-                    {
-                        log_lines_.erase(log_lines_.begin(), log_lines_.begin() + 100);
-                    }
-                    if (log_follow_tail_)
-                    {
-                        log_scroll_position_ = std::max(0, static_cast<int>(log_lines_.size()) - 1);
-                    }
-                    else
-                    {
-                        log_scroll_position_ = std::clamp(log_scroll_position_, 0, std::max(0, static_cast<int>(log_lines_.size()) - 1));
-                    }
-                }
-                screen_.PostEvent(Event::Custom);
-            });
-
-            if (!log_stream_)
+            auto stream = logging_manager_->stream_logs(service.unit, system_mode_, service_logs_.sink());
+            if (!stream)
             {
                 error_message_ = "Unable to start log stream";
-                std::lock_guard<std::mutex> lock(log_mutex_);
-                log_lines_.push_back(error_message_);
+                service_logs_.append(error_message_);
             }
             else
             {
                 status_message_.clear();
             }
+            service_logs_.attach(std::move(stream));
         }
         else
         {
@@ -410,55 +358,18 @@ namespace gsystemctl::ui
 
     void App::close_logs()
     {
-        log_stream_.reset();
-        std::lock_guard<std::mutex> lock(log_mutex_);
-        log_panel_open_ = false;
-        log_unit_.clear();
-        log_lines_.clear();
-        log_scroll_position_ = 0;
-        log_follow_tail_ = true;
+        service_logs_.close();
     }
 
-    void App::scroll_logs(int delta)
+    void App::switch_tab(Tab tab)
     {
-        std::lock_guard<std::mutex> lock(log_mutex_);
-        if (!log_panel_open_ || log_lines_.empty())
-        {
-            return;
-        }
-
-        const int max_position = static_cast<int>(log_lines_.size()) - 1;
-        log_scroll_position_ = std::clamp(log_scroll_position_ + delta, 0, max_position);
-        log_follow_tail_ = log_scroll_position_ == max_position;
+        active_tab_ = tab;
+        containers_view_->set_active(tab == Tab::Containers);
+        screen_.PostEvent(Event::Custom);
     }
 
-    Component App::create_main_component()
+    bool App::handle_services_event(Event event)
     {
-        auto input = Input(&filter_text_, "Filter services...");
-
-        auto renderer = Renderer(input, [this, input]
-                                 { return render(); });
-
-        auto main_component = CatchEvent(renderer, [this, input](Event event)
-                          {
-        if (busy_) {
-            return true;
-        }
-        if (auth_dialog_open_) {
-            return false;
-        }
-        if (event == Event::Special("\x1b" "q") || event == Event::Escape) {
-            if (show_help_) {
-                show_help_ = false;
-                return true;
-            }
-            screen_.Exit();
-            return true;
-        }
-        if (event == Event::Character('?')) {
-            show_help_ = !show_help_;
-            return true;
-        }
         if (event == Event::Special("\x1b" "r")) {
             restart_selected_service();
             return true;
@@ -471,20 +382,20 @@ namespace gsystemctl::ui
             edit_selected_service();
             return true;
         }
-        if (log_panel_open_ && event == Event::PageUp) {
-            scroll_logs(-10);
+        if (service_logs_.is_open() && event == Event::PageUp) {
+            service_logs_.scroll(-10);
             return true;
         }
-        if (log_panel_open_ && event == Event::PageDown) {
-            scroll_logs(10);
+        if (service_logs_.is_open() && event == Event::PageDown) {
+            service_logs_.scroll(10);
             return true;
         }
-        if (log_panel_open_ && (event == Event::ArrowUp || event == Event::Special("\x1b" "k"))) {
-            scroll_logs(-1);
+        if (service_logs_.is_open() && (event == Event::ArrowUp || event == Event::Special("\x1b" "k"))) {
+            service_logs_.scroll(-1);
             return true;
         }
-        if (log_panel_open_ && (event == Event::ArrowDown || event == Event::Special("\x1b" "j"))) {
-            scroll_logs(1);
+        if (service_logs_.is_open() && (event == Event::ArrowDown || event == Event::Special("\x1b" "j"))) {
+            service_logs_.scroll(1);
             return true;
         }
         if (event == Event::ArrowUp || event == Event::Special("\x1b" "k")) {
@@ -533,13 +444,13 @@ namespace gsystemctl::ui
         }
         if (event.is_mouse()) {
             auto& mouse = event.mouse();
-            if (log_panel_open_ && log_panel_box_.Contain(mouse.x, mouse.y)) {
+            if (service_logs_.is_open() && service_logs_.contains(mouse.x, mouse.y)) {
                 if (mouse.button == Mouse::WheelUp) {
-                    scroll_logs(-3);
+                    service_logs_.scroll(-3);
                     return true;
                 }
                 if (mouse.button == Mouse::WheelDown) {
-                    scroll_logs(3);
+                    service_logs_.scroll(3);
                     return true;
                 }
             }
@@ -560,10 +471,6 @@ namespace gsystemctl::ui
                 return true;
             }
             if (mouse.button == Mouse::Left && mouse.motion == Mouse::Pressed) {
-                if (shortcuts_box_.Contain(mouse.x, mouse.y)) {
-                    show_help_ = true;
-                    return true;
-                }
                 if (reload_button_box_.Contain(mouse.x, mouse.y)) {
                     request_daemon_reload();
                     return true;
@@ -592,7 +499,71 @@ namespace gsystemctl::ui
                 }
             }
         }
-        return false; });
+        return false;
+    }
+
+    Component App::create_main_component()
+    {
+        auto input = Input(&filter_text_, "Filter services...");
+
+        auto renderer = Renderer(input, [this]
+                                 { return render(); });
+
+        auto main_component = CatchEvent(renderer, [this](Event event)
+                          {
+        if (busy_) {
+            return true;
+        }
+        if (auth_dialog_open_ || containers_view_->edit_dialog_open()) {
+            return false;
+        }
+        if (event == Event::Special("\x1b" "q") || event == Event::Escape) {
+            if (show_help_) {
+                show_help_ = false;
+                return true;
+            }
+            screen_.Exit();
+            return true;
+        }
+        if (event == Event::Character('?')) {
+            show_help_ = !show_help_;
+            return true;
+        }
+        if (event == Event::Tab || event == Event::TabReverse) {
+            switch_tab(active_tab_ == Tab::Services ? Tab::Containers : Tab::Services);
+            return true;
+        }
+        if (event == Event::Special("\x1b" "1")) {
+            switch_tab(Tab::Services);
+            return true;
+        }
+        if (event == Event::Special("\x1b" "2")) {
+            switch_tab(Tab::Containers);
+            return true;
+        }
+        if (event.is_mouse() && event.mouse().button == Mouse::Left && event.mouse().motion == Mouse::Pressed) {
+            const auto& mouse = event.mouse();
+            if (services_tab_box_.Contain(mouse.x, mouse.y)) {
+                switch_tab(Tab::Services);
+                return true;
+            }
+            if (containers_tab_box_.Contain(mouse.x, mouse.y)) {
+                switch_tab(Tab::Containers);
+                return true;
+            }
+            if (shortcuts_box_.Contain(mouse.x, mouse.y)) {
+                show_help_ = true;
+                return true;
+            }
+            if (active_tab_ == Tab::Containers && reload_button_box_.Contain(mouse.x, mouse.y)) {
+                containers_view_->refresh_now();
+                return true;
+            }
+        }
+        if (active_tab_ == Tab::Containers) {
+            return containers_view_->handle_event(event);
+        }
+        return handle_services_event(event); });
 
         InputOption password_option;
         password_option.password = true;
@@ -626,17 +597,24 @@ namespace gsystemctl::ui
         });
 
         main_component |= Modal(auth_modal, &auth_dialog_open_);
+        main_component |= Modal(containers_view_->edit_dialog(), containers_view_->edit_dialog_open_flag());
         return main_component;
     }
 
     Element App::render()
     {
-        bool show_status = !status_message_.empty() || !error_message_.empty();
+        const bool containers = active_tab_ == Tab::Containers;
+        const auto &status = containers ? containers_view_->status_message() : status_message_;
+        const auto &error = containers ? containers_view_->error_message() : error_message_;
 
         Elements layout;
         layout.push_back(render_top_bar());
         layout.push_back(separator() | color(BorderColor()));
-        if (log_panel_open_)
+        if (containers)
+        {
+            layout.push_back(containers_view_->render_body() | flex);
+        }
+        else if (service_logs_.is_open())
         {
             layout.push_back(render_service_list() | size(HEIGHT, EQUAL, 2));
             layout.push_back(separator() | color(BorderColor()));
@@ -646,22 +624,27 @@ namespace gsystemctl::ui
         {
             layout.push_back(render_service_list() | flex);
         }
-        if (show_status)
+        if (!status.empty() || !error.empty())
         {
             layout.push_back(separator() | color(BorderColor()));
-            layout.push_back(render_status_bar());
+            layout.push_back(!error.empty() ? text(" " + error) | color(Colors::error_fg())
+                                            : text(" " + status) | color(MutedColor()));
         }
         layout.push_back(separator() | color(BorderColor()));
+
+        const auto &filter = containers ? containers_view_->filter_text() : filter_text_;
+        const auto summary = containers ? containers_view_->summary()
+                                        : std::to_string(filtered_services_.size()) + "/" + std::to_string(services_.size()) + " services";
         layout.push_back(hbox({
             text(" Filter: ") | color(MutedColor()),
-            text(filter_text_.empty() ? "█" : filter_text_ + "█") | color(AccentColor()),
+            text(filter + "█") | color(AccentColor()),
             filler(),
-            text(std::to_string(filtered_services_.size()) + "/" + std::to_string(services_.size()) + " services") | color(MutedColor()),
-            text("  ·  ↑↓ navigate  ·  type to filter  ") | color(MutedColor()),
+            text(summary) | color(MutedColor()),
+            text("  ·  ↑↓ navigate  ·  type to filter  ·  Tab switch  ") | color(MutedColor()),
         }));
 
         auto page = vbox(std::move(layout)) | borderStyled(ROUNDED, BorderColor()) | bgcolor(BackgroundColor());
-        auto dialog_open = show_help_ || auth_dialog_open_;
+        auto dialog_open = show_help_ || auth_dialog_open_ || containers_view_->edit_dialog_open();
         if (dialog_open)
         {
             page = page | color(Color::RGB(55, 59, 78)) | bgcolor(Color::RGB(4, 5, 9)) | dim;
@@ -678,19 +661,43 @@ namespace gsystemctl::ui
         return page;
     }
 
+    Element App::render_tabs()
+    {
+        auto tab = [this](const std::string &label, Tab tab, Box &box) {
+            bool active = active_tab_ == tab;
+            auto element = text(" " + label + " ");
+            element = active ? element | color(Color::White) | bold | bgcolor(Colors::selected_bg())
+                             : element | color(MutedColor());
+            return element | reflect(box);
+        };
+        return hbox({
+            tab("Services", Tab::Services, services_tab_box_),
+            text("│") | color(BorderColor()),
+            tab("Containers", Tab::Containers, containers_tab_box_),
+        });
+    }
+
     Element App::render_top_bar()
     {
+        const bool containers = active_tab_ == Tab::Containers;
+        const bool busy = containers ? containers_view_->busy() : busy_;
+        const auto &busy_message = containers ? containers_view_->busy_message() : busy_message_;
+
         Element reload_button;
-        if (busy_)
+        if (busy)
         {
             // Braille spinner, advanced by wall clock so speed is independent of frame rate.
             auto now = std::chrono::steady_clock::now().time_since_epoch();
             auto frame = static_cast<size_t>(std::chrono::duration_cast<std::chrono::milliseconds>(now).count() / 80);
             reload_button = hbox({
                 spinner(15, frame) | color(WarningColor()),
-                text(" " + busy_message_ + " ") | color(WarningColor()),
+                text(" " + busy_message + " ") | color(WarningColor()),
             });
             animation::RequestAnimationFrame();
+        }
+        else if (containers)
+        {
+            reload_button = text(" Refresh(Alt+R) ") | color(MutedColor());
         }
         else if (service_manager_->supports_unit_files())
         {
@@ -703,6 +710,8 @@ namespace gsystemctl::ui
 
         return hbox({
                    text(" g-systemctl ") | color(AccentColor()) | bold,
+                   text(" "),
+                   render_tabs(),
                    filler(),
                    reload_button | reflect(reload_button_box_),
                    text(" Shortcuts(?) ") | color(MutedColor()) | reflect(shortcuts_box_),
@@ -724,7 +733,7 @@ namespace gsystemctl::ui
 
         auto header = hbox({
                           text(" "),
-                          service_cell("SERVICE", HeaderColor()),
+                          flex_cell("SERVICE", HeaderColor()),
                           cell("STATUS", 11, HeaderColor()),
                           right_cell("PID", 7, HeaderColor()),
                           right_cell("CPU", 7, HeaderColor()),
@@ -746,7 +755,7 @@ namespace gsystemctl::ui
             std::string status_text = active ? "● active" : "○ inactive";
 
             auto card = hbox({
-                service_cell(svc.unit, selected ? Color::White : TextColor(), selected),
+                flex_cell(svc.unit, selected ? Color::White : TextColor(), selected),
                 cell(status_text, 11, status_color, active),
                 right_cell(svc.pid.empty() ? "-" : svc.pid, 7, MutedColor()),
                 right_cell(svc.cpu.empty() ? "-" : svc.cpu, 7, MutedColor()),
@@ -779,75 +788,42 @@ namespace gsystemctl::ui
 
     Element App::render_log_panel()
     {
-        std::string unit;
-        std::vector<std::string> lines;
-        int scroll_position = 0;
-        {
-            std::lock_guard<std::mutex> lock(log_mutex_);
-            unit = log_unit_;
-            if (log_follow_tail_)
-            {
-                log_scroll_position_ = std::max(0, static_cast<int>(log_lines_.size()) - 1);
-            }
-            else
-            {
-                log_scroll_position_ = std::clamp(log_scroll_position_, 0, std::max(0, static_cast<int>(log_lines_.size()) - 1));
-            }
-            scroll_position = log_scroll_position_;
-            lines = log_lines_;
-        }
-
-        Elements rendered_lines;
-        for (const auto &line : lines)
-        {
-            rendered_lines.push_back(text(line));
-        }
-
-        if (rendered_lines.empty())
-        {
-            rendered_lines.push_back(text("Waiting for log output...") | dim);
-        }
-
-        return vbox({
-                   hbox({
-                       text(" LOGS ") | color(HeaderColor()),
-                       text(unit) | color(WarningColor()),
-                       filler(),
-                       text("Alt+c close ") | color(MutedColor()),
-                   }),
-                   separator() | color(BorderColor()),
-                   vbox(std::move(rendered_lines)) | color(TextColor()) | focusPosition(0, scroll_position) | vscroll_indicator | yframe | flex,
-               }) |
-               bgcolor(PanelColor()) | reflect(log_panel_box_);
-    }
-
-    Element App::render_status_bar()
-    {
-        if (!error_message_.empty())
-        {
-            return text(" " + error_message_) | color(Colors::error_fg());
-        }
-        return text(" " + status_message_) | color(MutedColor());
+        return service_logs_.render();
     }
 
     Element App::render_help()
     {
+        auto services = vbox({
+            text("Services") | bold,
+            text("  Enter        Start / stop"),
+            text("  Alt+r        Restart"),
+            text("  Alt+e        Edit unit file ($GSYSTEMCTL_EDITOR)"),
+            text("  Alt+Shift+r  systemctl daemon-reload"),
+            text("  Alt+l        Stream logs"),
+            text("  Alt+c        Close logs"),
+        });
+        auto containers = vbox({
+            text("Containers") | bold,
+            text("  Enter        Start / stop"),
+            text("  Alt+r        Restart"),
+            text("  Alt+l        Stream logs"),
+            text("  Alt+i        Inspect (env, mounts, limits)"),
+            text("  Alt+u        Edit resource limits"),
+            text("  Alt+s        Show/hide secret env values"),
+            text("  Alt+Shift+r  Refresh now"),
+            text("  Alt+c        Close panel"),
+        });
         return vbox({
                    text("g-systemctl - Help") | bold | center,
                    separator(),
+                   text("General") | bold,
+                   text("  Tab / Alt+1 / Alt+2   Switch tab"),
+                   text("  Up/Down, Alt+k/j      Move selection (scroll when a panel is open)"),
+                   text("  PgUp / PgDn           Scroll panel"),
+                   text("  type / Backspace      Filter"),
+                   text("  Alt+q / Esc           Quit"),
                    text(""),
-                   text("Navigation:") | bold,
-                   text("  Up / Alt+k   - Move selection up"),
-                   text("  Down / Alt+j - Move selection down"),
-                   text("  Enter        - Toggle selected service (start/stop)"),
-                   text(""),
-                   text("Actions:") | bold,
-                   text("  Alt+r        - Restart selected service"),
-                   text("  Alt+e        - Edit unit file of selected service (vim)"),
-                   text("  Alt+Shift+r  - Reload systemd daemon (daemon-reload)"),
-                   text("  Alt+l        - Stream logs for selected unit"),
-                   text("  Alt+c        - Close log stream"),
-                   text("  Alt+q / Esc  - Quit"),
+                   hbox({services, text("    "), containers}),
                    text(""),
                    text("Press ? to close") | dim | center,
                }) |

@@ -12,7 +12,11 @@ void print_help()
     std::cout << "  -v, --version           Show version information\n";
     std::cout << "  --system                Show system services (default)\n";
     std::cout << "  --user                  Show user services\n";
+    std::cout << "  -c, --containers        Open the Containers tab\n";
     std::cout << "  -f, --filter <text>     Set the initial filter text\n\n";
+    std::cout << "Environment:\n";
+    std::cout << "  GSYSTEMCTL_DOCKER       Docker CLI binary (default: docker)\n";
+    std::cout << "  GSYSTEMCTL_EDITOR       Editor for unit files (default: vim)\n\n";
     std::cout << "Note: Run with sudo for full functionality (start/stop services)\n";
 }
 
@@ -26,6 +30,7 @@ int main(int argc, char *argv[])
 {
     bool system_mode = true;
     std::string initial_filter;
+    auto initial_tab = gsystemctl::ui::App::Tab::Services;
 
     for (int i = 1; i < argc; ++i)
     {
@@ -47,6 +52,10 @@ int main(int argc, char *argv[])
         {
             system_mode = false;
         }
+        if (std::strcmp(argv[i], "-c") == 0 || std::strcmp(argv[i], "--containers") == 0)
+        {
+            initial_tab = gsystemctl::ui::App::Tab::Containers;
+        }
         if ((std::strcmp(argv[i], "-f") == 0 || std::strcmp(argv[i], "--filter") == 0) && i + 1 < argc)
         {
             initial_filter = argv[++i];
@@ -55,7 +64,7 @@ int main(int argc, char *argv[])
 
     try
     {
-        gsystemctl::ui::App app(system_mode, initial_filter);
+        gsystemctl::ui::App app(system_mode, initial_filter, initial_tab);
         return app.run();
     }
     catch (const std::exception &e)

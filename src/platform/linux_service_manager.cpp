@@ -1,4 +1,5 @@
 #include "g-systemctl/platform/linux_service_manager.hpp"
+#include "g-systemctl/core/shell.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -9,18 +10,6 @@
 namespace gsystemctl {
 
 namespace {
-
-std::string shell_quote(const std::string& value) {
-    std::string quoted = "'";
-    for (char c : value) {
-        if (c == '\'') {
-            quoted += "'\\''";
-        } else {
-            quoted += c;
-        }
-    }
-    return quoted + "'";
-}
 
 std::string trim(const std::string& value) {
     auto begin = std::find_if_not(value.begin(), value.end(), [](unsigned char c) { return std::isspace(c); });
