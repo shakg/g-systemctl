@@ -678,7 +678,7 @@
             <div class="code-head"><span class="code-label">Release checksums</span><button class="copy-button"
                 type="button" data-copy-target="checksums-code">Copy</button></div>
             <pre class="code-body" id="checksums-code"><span class="code-line command">$ curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/SHA256SUMS.txt</span>
-<span class="code-line command">$ grep g-systemctl-linux-x86_64.tar.gz SHA256SUMS.txt | shasum -a 256 -c -</span></pre>
+<span class="code-line command">$ sha256sum --ignore-missing -c SHA256SUMS.txt</span></pre>
           </div>
         </div>
 

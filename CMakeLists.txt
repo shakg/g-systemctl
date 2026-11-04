@@ -55,6 +55,11 @@ target_link_libraries(g-systemctl PRIVATE
     Threads::Threads
 )
 
+# Release binaries must run on distros with an older libstdc++ than the build host.
+if(UNIX AND NOT APPLE)
+    target_link_options(g-systemctl PRIVATE -static-libstdc++ -static-libgcc)
+endif()
+
 if(BUILD_TESTING)
     enable_testing()
     add_subdirectory(tests)
