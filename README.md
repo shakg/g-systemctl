@@ -4,7 +4,9 @@
 ![Build Status](https://github.com/shakg/g-systemctl/actions/workflows/release.yml/badge.svg)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-g-systemctl is a terminal user interface (TUI) for managing system services on Linux and macOS. View, search, filter, and control your service daemons directly from the terminal.
+> **New:** g-systemctl now manages Docker containers too. Open the Containers tab to see live CPU/memory, start/stop/restart containers, follow their logs, and change resource limits in place.
+
+g-systemctl is a terminal user interface (TUI) for managing system services on Linux and macOS, and Docker containers. View, search, filter, and control your services and containers directly from the terminal.
 
 ## See It In Action
 
@@ -34,15 +36,6 @@ https://github.com/user-attachments/assets/1608dc3a-20aa-46fd-b3ea-db577f4c197c
 
 ## Installation
 
-### Homebrew
-
-Download the formula from the latest release and install it locally:
-
-```bash
-curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/g-systemctl.rb
-brew install ./g-systemctl.rb
-```
-
 ### Debian / Ubuntu
 
 For amd64 on Ubuntu 22.04+ or Debian 12+. Download the `.deb` package from the latest release and install it:
@@ -60,6 +53,15 @@ For x86_64 with glibc 2.34+ (Ubuntu 22.04+, Debian 12+, Fedora 35+, and similar)
 curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/g-systemctl-linux-x86_64.tar.gz
 tar -xzf g-systemctl-linux-x86_64.tar.gz
 sudo install -m 755 g-systemctl-*/g-systemctl /usr/local/bin/g-systemctl
+```
+
+### macOS (Homebrew)
+
+Download the formula from the latest release and install it locally:
+
+```bash
+curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/g-systemctl.rb
+brew install ./g-systemctl.rb
 ```
 
 ### Build from source

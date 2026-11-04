@@ -3,9 +3,14 @@
 #include "g-systemctl/ui/theme.hpp"
 #include <algorithm>
 #include <ftxui/dom/elements.hpp>
+#include <ftxui/dom/node.hpp>
 #include <ftxui/screen/box.hpp>
+#include <ftxui/screen/screen.hpp>
+#include <ftxui/screen/string.hpp>
 #include <ftxui/screen/terminal.hpp>
+#include <memory>
 #include <string>
+#include <vector>
 
 // Layout shared by the service and container detail pages: a title bar, a
 // summary, and a short log strip that can expand to fill the page.
@@ -37,15 +42,63 @@ namespace gsystemctl::ui
         return first ? heading : vbox({text(""), heading});
     }
 
+    // Name and subtitle of the title bar. Shrinks below its natural width so
+    // the action buttons always fit: the subtitle gives up space first, then
+    // the name. Cut text ends with "…".
+    class TitleText : public ftxui::Node
+    {
+    public:
+        TitleText(std::string name, std::string subtitle)
+            : name_(ftxui::Utf8ToGlyphs(name)), subtitle_(ftxui::Utf8ToGlyphs(subtitle))
+        {
+        }
+
+        void ComputeRequirement() override
+        {
+            requirement_.min_x = static_cast<int>(name_.size() + subtitle_.size());
+            requirement_.min_y = 1;
+            requirement_.flex_shrink_x = 1;
+        }
+
+        void Render(ftxui::Screen &screen) override
+        {
+            const int width = box_.x_max - box_.x_min + 1;
+            if (width <= 0 || box_.y_min > box_.y_max)
+                return;
+            const int name_width = std::min(width, static_cast<int>(name_.size()));
+            const int x = draw(screen, box_.x_min, name_, name_width, true, theme::WarningColor());
+            draw(screen, x, subtitle_, width - name_width, false, theme::MutedColor());
+        }
+
+    private:
+        std::vector<std::string> name_;
+        std::vector<std::string> subtitle_;
+
+        // Draws `glyphs` into `width` cells, ending with "…" if cut. Returns the next x.
+        int draw(ftxui::Screen &screen, int x, const std::vector<std::string> &glyphs, int width, bool bold,
+                 ftxui::Color fg) const
+        {
+            const int count = static_cast<int>(glyphs.size());
+            for (int i = 0; i < width && i < count; ++i, ++x)
+            {
+                auto &pixel = screen.PixelAt(x, box_.y_min);
+                pixel.character = (width < count && i == width - 1) ? "…" : glyphs[i];
+                pixel.bold = bold;
+                pixel.foreground_color = fg;
+            }
+            return x;
+        }
+    };
+
     inline ftxui::Element detail_title_bar(const std::string &name, const std::string &subtitle,
                                            ftxui::Element actions)
     {
         using namespace ftxui;
         return hbox({
                    text(" "),
-                   text(name) | bold | color(theme::WarningColor()),
-                   text(subtitle.empty() ? "" : "  " + subtitle) | color(theme::MutedColor()),
+                   std::make_shared<TitleText>(name, subtitle.empty() ? "" : "  " + subtitle),
                    filler(),
+                   text(" "),
                    std::move(actions),
                }) |
                bgcolor(theme::PanelColor());

@@ -1,7 +1,32 @@
 cmake_minimum_required(VERSION 3.14)
 
-set(G_SYSTEMCTL_VERSION "1.0.0" CACHE STRING "g-systemctl release version")
-set(G_SYSTEMCTL_PROJECT_VERSION "1.0.0" CACHE STRING "CMake-compatible g-systemctl project version")
+# Release builds pass -DG_SYSTEMCTL_VERSION=<tag>. Otherwise take it from the
+# nearest git tag (e.g. 2.0.1, or 2.0.1-3-gabc1234 past it), else 0.0.0-dev.
+if(NOT G_SYSTEMCTL_VERSION)
+    set(_git_version "")
+    find_package(Git QUIET)
+    if(GIT_FOUND)
+        execute_process(
+            COMMAND ${GIT_EXECUTABLE} describe --tags --match "v[0-9]*"
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            OUTPUT_VARIABLE _git_version
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+        )
+    endif()
+    string(REGEX REPLACE "^v" "" _git_version "${_git_version}")
+    if(_git_version)
+        set(G_SYSTEMCTL_VERSION "${_git_version}")
+    else()
+        set(G_SYSTEMCTL_VERSION "0.0.0-dev")
+    endif()
+endif()
+
+# project() only takes numeric X.Y.Z.
+string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" G_SYSTEMCTL_PROJECT_VERSION "${G_SYSTEMCTL_VERSION}")
+if(NOT G_SYSTEMCTL_PROJECT_VERSION)
+    set(G_SYSTEMCTL_PROJECT_VERSION "0.0.0")
+endif()
 
 project(g-systemctl
     VERSION ${G_SYSTEMCTL_PROJECT_VERSION}
