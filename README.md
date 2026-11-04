@@ -38,20 +38,29 @@ https://github.com/user-attachments/assets/1608dc3a-20aa-46fd-b3ea-db577f4c197c
 
 ### Debian / Ubuntu
 
-For amd64 on Ubuntu 22.04+ or Debian 12+. Download the `.deb` package from the latest release and install it:
+For Ubuntu 22.04+ or Debian 12+. Download the `.deb` package from the latest release and install it.
+
+amd64:
 
 ```bash
 curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/g-systemctl-linux-amd64.deb
 sudo apt install ./g-systemctl-linux-amd64.deb
 ```
 
-### Linux Binary
-
-For x86_64 with glibc 2.34+ (Ubuntu 22.04+, Debian 12+, Fedora 35+, and similar).
+arm64 (Raspberry Pi OS 64-bit, AWS Graviton, and similar):
 
 ```bash
-curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/g-systemctl-linux-x86_64.tar.gz
-tar -xzf g-systemctl-linux-x86_64.tar.gz
+curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/g-systemctl-linux-arm64.deb
+sudo apt install ./g-systemctl-linux-arm64.deb
+```
+
+### Linux Binary
+
+For x86_64 or aarch64 with glibc 2.34+ (Ubuntu 22.04+, Debian 12+, Fedora 35+, and similar). The archive name uses `uname -m`:
+
+```bash
+curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/g-systemctl-linux-$(uname -m).tar.gz
+tar -xzf g-systemctl-linux-$(uname -m).tar.gz
 sudo install -m 755 g-systemctl-*/g-systemctl /usr/local/bin/g-systemctl
 ```
 
