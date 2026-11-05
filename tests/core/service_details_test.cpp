@@ -92,4 +92,20 @@ TEST(ServiceDetailsTest, ParsesLaunchctlListDictionary) {
     EXPECT_EQ(find(rows, "ProgramArguments"), "/usr/local/bin/agent --verbose");
 }
 
+TEST(ServiceDetailsTest, ParsesSampleOutput) {
+    auto sample = LinuxServiceManager::parse_sample_output(
+        "CPUUsageNSec=3506000000\n"
+        "MemoryCurrent=569376768\n"
+        "TasksCurrent=72\n"
+        "IOReadBytes=18446744073709551615\n"
+        "IOWriteBytes=[not set]\n");
+    EXPECT_DOUBLE_EQ(sample.cpu_nsec, 3506000000.0);
+    EXPECT_DOUBLE_EQ(sample.memory_bytes, 569376768.0);
+    EXPECT_DOUBLE_EQ(sample.tasks, 72.0);
+    EXPECT_LT(sample.io_read_bytes, 0);
+    EXPECT_LT(sample.io_write_bytes, 0);
+    EXPECT_FALSE(sample.empty());
+    EXPECT_TRUE(LinuxServiceManager::parse_sample_output("MemoryCurrent=[not set]\n").empty());
+}
+
 } // namespace gsystemctl

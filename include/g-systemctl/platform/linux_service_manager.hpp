@@ -16,7 +16,11 @@ public:
     std::pair<bool, std::string> daemon_reload(const std::string& password = "") override;
     std::pair<bool, std::string> edit_service(const std::string& name) override;
     ServiceDetails describe_service(const std::string& name) override;
+    ServiceSample sample_service(const std::string& name) override;
     bool supports_unit_files() const override { return true; }
+
+    // Parses `systemctl show -p CPUUsageNSec,MemoryCurrent,TasksCurrent,IOReadBytes,IOWriteBytes`.
+    static ServiceSample parse_sample_output(const std::string& output);
 
     // Turns `systemctl show -p ...` key=value output into display rows.
     static ServiceDetails parse_show_output(const std::string& output);

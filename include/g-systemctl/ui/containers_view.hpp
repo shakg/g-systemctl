@@ -4,6 +4,7 @@
 #include "g-systemctl/ui/action_bar.hpp"
 #include "g-systemctl/ui/detail_page.hpp"
 #include "g-systemctl/ui/log_panel.hpp"
+#include "g-systemctl/ui/metric_graph.hpp"
 #include <condition_variable>
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
@@ -73,6 +74,14 @@ namespace gsystemctl::ui
         std::vector<Container> containers_;
         std::vector<Container> filtered_;
         std::map<std::string, ContainerStats> stats_;
+        // Graph history per running container, keyed by ID; fed by set_stats.
+        struct ContainerMetrics
+        {
+            MetricHistory cpu, memory, pids, net, block;
+            CounterRate net_rx, net_tx, block_read, block_write;
+            double net_rx_per_s = -1, net_tx_per_s = -1, read_per_s = -1, write_per_s = -1;
+        };
+        std::map<std::string, ContainerMetrics> metrics_;
         std::string filter_text_;
         int selected_index_ = 0;
         std::string selected_id_;
@@ -149,6 +158,8 @@ namespace gsystemctl::ui
         ftxui::Element render_list();
         ftxui::Element render_detail();
         ftxui::Elements render_summary();
+        ftxui::Element render_graphs();
+        void record_stats();
     };
 
 } // namespace gsystemctl::ui

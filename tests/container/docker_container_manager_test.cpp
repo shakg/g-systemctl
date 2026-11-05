@@ -263,4 +263,20 @@ TEST(ProcessLogStreamTest, DestructorStopsLongRunningProcess) {
     EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(5));
 }
 
+TEST(DockerStatsNumbersTest, ParsesSizesPercentsAndPairs) {
+    EXPECT_DOUBLE_EQ(parse_docker_size("84B"), 84.0);
+    EXPECT_DOUBLE_EQ(parse_docker_size("1.5kB"), 1500.0);
+    EXPECT_DOUBLE_EQ(parse_docker_size("2MiB"), 2.0 * 1024 * 1024);
+    EXPECT_DOUBLE_EQ(parse_docker_size("3GB"), 3e9);
+    EXPECT_DOUBLE_EQ(parse_docker_size("12"), 12.0);
+    EXPECT_LT(parse_docker_size("--"), 0);
+    EXPECT_LT(parse_docker_size("5parsecs"), 0);
+    EXPECT_DOUBLE_EQ(parse_docker_percent("12.5%"), 12.5);
+    EXPECT_LT(parse_docker_percent("--"), 0);
+    auto [rx, tx] = parse_docker_size_pair("1.1MiB / 128MiB");
+    EXPECT_DOUBLE_EQ(rx, 1.1 * 1024 * 1024);
+    EXPECT_DOUBLE_EQ(tx, 128.0 * 1024 * 1024);
+    EXPECT_LT(parse_docker_size_pair("n/a").first, 0);
+}
+
 } // namespace gsystemctl

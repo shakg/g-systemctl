@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <cstdlib>
 
 namespace gsystemctl {
 
@@ -18,6 +19,47 @@ std::string trim(const std::string& value) {
 }
 
 } // namespace
+
+double parse_docker_size(const std::string& text) {
+    auto value = trim(text);
+    char* end = nullptr;
+    double number = std::strtod(value.c_str(), &end);
+    if (end == value.c_str() || number < 0) {
+        return -1;
+    }
+    std::string unit = trim(std::string(end));
+    std::transform(unit.begin(), unit.end(), unit.begin(), [](unsigned char c) { return std::tolower(c); });
+    struct Unit { const char* name; double factor; };
+    static const Unit units[] = {
+        {"", 1}, {"b", 1},
+        {"kb", 1e3}, {"mb", 1e6}, {"gb", 1e9}, {"tb", 1e12},
+        {"kib", 1024.0}, {"mib", 1048576.0}, {"gib", 1073741824.0}, {"tib", 1099511627776.0},
+    };
+    for (const auto& u : units) {
+        if (unit == u.name) {
+            return number * u.factor;
+        }
+    }
+    return -1;
+}
+
+double parse_docker_percent(const std::string& text) {
+    auto value = trim(text);
+    if (!value.empty() && value.back() == '%') {
+        value.pop_back();
+    }
+    char* end = nullptr;
+    double number = std::strtod(value.c_str(), &end);
+    return end == value.c_str() || *end != '\0' ? -1 : number;
+}
+
+std::pair<double, double> parse_docker_size_pair(const std::string& text) {
+    auto slash = text.find('/');
+    if (slash == std::string::npos) {
+        return {-1, -1};
+    }
+    return {parse_docker_size(text.substr(0, slash)), parse_docker_size(text.substr(slash + 1))};
+}
 
 std::string format_cpus(int64_t nano_cpus) {
     if (nano_cpus <= 0) {
