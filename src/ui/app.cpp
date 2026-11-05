@@ -27,6 +27,7 @@ namespace gsystemctl::ui
         service_manager_ = ServiceManager::create(executor_, system_mode_);
         logging_manager_ = LoggingManager::create(executor_);
         containers_view_ = std::make_unique<ContainersView>(screen_, ContainerManager::create(executor_));
+        containers_view_->set_graph_toggle(&graphs_);
         if (initial_tab == Tab::Containers)
         {
             containers_view_->set_filter(initial_filter);
@@ -37,10 +38,20 @@ namespace gsystemctl::ui
         }
         refresh_services();
         switch_tab(initial_tab);
+        sampler_ = std::thread([this] { sampler_loop(); });
     }
 
     App::~App()
     {
+        {
+            std::lock_guard<std::mutex> lock(sampler_mutex_);
+            sampler_stop_ = true;
+        }
+        sampler_cv_.notify_all();
+        if (sampler_.joinable())
+        {
+            sampler_.join();
+        }
         if (worker_.joinable())
         {
             worker_.join();
@@ -363,6 +374,8 @@ namespace gsystemctl::ui
         status_message_.clear();
         error_message_.clear();
         load_service_details();
+        service_metrics_ = ServiceMetrics{};
+        set_sampler_unit(service.unit);
 
         service_logs_.open(service.unit, system_mode_
                                              ? "Starting: journalctl -u " + service.unit + " -f -n 100"
@@ -398,8 +411,113 @@ namespace gsystemctl::ui
         }
     }
 
+    void App::set_sampler_unit(const std::string &unit)
+    {
+        {
+            std::lock_guard<std::mutex> lock(sampler_mutex_);
+            sampler_unit_ = unit;
+            ++sampler_generation_;
+        }
+        sampler_cv_.notify_all();
+    }
+
+    void App::sampler_loop()
+    {
+        using clock = std::chrono::steady_clock;
+        const auto start = clock::now();
+        while (true)
+        {
+            std::string unit;
+            int generation = 0;
+            {
+                std::unique_lock<std::mutex> lock(sampler_mutex_);
+                sampler_cv_.wait(lock, [this] { return sampler_stop_ || !sampler_unit_.empty(); });
+                if (sampler_stop_)
+                {
+                    return;
+                }
+                unit = sampler_unit_;
+                generation = sampler_generation_;
+            }
+
+            ServiceDetails details;
+            std::string details_error;
+            try
+            {
+                details = service_manager_->describe_service(unit);
+            }
+            catch (const std::exception &e)
+            {
+                details_error = std::string("Could not read details: ") + e.what();
+            }
+            auto sample = service_manager_->sample_service(unit);
+            const double seconds = std::chrono::duration<double>(clock::now() - start).count();
+
+            screen_.Post([this, unit, details = std::move(details), details_error, sample, seconds]() mutable {
+                if (!detail_open_ || detail_unit_ != unit)
+                {
+                    return;
+                }
+                if (!busy_)
+                {
+                    // An action in flight reloads the details itself when done.
+                    service_details_ = std::move(details);
+                    service_details_error_ = details_error;
+                }
+                record_service_sample(sample, seconds);
+            });
+            screen_.PostEvent(Event::Custom);
+
+            std::unique_lock<std::mutex> lock(sampler_mutex_);
+            sampler_cv_.wait_for(lock, std::chrono::seconds(2),
+                                 [this, generation] { return sampler_stop_ || sampler_generation_ != generation; });
+            if (sampler_stop_)
+            {
+                return;
+            }
+        }
+    }
+
+    void App::record_service_sample(const ServiceSample &sample, double seconds)
+    {
+        auto &m = service_metrics_;
+        if (sample.cpu_nsec >= 0)
+        {
+            m.has_cpu = true;
+            // CPU nanoseconds per second -> percent of one core.
+            const double rate = m.cpu_rate.update(sample.cpu_nsec, seconds);
+            if (rate >= 0)
+            {
+                m.cpu.push(rate / 1e7);
+            }
+        }
+        if (sample.memory_bytes >= 0)
+        {
+            m.has_memory = true;
+            m.memory.push(sample.memory_bytes);
+        }
+        if (sample.tasks >= 0)
+        {
+            m.has_tasks = true;
+            m.tasks.push(sample.tasks);
+        }
+        if (sample.io_read_bytes >= 0 || sample.io_write_bytes >= 0)
+        {
+            m.has_io = true;
+            const double read = sample.io_read_bytes >= 0 ? m.read_rate.update(sample.io_read_bytes, seconds) : -1;
+            const double write = sample.io_write_bytes >= 0 ? m.write_rate.update(sample.io_write_bytes, seconds) : -1;
+            if (read >= 0 || write >= 0)
+            {
+                m.read_per_s = read;
+                m.write_per_s = write;
+                m.io.push(std::max(0.0, read) + std::max(0.0, write));
+            }
+        }
+    }
+
     void App::close_service_detail()
     {
+        set_sampler_unit("");
         service_logs_.close();
         detail_open_ = false;
         logs_full_ = false;
@@ -556,6 +674,9 @@ namespace gsystemctl::ui
                     logs_full_ = !logs_full_;
                     screen_.PostEvent(Event::Custom);
                     return true;
+                case ActionBar::Action::ToggleGraphs:
+                    graphs_.toggle();
+                    return true;
                 case ActionBar::Action::None:
                     break;
                 }
@@ -612,6 +733,10 @@ namespace gsystemctl::ui
         }
         if (event == Event::Special("\x1b" "q")) {
             screen_.Exit();
+            return true;
+        }
+        if (event == Event::Special("\x1b" "g")) {
+            graphs_.toggle();
             return true;
         }
         if (event == Event::Character('?')) {
@@ -892,7 +1017,40 @@ namespace gsystemctl::ui
         auto title = detail_title_bar(detail_unit_, service ? service->description : "", std::move(actions));
         Element summary = logs_full_ ? text("") : service_summary_.render(render_service_summary());
         return detail_page(std::move(title), std::move(summary),
-                           service_logs_.render(service_actions_.render_logs_toggle(logs_full_)), logs_full_);
+                           service_logs_.render(service_actions_.render_log_header(logs_full_, graphs_.shown(), graphs_fit())),
+                           logs_full_, logs_full_ || !graphs_.shown() ? nullptr : render_service_graphs());
+    }
+
+    Element App::render_service_graphs()
+    {
+        const auto &m = service_metrics_;
+        std::vector<MetricView> views;
+        if (m.has_cpu)
+        {
+            views.push_back({"CPU", format_metric_percent(m.cpu.last()), &m.cpu, format_metric_percent, 1.0,
+                             graph_colors::Cpu()});
+        }
+        if (m.has_memory)
+        {
+            views.push_back({"Memory", format_metric_bytes(m.memory.last()), &m.memory, format_metric_bytes,
+                             1024.0 * 1024.0, graph_colors::Memory(), false});
+        }
+        if (m.has_tasks)
+        {
+            views.push_back({"Tasks", format_metric_count(m.tasks.last()), &m.tasks, format_metric_count, 1.0,
+                             graph_colors::Tasks(), false});
+        }
+        if (m.has_io)
+        {
+            auto rate = [](double v) { return v < 0 ? std::string("-") : format_metric_rate(v); };
+            views.push_back({"Disk I/O", "R " + rate(m.read_per_s) + "  W " + rate(m.write_per_s), &m.io,
+                             format_metric_rate, 1024.0, graph_colors::Disk()});
+        }
+        if (views.empty())
+        {
+            return nullptr;
+        }
+        return service_graphs_.render(views);
     }
 
     Elements App::render_service_summary()
@@ -905,7 +1063,15 @@ namespace gsystemctl::ui
         for (const auto &[label, value] : service_details_)
         {
             // Already in the title bar.
-            if (label != "Description")
+            if (label == "Description")
+            {
+                continue;
+            }
+            if (label == "Command" || label == "ProgramArguments" || label == "Program")
+            {
+                lines.push_back(command_row(label, value));
+            }
+            else
             {
                 lines.push_back(field_row(label, value));
             }
@@ -952,6 +1118,7 @@ namespace gsystemctl::ui
                    text(""),
                    text("Detail page") | bold,
                    text("  Enter / Alt+f         Expand / shrink logs"),
+                   text("  Alt+g                 Graphs: beside the info, or instead of it below 100 columns"),
                    text("  ↑↓                    Scroll summary (logs when expanded)"),
                    text("  PgUp / PgDn           Scroll logs"),
                    text("  Esc                   Back one level"),

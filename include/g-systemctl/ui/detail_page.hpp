@@ -1,5 +1,6 @@
 #pragma once
 
+#include "g-systemctl/core/command_format.hpp"
 #include "g-systemctl/ui/theme.hpp"
 #include <algorithm>
 #include <ftxui/dom/elements.hpp>
@@ -32,6 +33,35 @@ namespace gsystemctl::ui
             text(" " + label) | color(theme::HeaderColor()) | size(WIDTH, EQUAL, 16),
             paragraph(value.empty() ? "-" : value) | color(fg) | flex,
         });
+    }
+
+    // A command laid out one option per line (see format_command). Long
+    // lines still wrap, under their own indent.
+    inline ftxui::Element command_row(const std::string &label, const std::vector<std::string> &tokens)
+    {
+        using namespace ftxui;
+        auto lines = format_command(tokens);
+        if (lines.empty())
+        {
+            return field_row(label, "");
+        }
+        Elements rows;
+        for (const auto &line : lines)
+        {
+            rows.push_back(hbox({
+                text(std::string(static_cast<size_t>(line.indent), ' ')),
+                paragraph(line.text) | color(theme::TextColor()) | flex,
+            }));
+        }
+        return hbox({
+            text(" " + label) | color(theme::HeaderColor()) | size(WIDTH, EQUAL, 16),
+            vbox(std::move(rows)) | flex,
+        });
+    }
+
+    inline ftxui::Element command_row(const std::string &label, const std::string &command)
+    {
+        return command_row(label, split_command(command));
     }
 
     // `first`: no blank line above it.
@@ -140,14 +170,47 @@ namespace gsystemctl::ui
         ftxui::Box box_;
     };
 
+    // Graphs take half the width; below this the summary would be too cramped.
+    constexpr int kGraphsMinWidth = 100;
+    inline bool graphs_fit() { return ftxui::Terminal::Size().dimx >= kGraphsMinWidth; }
+
+    // Alt+g. Wide terminals show graphs beside the summary (on by default);
+    // narrow ones swap the summary for full-width graphs (off by default).
+    // Each width class remembers its own choice.
+    struct GraphToggle
+    {
+        bool wide_shown = true;
+        bool narrow_shown = false;
+        bool shown() const { return graphs_fit() ? wide_shown : narrow_shown; }
+        void toggle()
+        {
+            bool &flag = graphs_fit() ? wide_shown : narrow_shown;
+            flag = !flag;
+        }
+    };
+
+    // `graphs`, if set, takes the right half of the summary area, or replaces
+    // the summary when the terminal is narrower than kGraphsMinWidth.
     inline ftxui::Element detail_page(ftxui::Element title_bar, ftxui::Element summary, ftxui::Element logs,
-                                      bool logs_full)
+                                      bool logs_full, ftxui::Element graphs = nullptr)
     {
         using namespace ftxui;
         auto rule = separator() | color(theme::BorderColor());
         if (logs_full)
         {
             return vbox({std::move(title_bar), rule, std::move(logs) | flex}) | flex;
+        }
+        if (graphs && !graphs_fit())
+        {
+            summary = std::move(graphs);
+        }
+        else if (graphs)
+        {
+            summary = hbox({
+                std::move(summary) | flex,
+                separator() | color(theme::BorderColor()),
+                std::move(graphs) | size(WIDTH, EQUAL, ftxui::Terminal::Size().dimx / 2),
+            });
         }
         return vbox({
                    std::move(title_bar),

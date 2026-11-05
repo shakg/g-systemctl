@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace gsystemctl {
@@ -91,6 +92,14 @@ std::string format_cpus(int64_t nano_cpus);
 std::string format_memory_flag(int64_t bytes);
 // 134217728 -> "128MiB"; for display only.
 std::string format_bytes(int64_t bytes);
+
+// Numbers from `docker stats` for the graphs. -1 when unparsable.
+// "1.1MiB", "84B", "1.2kB", "3GB" -> bytes (binary and decimal units).
+double parse_docker_size(const std::string& text);
+// "12.5%" -> 12.5.
+double parse_docker_percent(const std::string& text);
+// "84B / 1.2kB" -> {84, 1200}.
+std::pair<double, double> parse_docker_size_pair(const std::string& text);
 
 // Diffs edited settings against the originals and returns only the changed
 // flags. Returns an error message when a change cannot be expressed with

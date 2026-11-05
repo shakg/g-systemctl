@@ -22,6 +22,7 @@ namespace gsystemctl::ui
             Restart,
             Back,
             ToggleLogs,
+            ToggleGraphs,
         };
 
         // `running`: the item is up, so Start is disabled; otherwise Stop and Restart are.
@@ -46,6 +47,23 @@ namespace gsystemctl::ui
             return button(full ? "⤡ Shrink" : "⤢ Expand", "Enter", theme::AccentColor(), true, logs_toggle_);
         }
 
+        // `shown`: graphs are on. `side_by_side`: they sit beside the summary;
+        // otherwise they replace it (narrow terminal).
+        ftxui::Element render_graphs_toggle(bool shown, bool side_by_side)
+        {
+            visible_ = true;
+            const char *label = side_by_side ? (shown ? "▦ Hide graphs" : "▦ Show graphs") : (shown ? "▤ Info" : "▦ Graphs");
+            return button(label, "Alt+g", theme::AccentColor(), true, graphs_toggle_);
+        }
+
+        // The buttons of the log header: graphs toggle (not on full-size logs) and expand/shrink.
+        ftxui::Element render_log_header(bool logs_full, bool graphs_shown, bool side_by_side)
+        {
+            if (logs_full)
+                return render_logs_toggle(true);
+            return ftxui::hbox({render_graphs_toggle(graphs_shown, side_by_side), render_logs_toggle(false)});
+        }
+
         // Call at the start of every frame; render() marks the bar visible again.
         void hide() { visible_ = false; }
 
@@ -63,6 +81,8 @@ namespace gsystemctl::ui
                 return Action::Back;
             if (logs_toggle_.Contain(x, y))
                 return Action::ToggleLogs;
+            if (graphs_toggle_.Contain(x, y))
+                return Action::ToggleGraphs;
             return Action::None;
         }
 
@@ -73,6 +93,7 @@ namespace gsystemctl::ui
         ftxui::Box restart_;
         ftxui::Box back_;
         ftxui::Box logs_toggle_;
+        ftxui::Box graphs_toggle_;
 
         static ftxui::Element button(const std::string &label, const std::string &key, ftxui::Color fg, bool enabled,
                                      ftxui::Box &box)

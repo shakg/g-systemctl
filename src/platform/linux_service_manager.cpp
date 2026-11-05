@@ -277,6 +277,50 @@ ServiceDetails LinuxServiceManager::parse_show_output(const std::string& output)
     return rows;
 }
 
+ServiceSample LinuxServiceManager::sample_service(const std::string& name) {
+    std::string prefix = system_mode_ ? "systemctl" : "systemctl --user";
+    auto result = executor_->execute(prefix + " show " + shell_quote(name) +
+                                     " --no-pager -p CPUUsageNSec,MemoryCurrent,TasksCurrent,IOReadBytes,IOWriteBytes");
+    if (result.exit_code != 0) {
+        return {};
+    }
+    return parse_sample_output(result.stdout_output);
+}
+
+ServiceSample LinuxServiceManager::parse_sample_output(const std::string& output) {
+    ServiceSample sample;
+    std::istringstream stream(output);
+    std::string line;
+    while (std::getline(stream, line)) {
+        auto eq = line.find('=');
+        if (eq == std::string::npos) {
+            continue;
+        }
+        auto key = line.substr(0, eq);
+        auto value = trim(line.substr(eq + 1));
+        if (is_unset(value)) {
+            continue;
+        }
+        char* end = nullptr;
+        double number = std::strtod(value.c_str(), &end);
+        if (end == value.c_str()) {
+            continue;
+        }
+        if (key == "CPUUsageNSec") {
+            sample.cpu_nsec = number;
+        } else if (key == "MemoryCurrent") {
+            sample.memory_bytes = number;
+        } else if (key == "TasksCurrent") {
+            sample.tasks = number;
+        } else if (key == "IOReadBytes") {
+            sample.io_read_bytes = number;
+        } else if (key == "IOWriteBytes") {
+            sample.io_write_bytes = number;
+        }
+    }
+    return sample;
+}
+
 void LinuxServiceManager::populate_resource_usage(std::vector<ServiceUnit>& units) {
     std::vector<std::string> running_units;
     for (const auto& unit : units) {

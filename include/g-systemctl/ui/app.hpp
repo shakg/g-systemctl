@@ -9,6 +9,8 @@
 #include "g-systemctl/ui/containers_view.hpp"
 #include "g-systemctl/ui/detail_page.hpp"
 #include "g-systemctl/ui/log_panel.hpp"
+#include "g-systemctl/ui/metric_graph.hpp"
+#include <condition_variable>
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/screen/box.hpp>
@@ -56,6 +58,24 @@ namespace gsystemctl::ui
         ServiceDetails service_details_;
         std::string service_details_error_;
         SummaryPane service_summary_;
+        // Graphs of the detail page, fed by sampler_ every 2s while it is open.
+        struct ServiceMetrics
+        {
+            MetricHistory cpu, memory, tasks, io;
+            CounterRate cpu_rate, read_rate, write_rate;
+            double read_per_s = -1, write_per_s = -1;
+            bool has_cpu = false, has_memory = false, has_tasks = false, has_io = false;
+        };
+        ServiceMetrics service_metrics_;
+        // Alt+g; shared by both tabs.
+        GraphToggle graphs_;
+        GraphPanel service_graphs_;
+        std::thread sampler_;
+        std::mutex sampler_mutex_;
+        std::condition_variable sampler_cv_;
+        std::string sampler_unit_; // empty: idle
+        int sampler_generation_ = 0;
+        bool sampler_stop_ = false;
         LogPanel service_logs_;
         ActionBar service_actions_;
         ConfirmDialog confirm_;
@@ -104,6 +124,10 @@ namespace gsystemctl::ui
         void open_service_detail(bool logs_full);
         void close_service_detail();
         void load_service_details();
+        void sampler_loop();
+        // Points the sampler at `unit`, or idles it if empty.
+        void set_sampler_unit(const std::string &unit);
+        void record_service_sample(const ServiceSample &sample, double seconds);
         // Goes up one level (full logs -> detail -> list). False if already at the list.
         bool services_back();
         void switch_tab(Tab tab);
@@ -116,6 +140,8 @@ namespace gsystemctl::ui
         ftxui::Element render_service_list();
         ftxui::Element render_service_detail();
         ftxui::Elements render_service_summary();
+        // Null when there is nothing to graph.
+        ftxui::Element render_service_graphs();
         ftxui::Element render_help();
     };
 

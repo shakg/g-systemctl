@@ -23,6 +23,8 @@ public:
     virtual std::pair<bool, std::string> edit_service(const std::string& name) = 0;
     // Summary rows for the detail page (state, PID, memory, command, unit file...). Throws on failure.
     virtual ServiceDetails describe_service(const std::string& name) = 0;
+    // Resource counters for the detail page graphs. Empty where unsupported.
+    virtual ServiceSample sample_service(const std::string& /*name*/) { return {}; }
     // Whether daemon_reload/edit_service do anything on this platform.
     virtual bool supports_unit_files() const = 0;
 

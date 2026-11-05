@@ -204,7 +204,64 @@ namespace gsystemctl::ui
     void ContainersView::set_stats(std::map<std::string, ContainerStats> stats)
     {
         stats_ = std::move(stats);
+        record_stats();
         set_containers(std::move(containers_));
+    }
+
+    void ContainersView::record_stats()
+    {
+        static const auto start = std::chrono::steady_clock::now();
+        const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+        for (auto it = metrics_.begin(); it != metrics_.end();)
+        {
+            it = stats_.count(it->first) ? std::next(it) : metrics_.erase(it);
+        }
+        for (const auto &[id, s] : stats_)
+        {
+            auto &m = metrics_[id];
+            if (double cpu = parse_docker_percent(s.cpu); cpu >= 0)
+                m.cpu.push(cpu);
+            if (double used = parse_docker_size_pair(s.mem_usage).first; used >= 0)
+                m.memory.push(used);
+            if (double pids = parse_docker_size(s.pids); pids >= 0)
+                m.pids.push(pids);
+            // Both I/O columns are totals since start; graph their rate.
+            auto rates = [seconds](const std::string &pair, CounterRate &a, CounterRate &b, double &a_rate,
+                                   double &b_rate, MetricHistory &history) {
+                auto [first, second] = parse_docker_size_pair(pair);
+                if (first < 0 || second < 0)
+                    return;
+                a_rate = a.update(first, seconds);
+                b_rate = b.update(second, seconds);
+                if (a_rate >= 0 && b_rate >= 0)
+                    history.push(a_rate + b_rate);
+            };
+            rates(s.net_io, m.net_rx, m.net_tx, m.net_rx_per_s, m.net_tx_per_s, m.net);
+            rates(s.block_io, m.block_read, m.block_write, m.read_per_s, m.write_per_s, m.block);
+        }
+    }
+
+    Element ContainersView::render_graphs()
+    {
+        const auto *c = action_target();
+        if (!c || !c->is_running())
+            return nullptr;
+        auto it = metrics_.find(c->id);
+        if (it == metrics_.end())
+            return nullptr;
+        const auto &m = it->second;
+        auto rate = [](double v) { return v < 0 ? std::string("-") : format_metric_rate(v); };
+        std::vector<MetricView> views = {
+            {"CPU", format_metric_percent(m.cpu.last()), &m.cpu, format_metric_percent, 1.0, graph_colors::Cpu()},
+            {"Memory", format_metric_bytes(m.memory.last()), &m.memory, format_metric_bytes, 1024.0 * 1024.0,
+             graph_colors::Memory()},
+            {"PIDs", format_metric_count(m.pids.last()), &m.pids, format_metric_count, 1.0, graph_colors::Tasks(), false},
+            {"Net I/O", "↓ " + rate(m.net_rx_per_s) + "  ↑ " + rate(m.net_tx_per_s), &m.net, format_metric_rate,
+             1024.0, graph_colors::Network()},
+            {"Disk I/O", "R " + rate(m.read_per_s) + "  W " + rate(m.write_per_s), &m.block, format_metric_rate,
+             1024.0, graph_colors::Disk()},
+        };
+        return graph_panel_.render(views);
     }
 
     // ---- selection / filter ---------------------------------------------------
@@ -788,6 +845,10 @@ namespace gsystemctl::ui
                     logs_full_ = !logs_full_;
                     screen_.PostEvent(Event::Custom);
                     return true;
+                case ActionBar::Action::ToggleGraphs:
+                    if (graphs_)
+                        graphs_->toggle();
+                    return true;
                 case ActionBar::Action::None:
                     break;
                 }
@@ -842,8 +903,10 @@ namespace gsystemctl::ui
                             : actions_.render("✕ removed", Colors::error_fg(), false);
         auto title = detail_title_bar(logs_name_, c ? c->image : details_.image, std::move(actions));
         Element summary = logs_full_ ? text("") : summary_.render(render_summary());
-        return detail_page(std::move(title), std::move(summary), logs_.render(actions_.render_logs_toggle(logs_full_)),
-                           logs_full_);
+        const bool graphs = graphs_ ? graphs_->shown() : graphs_fit();
+        return detail_page(std::move(title), std::move(summary),
+                           logs_.render(actions_.render_log_header(logs_full_, graphs, graphs_fit())), logs_full_,
+                           logs_full_ || !graphs ? nullptr : render_graphs());
     }
 
     Element ContainersView::render_list()
@@ -931,7 +994,17 @@ namespace gsystemctl::ui
         }
         lines.push_back(field_row("ID", d.id));
         lines.push_back(field_row("Image", d.image));
-        lines.push_back(field_row("Command", d.entrypoint.empty() ? d.command : d.entrypoint + " " + d.command));
+        {
+            // Both are JSON arrays from `docker inspect`; fall back to plain text.
+            std::vector<std::string> tokens;
+            for (const auto *part : {&d.entrypoint, &d.command})
+            {
+                auto parsed = parse_json_string_array(*part);
+                auto add = parsed ? *parsed : split_command(*part);
+                tokens.insert(tokens.end(), add.begin(), add.end());
+            }
+            lines.push_back(command_row("Command", tokens));
+        }
         lines.push_back(field_row("Started", d.started_at + (d.restart_count.empty() ? "" : " · restarts " + d.restart_count)));
         lines.push_back(field_row("Created", d.created));
         if (!d.compose_project.empty())
