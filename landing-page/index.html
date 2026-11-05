@@ -4,32 +4,41 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>g-systemctl - Graphical Service Manager for Linux and macOS</title>
+  <title>g-systemctl — services and containers in one terminal UI</title>
+  <meta name="description"
+    content="g-systemctl is a keyboard-driven terminal UI for systemd, launchd and Docker. Filter, inspect, graph, start, stop, restart and follow logs." />
+  <meta name="theme-color" content="#07080d" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700;800&display=swap"
+    rel="stylesheet" />
   <style>
-    *,
-    *::before,
-    *::after {
-      box-sizing: border-box;
-    }
+    *, *::before, *::after { box-sizing: border-box; }
 
     :root {
-      --bg: #f0f5f3;
-      --surface: #ffffff;
-      --surface-2: #e6efec;
-      --border: #cdddd8;
-      --border-strong: #b8d0c9;
-      --text: #0e1f1c;
-      --text-muted: #3d5c56;
-      --text-soft: #7a9e97;
-      --accent: #6eab93;
-      --accent-soft: rgba(110, 171, 147, 0.16);
-      --mono: "SFMono-Regular", "Cascadia Code", "Liberation Mono", Menlo, Consolas, monospace;
-      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --bg: #07080d;
+      --bg-2: #0b0c13;
+      --panel: #10111b;
+      --panel-2: #151726;
+      --line: #282b3d;
+      --line-2: #1a1c29;
+      --muted: #676e8c;
+      --text: #b4bad0;
+      --hi: #eef0f7;
+      --acc: #6eab93;
+      --acc-2: #93d6b9;
+      --acc-glow: rgba(110, 171, 147, .35);
+      --warn: #ffbe2d;
+      --err: #ff5060;
+      --sel: #1b1d27;
+      --mono: "JetBrains Mono", "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
+      --sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      --ease: cubic-bezier(.2, .7, .2, 1);
+      color-scheme: dark;
     }
 
-    html {
-      scroll-behavior: smooth;
-    }
+    html { scroll-behavior: smooth; }
 
     body {
       margin: 0;
@@ -39,753 +48,1577 @@
       font-size: 16px;
       line-height: 1.6;
       overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
     }
 
-    a {
-      color: inherit;
-    }
+    a { color: inherit; text-decoration: none; }
+    ::selection { background: var(--acc); color: var(--bg); }
 
-    svg {
-      flex: 0 0 auto;
-    }
+    .wrap { width: min(1180px, 100% - 40px); margin: 0 auto; }
 
-    .site-nav {
-      position: fixed;
-      top: 12px;
-      left: 50%;
-      z-index: 20;
-      width: min(800px, calc(100% - 96px));
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 24px;
-      padding: 18px;
-      border-bottom: 1px solid transparent;
-      border-radius: 24px;
-      corner-shape: squircle;
-      transform: translateX(-50%);
-      transition: background 180ms ease, border-color 180ms ease, backdrop-filter 180ms ease, box-shadow 180ms ease;
+    /* ---------- nav ---------- */
+    .nav {
+      position: fixed; inset: 14px 0 auto; z-index: 50;
+      width: min(1000px, 100% - 32px); margin: 0 auto;
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding: 10px 12px 10px 18px;
+      border: 1px solid transparent; border-radius: 16px;
+      transition: background .3s, border-color .3s, backdrop-filter .3s;
     }
-
-    .site-nav.scrolled {
-      background: rgba(240, 245, 243, 0.6);
-      border-bottom-color: var(--border);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      box-shadow: 0 12px 36px rgba(14, 31, 28, 0.08);
+    .nav.solid {
+      background: rgba(11, 12, 19, .72);
+      border-color: var(--line-2);
+      backdrop-filter: blur(14px) saturate(140%);
+      -webkit-backdrop-filter: blur(14px) saturate(140%);
     }
-
-    .brand {
-      color: var(--text);
-      font-family: var(--mono);
-      font-size: 15px;
-      font-weight: 700;
-      text-decoration: none;
+    .brand { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-weight: 700; color: var(--hi); font-size: 15px; }
+    .brand-mark {
+      width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center;
+      background: var(--acc); color: var(--bg); font-size: 13px; font-weight: 800;
+      box-shadow: 0 0 18px var(--acc-glow);
     }
+    .nav-links { display: flex; align-items: center; gap: 4px; }
+    .nav-links a { padding: 7px 12px; border-radius: 10px; color: var(--muted); font-size: 14px; transition: color .2s, background .2s; }
+    .nav-links a:hover { color: var(--hi); background: var(--panel); }
+    .gh { display: inline-flex; align-items: center; gap: 8px; }
+    .gh .stars { font-family: var(--mono); font-size: 12px; color: var(--text); padding: 1px 7px; border: 1px solid var(--line); border-radius: 99px; }
+    .gh .stars:empty { display: none; }
+    .brand, .gh, .stars { white-space: nowrap; }
+    @media (max-width: 640px) { .nav-links .opt, .gh .opt-t { display: none; } }
 
-    .nav-links {
-      display: flex;
-      align-items: center;
-      gap: 28px;
+    /* ---------- hero ---------- */
+    .hero { position: relative; padding: 150px 0 40px; isolation: isolate; }
+    #field { position: absolute; inset: 0 0 auto; height: 980px; width: 100%; z-index: -1; pointer-events: none; }
+    .hero::before {
+      content: ""; position: absolute; inset: 0 0 auto; height: 900px; z-index: -2;
+      background:
+        radial-gradient(60% 50% at 50% 18%, rgba(110, 171, 147, .14), transparent 70%),
+        radial-gradient(40% 40% at 85% 0%, rgba(255, 190, 45, .05), transparent 70%);
     }
-
-    .nav-links a {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      color: var(--text-muted);
-      font-size: 14px;
-      text-decoration: none;
-      transition: color 160ms ease;
+    .hero-copy { text-align: center; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 10px;
+      padding: 5px 14px 5px 6px; border-radius: 99px;
+      background: rgba(16, 17, 27, .8); border: 1px solid var(--line);
+      font-size: 13px; color: var(--text);
+      transition: border-color .2s, transform .2s;
     }
-
-    .nav-links a:hover {
-      color: var(--text);
+    .pill:hover { border-color: var(--acc); transform: translateY(-1px); }
+    .pill b { font-family: var(--mono); font-size: 11px; color: var(--bg); background: var(--acc); padding: 2px 8px; border-radius: 99px; letter-spacing: .04em; }
+    h1 {
+      margin: 26px auto 22px; max-width: 980px;
+      font-size: clamp(44px, 8.2vw, 104px); line-height: .98; letter-spacing: -.045em;
+      font-weight: 700; color: var(--hi);
     }
+    h1 .w { display: inline-block; animation: rise 1s var(--ease) both; animation-delay: calc(var(--i) * 80ms + 120ms); }
+    h1 .acc {
+      background: linear-gradient(100deg, var(--acc-2) 0%, var(--acc) 45%, #4f8f77 100%);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    @keyframes rise { from { opacity: 0; transform: translateY(.45em) rotate(2deg); filter: blur(10px); } to { opacity: 1; transform: none; filter: none; } }
+    .lede {
+      max-width: 620px; margin: 0 auto 34px; font-size: clamp(16px, 1.7vw, 19px); color: var(--text);
+      animation: rise 1s var(--ease) .55s both;
+    }
+    .lede code { font-family: var(--mono); font-size: .88em; color: var(--hi); }
+    .ctas { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; animation: rise 1s var(--ease) .7s both; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 9px; min-height: 46px; padding: 0 20px;
+      border-radius: 12px; border: 1px solid var(--line); background: var(--panel);
+      color: var(--hi); font-weight: 600; font-size: 15px;
+      transition: transform .2s var(--ease), border-color .2s, box-shadow .2s, background .2s;
+    }
+    .btn:hover { transform: translateY(-2px); border-color: var(--muted); }
+    .btn.primary { background: var(--acc); border-color: var(--acc); color: #06110c; box-shadow: 0 10px 40px -10px var(--acc-glow), inset 0 1px 0 rgba(255,255,255,.25); }
+    .btn.primary:hover { box-shadow: 0 16px 50px -10px rgba(110,171,147,.6), inset 0 1px 0 rgba(255,255,255,.25); }
+    .btn .k { font-family: var(--mono); font-size: 12px; opacity: .7; }
+    .icon { width: 18px; height: 18px; flex: none; }
 
-    .hero {
+    /* ---------- hero terminal ---------- */
+    .stage { position: relative; margin: 72px auto 0; width: min(1000px, 100%); perspective: 1600px; animation: rise 1.2s var(--ease) .85s both; }
+    .stage::before {
+      content: ""; position: absolute; inset: 8% 6% -6%; z-index: -1; border-radius: 40px;
+      background: radial-gradient(50% 50% at 50% 50%, rgba(110,171,147,.28), transparent 70%);
+      filter: blur(40px);
+    }
+    .term {
+      --t: 0;
+      transform: rotateX(calc((1 - var(--t)) * 16deg)) scale(calc(.93 + var(--t) * .07)) translateY(calc((1 - var(--t)) * -10px));
+      transform-origin: 50% 0;
+      border-radius: 14px; overflow: hidden;
+      background: var(--bg-2);
+      border: 1px solid var(--line);
+      box-shadow: 0 50px 120px -30px rgba(0,0,0,.9), 0 0 0 1px rgba(255,255,255,.02) inset;
+      will-change: transform;
+    }
+    .chrome {
+      display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px;
+      background: linear-gradient(#141522, #10111b); border-bottom: 1px solid var(--line-2);
+      font-family: var(--mono); font-size: 12px; color: var(--muted);
+    }
+    .chrome i { width: 11px; height: 11px; border-radius: 50%; background: #2a2d40; }
+    .chrome span { margin-left: auto; margin-right: auto; transform: translateX(-24px); }
+    .tbody { container-type: inline-size; position: relative; padding: 1.2cqw 1.2cqw 1.4cqw; }
+    .scr {
+      --lh: 1.42em;
       position: relative;
-      min-height: 50svh;
-      display: flex;
-      align-items: flex-start;
-      justify-content: center;
-      padding: 128px 48px 36px;
-      overflow: hidden;
-      isolation: isolate;
+      font-family: var(--mono); font-size: calc(97.6cqw / 52.8); line-height: var(--lh);
+      width: 88ch; color: var(--text); font-variant-ligatures: none;
     }
+    .scr.dimmed > .r { opacity: .35; filter: saturate(.5); transition: opacity .25s; }
+    .r { white-space: pre; height: var(--lh); overflow: hidden; }
+    .r.pn { background: var(--panel); }
+    .r.sel { background: var(--sel); }
+    .r span { white-space: pre; }
+    .r .gb { display: inline-block; transform: scaleY(1.3); }
+    .m { color: var(--muted); } .t { color: var(--text); } .w { color: #fff; } .b { font-weight: 700; }
+    .h { color: #707796; } .a { color: var(--acc); } .wa { color: var(--warn); } .er { color: var(--err); } .ln { color: var(--line); } .off { color: #646b86; }
+    .tabon { background: var(--sel); color: #fff; font-weight: 700; }
+    .bt { color: var(--text); background: #1d1f2e; }
+    .bt.go { color: #06110c; background: var(--acc); font-weight: 700; }
+    .bt.flash { animation: flash .6s; }
+    @keyframes flash { 30% { background: var(--warn); color: #000; } }
+    .cur { color: var(--acc); animation: blink 1s steps(1) infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+    .newrow { animation: slidein .35s var(--ease); }
+    @keyframes slidein { from { opacity: 0; transform: translateY(6px); } }
 
-    .hero-inner {
-      width: min(800px, 100%);
-      text-align: center;
+    .dlg {
+      position: absolute; background: var(--panel); border: 1px solid var(--line);
+      border-radius: .6em; box-shadow: 0 1.5em 4em rgba(0,0,0,.6);
+      animation: pop .28s var(--ease) both;
     }
+    .dlg .r { padding: 0 0; }
+    .dlg .sep { border-top: 1px solid var(--line); margin: .3em 0; height: 0; }
+    .dlg.shake { animation: shake .45s; }
+    @keyframes pop { from { opacity: 0; transform: scale(.94) translateY(.4em); } }
+    @keyframes shake { 15%, 55% { transform: translateX(-.6ch); } 35%, 75% { transform: translateX(.6ch); } }
+    .yes { background: var(--err); color: #fff; font-weight: 700; }
+    .no { background: var(--line); color: var(--text); }
+    .fld { background: #1d1f2e; color: var(--text); }
+    .fld.on { background: #24283a; color: #fff; box-shadow: inset 0 -2px 0 var(--acc); }
 
-    .badges {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin-bottom: 28px;
+    .keycast {
+      display: flex; align-items: center; justify-content: center; gap: 14px; min-height: 56px; margin-top: 26px;
+      font-size: 15px; color: var(--text);
     }
-
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 12px;
-      background: var(--surface);
-      border: 1px solid var(--border-strong);
-      border-radius: 999px;
-      color: var(--text-muted);
-      font-family: var(--mono);
-      font-size: 12px;
-    }
-
-    .hero h1 {
-      max-width: 760px;
-      margin: 0 auto 22px;
-      color: var(--text);
-      font-size: clamp(38px, 5vw, 68px);
-      font-weight: 800;
-      letter-spacing: 0;
-      line-height: 1.08;
-    }
-
-    .hero h1 span {
-      color: var(--accent);
-    }
-
-    .hero-copy {
-      max-width: 560px;
-      margin: 0 auto 28px;
-      color: var(--text-muted);
-      font-size: clamp(15px, 1.6vw, 18px);
-    }
-
-    .actions {
-      display: flex;
-      justify-content: center;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-
-    .button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      min-height: 44px;
-      padding: 10px 20px;
-      border: 1px solid var(--border-strong);
-      border-radius: 14px;
-      color: var(--text);
-      font-size: 15px;
-      font-weight: 650;
-      text-decoration: none;
-      transition: border-color 160ms ease, opacity 160ms ease, transform 160ms ease;
-    }
-
-    .button:hover {
-      border-color: var(--text-soft);
-      transform: translateY(-1px);
-    }
-
-    .button.primary {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #ffffff;
-    }
-
-    .button.primary:hover {
-      opacity: 0.9;
-    }
-
-    .quick-command {
-      display: inline-flex;
-      align-items: center;
-      gap: 12px;
-      max-width: 100%;
-      padding: 10px 16px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-    }
-
-    .prompt {
-      color: var(--accent);
-      font-family: var(--mono);
-      font-weight: 700;
-    }
-
-    code {
-      color: var(--text);
-      font-family: var(--mono);
-      font-size: 13px;
-    }
-
-    .quick-command code {
-      overflow-wrap: anywhere;
-    }
-
-    .section {
-      padding: 92px 32px;
-    }
-
-    .hero+.section {
-      padding-top: 0;
-    }
-
-    .section.surface {
-      background: var(--surface);
-    }
-
-    .hero+.section.surface {
-      background: linear-gradient(180deg, var(--bg) 0%, var(--surface) 42%, var(--surface) 100%);
-    }
-
-    .section-inner {
-      width: min(1040px, 100%);
-      margin: 0 auto;
-      padding: 0 32px;
-    }
-
-    .section-header {
-      margin-bottom: 36px;
-    }
-
-    .center {
-      text-align: center;
-    }
-
-    .eyebrow {
-      margin: 0 0 10px;
-      color: var(--accent);
-      font-family: var(--mono);
-      font-size: 11px;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-    }
-
-    h2 {
-      margin: 0;
-      color: var(--text);
-      font-size: clamp(26px, 3vw, 38px);
-      font-weight: 760;
-      letter-spacing: 0;
-      line-height: 1.2;
-    }
-
-    .demo-frame {
-      position: relative;
-      display: grid;
-      width: min(900px, 100%);
-      aspect-ratio: 16 / 9;
-      margin: 0 auto;
-      overflow: hidden;
-      place-items: center;
-      background: var(--surface-2);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      corner-shape: squircle;
-    }
-
-    .demo-video {
-      display: block;
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      background: #000;
-    }
-
-    .tabs {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 24px;
-      flex-wrap: wrap;
-    }
-
-    .tab {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      min-height: 40px;
-      padding: 8px 14px;
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      background: transparent;
-      color: var(--text-muted);
-      cursor: pointer;
-      font-family: var(--sans);
-      font-size: 14px;
-      font-weight: 500;
-      transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
-    }
-
-    .tab:hover,
-    .tab[aria-selected="true"] {
-      background: var(--surface-2);
-      border-color: var(--border-strong);
-      color: var(--text);
-    }
-
-    .tab-icon {
-      width: 16px;
-      height: 16px;
-      stroke-width: 2;
-    }
-
-    .tab-panel[hidden] {
-      display: none;
-    }
-
-    .source-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 16px;
-    }
-
-    .platform-label {
-      margin: 0 0 10px;
-      color: var(--text-muted);
-      font-family: var(--mono);
-      font-size: 13px;
-    }
-
-    .code-block {
-      overflow: hidden;
-      background: var(--surface-2);
-      border: 1px solid var(--border);
+    .keys { display: flex; gap: 6px; }
+    kbd, .kbd {
+      display: inline-grid; place-items: center; min-width: 30px; height: 30px; padding: 0 9px;
+      font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--hi);
+      background: linear-gradient(#1c1e2c, #141522); border: 1px solid #2f3247; border-bottom-width: 3px;
       border-radius: 8px;
     }
+    .keys kbd { animation: press .5s var(--ease) both; }
+    @keyframes press { 0% { transform: translateY(-8px) scale(1.15); opacity: 0; } 40% { transform: translateY(2px); border-bottom-width: 1px; opacity: 1; } 100% { transform: none; } }
+    .cap { transition: opacity .3s, transform .3s; }
+    .cap.out { opacity: 0; transform: translateY(4px); }
 
-    .code-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      min-height: 30px;
-      padding: 3px 8px 3px 10px;
-      border-bottom: 1px solid var(--border);
+    /* ---------- marquee ---------- */
+    .marquee { margin: 70px 0 0; position: relative; overflow: hidden; mask-image: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent); -webkit-mask-image: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent); }
+    .marquee-label { text-align: center; font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+    .track { display: flex; gap: 12px; width: max-content; animation: scroll 40s linear infinite; }
+    .track span { font-family: var(--mono); font-size: 14px; color: var(--text); padding: 8px 16px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--bg-2); white-space: nowrap; }
+    .track span::before { content: "$ "; color: var(--acc); }
+    @keyframes scroll { to { transform: translateX(-50%); } }
+
+    /* ---------- sections ---------- */
+    section { position: relative; }
+    .sec { padding: 140px 0 0; }
+    .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--acc); margin: 0 0 14px; }
+    h2 { margin: 0; font-size: clamp(32px, 4.6vw, 58px); line-height: 1.04; letter-spacing: -.035em; color: var(--hi); font-weight: 700; max-width: 820px; }
+    h2 .m { color: var(--muted); }
+    .sub { max-width: 600px; margin: 18px 0 0; font-size: 17px; color: var(--text); }
+    .head { margin-bottom: 56px; }
+
+    [data-r] { opacity: 0; transform: translateY(28px); filter: blur(6px); transition: opacity .9s var(--ease), transform .9s var(--ease), filter .9s var(--ease); transition-delay: calc(var(--d, 0) * 90ms); }
+    [data-r].in { opacity: 1; transform: none; filter: none; }
+
+    /* ---------- levels ---------- */
+    .levels { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 56px; align-items: center; }
+    .steps { list-style: none; margin: 34px 0 0; padding: 0; display: grid; gap: 10px; }
+    .steps li {
+      display: grid; grid-template-columns: 40px 1fr; gap: 14px; padding: 16px 18px; border-radius: 14px;
+      border: 1px solid transparent; transition: background .4s, border-color .4s;
+    }
+    .steps li.on { background: var(--bg-2); border-color: var(--line); }
+    .steps .n { font-family: var(--mono); font-size: 13px; color: var(--muted); padding-top: 2px; transition: color .4s; }
+    .steps li.on .n { color: var(--acc); }
+    .steps h4 { margin: 0 0 2px; font-size: 17px; color: var(--hi); font-weight: 600; }
+    .steps p { margin: 0; font-size: 14.5px; color: var(--muted); transition: color .4s; }
+    .steps li.on p { color: var(--text); }
+    .lv-wrap { position: relative; }
+    .lv {
+      position: relative; aspect-ratio: 16 / 11; border-radius: 16px; overflow: hidden;
+      background: var(--bg-2); border: 1px solid var(--line); font-family: var(--mono); font-size: 12.5px;
+      box-shadow: 0 40px 100px -40px rgba(0,0,0,.9);
+    }
+    .lv-bar { height: 34px; display: flex; align-items: center; gap: 12px; padding: 0 14px; background: var(--panel); border-bottom: 1px solid var(--line-2); color: var(--muted); }
+    .lv-bar b { color: var(--acc); }
+    .lv-list { padding: 8px 0; }
+    .lv-row { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 16px; color: var(--text); border-left: 3px solid transparent; transition: background .3s; }
+    .lv-row .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 8px var(--acc); }
+    .lv-row.offr .dot { background: #464b63; box-shadow: none; }
+    .lv-row .sp { flex: 1; }
+    .lv-row .sk { height: 6px; border-radius: 3px; background: #1f2232; }
+    .lv-row.cur { background: var(--sel); border-left-color: var(--acc); color: #fff; }
+    .lv-detail {
+      position: absolute; inset: 34px 0 0; background: var(--bg-2);
+      clip-path: inset(var(--rt, 30%) 0 var(--rb, 60%) 0 round 0);
+      opacity: 0; transition: clip-path .75s var(--ease), opacity .4s;
+      display: grid; grid-template-rows: auto 1fr auto; pointer-events: none;
+    }
+    .lv[data-level="1"] .lv-detail, .lv[data-level="2"] .lv-detail { clip-path: inset(0 0 0 0 round 0); opacity: 1; }
+    .lv-title { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--panel); color: #fff; font-weight: 700; }
+    .lv-title .st { color: var(--acc); font-weight: 400; }
+    .lv-title .bts { margin-left: auto; display: flex; gap: 6px; }
+    .lv-title .bts span { font-weight: 400; color: var(--text); background: #1d1f2e; padding: 1px 8px; border-radius: 4px; font-size: 11px; }
+    .lv-mid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line-2); min-height: 0; }
+    .lv-sum, .lv-gr { background: var(--bg-2); padding: 12px 16px; overflow: hidden; }
+    .lv-sum div { display: flex; gap: 12px; line-height: 1.85; white-space: nowrap; }
+    .lv-sum div span:first-child { color: var(--muted); width: 72px; flex: none; }
+    .lv-gr { display: grid; gap: 10px; align-content: start; }
+    .lv-gr .gl { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
+    .lv-gr .gl b { color: var(--text); font-weight: 500; }
+    .lv-gb { display: flex; align-items: flex-end; gap: 2px; height: 26px; }
+    .lv-gb i { flex: 1; background: linear-gradient(var(--acc-2), var(--acc)); border-radius: 1px; opacity: .85; transition: height .5s var(--ease); }
+    .lv-logs {
+      position: absolute; left: 0; right: 0; bottom: 0; height: 30%;
+      background: #090a10; border-top: 1px solid var(--line); overflow: hidden;
+      transition: height .7s var(--ease);
+    }
+    .lv[data-level="2"] .lv-logs { height: 100%; }
+    .lv-lh { display: flex; gap: 10px; padding: 7px 16px; background: var(--panel); color: #fff; font-weight: 700; font-size: 11.5px; }
+    .lv-lh span { color: var(--muted); font-weight: 400; }
+    .lv-lh em { margin-left: auto; font-style: normal; color: var(--acc); font-weight: 400; }
+    .lv-ll { padding: 6px 16px; color: var(--text); font-size: 11.5px; line-height: 1.75; display: flex; flex-direction: column; justify-content: flex-end; height: calc(100% - 30px); }
+    .lv-ll div { flex: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .lv-ll .ts { color: var(--muted); }
+    .lv-key { position: absolute; right: 16px; bottom: -18px; display: flex; gap: 6px; z-index: 3; }
+    .lv-key kbd { box-shadow: 0 10px 30px rgba(0,0,0,.6); }
+    .lv-key kbd.hit { animation: press .5s var(--ease); background: linear-gradient(#25402f, #1b2c22); border-color: var(--acc); color: #fff; }
+
+    /* ---------- bento ---------- */
+    .bento { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+    .card {
+      --mx: 50%; --my: 0%;
+      position: relative; overflow: hidden; border-radius: 20px; padding: 26px;
+      background: linear-gradient(180deg, #0d0e17, #0a0b11);
+      border: 1px solid var(--line-2);
+      display: flex; flex-direction: column; gap: 22px; min-height: 360px;
+      transition: border-color .3s;
+    }
+    .card::before {
+      content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .4s;
+      background: radial-gradient(420px circle at var(--mx) var(--my), rgba(110,171,147,.10), transparent 60%);
+    }
+    .card:hover { border-color: var(--line); }
+    .card:hover::before { opacity: 1; }
+    .card.s2 { grid-column: span 2; }
+    .card.s3 { grid-column: span 3; }
+    .card h3 { margin: 0 0 6px; font-size: 21px; letter-spacing: -.02em; color: var(--hi); font-weight: 600; }
+    .card p { margin: 0; color: var(--muted); font-size: 15px; max-width: 520px; }
+    .card p code, .sub code, .steps code { font-family: var(--mono); font-size: .86em; color: var(--text); background: var(--panel); padding: 1px 6px; border-radius: 5px; }
+    .vg { flex: 1; position: relative; font-family: var(--mono); font-size: 13px; min-height: 180px; }
+    .win { background: #090a10; border: 1px solid var(--line-2); border-radius: 12px; overflow: hidden; height: 100%; }
+    .win-h { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--panel); color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--line-2); }
+    .win-h b { color: #fff; font-weight: 600; }
+    .win-h .r8 { margin-left: auto; }
+
+    /* graphs card */
+    .graphs { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 24px; padding: 16px; }
+    .gm .gl { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .gm .gl b { color: var(--hi); font-weight: 600; }
+    .gm pre { margin: 0; color: var(--acc); line-height: 1.05; font-size: 13px; overflow: hidden; font-family: var(--mono); }
+    .gm.warm pre { color: var(--warn); }
+    .gm.cool pre { color: #7aa7e0; }
+    .gm.pink pre { color: #d68fc6; }
+
+    /* filter card */
+    .fl-in { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line-2); color: var(--muted); }
+    .fl-in span { color: #fff; }
+    .fl-list { list-style: none; margin: 0; padding: 6px 0; }
+    .fl-list li { display: flex; justify-content: space-between; padding: 0 12px; height: 28px; line-height: 28px; max-height: 28px; color: var(--text); transition: max-height .4s var(--ease), opacity .3s, transform .4s var(--ease); overflow: hidden; }
+    .fl-list li.out { max-height: 0; opacity: 0; transform: translateX(-12px); }
+    .fl-list li mark { background: rgba(110,171,147,.22); color: #fff; border-radius: 3px; }
+    .fl-list li .s { color: var(--acc); font-size: 12px; }
+    .fl-list li .s.o { color: #545a75; }
+
+    /* safe card */
+    .safe { display: grid; gap: 14px; height: 100%; align-content: center; }
+    .svcrow { display: flex; justify-content: space-between; padding: 10px 14px; background: var(--sel); border-left: 3px solid var(--acc); border-radius: 6px; color: #fff; }
+    .svcrow .s { color: var(--acc); transition: color .3s; }
+    .svcrow .s.o { color: #646b86; }
+    .cdlg { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; transition: opacity .3s, transform .3s var(--ease); }
+    .cdlg.gone { opacity: 0; transform: scale(.96); }
+    .cdlg.shake { animation: shake .45s; }
+    .cdlg .t { padding: 8px 12px; color: var(--warn); font-weight: 700; border-bottom: 1px solid var(--line); }
+    .cdlg .q { padding: 10px 12px; color: var(--text); }
+    .cdlg .bb { display: flex; justify-content: flex-end; gap: 10px; padding: 0 12px 10px; }
+    .cdlg .bb span { padding: 1px 8px; }
+    .cdlg .f { padding: 7px 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+    .safe .ks { display: flex; gap: 10px; align-items: center; color: var(--muted); font-size: 12px; min-height: 34px; }
+    .safe .ks kbd.hit { animation: press .45s var(--ease); }
+    .safe .ks kbd.bad { border-color: var(--err); color: var(--err); }
+    .safe .ks kbd.good { border-color: var(--acc); color: var(--acc); }
+    .tag { font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 99px; border: 1px solid; opacity: 0; transition: opacity .3s; }
+    .tag.on { opacity: 1; }
+    .tag.bad { color: var(--err); border-color: rgba(255,80,96,.4); }
+    .tag.good { color: var(--acc); border-color: rgba(110,171,147,.4); }
+
+    /* command card */
+    .cmd { padding: 16px 18px; line-height: 1.85; }
+    .cmd .row { display: flex; gap: 14px; }
+    .cmd .lbl { color: var(--muted); width: 72px; flex: none; }
+    .cmd .one { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); transition: opacity .4s; min-width: 0; }
+    .cmd .lines { position: relative; min-width: 0; }
+    .cmd .lines div { white-space: pre; opacity: 0; transform: translateX(-14px); filter: blur(4px); transition: opacity .5s var(--ease), transform .5s var(--ease), filter .5s; transition-delay: calc(var(--i) * 110ms); }
+    .cmd.fmt .lines div { opacity: 1; transform: none; filter: none; }
+    .cmd.fmt .one { display: none; }
+    .cmd:not(.fmt) .lines { display: none; }
+    .cmd .bin { color: #fff; } .cmd .op { color: var(--acc); } .cmd .sepr { color: var(--warn); } .cmd .val { color: var(--text); }
+    .cmd-note { display: flex; gap: 8px; align-items: center; padding: 0 18px 14px; font-size: 12px; color: var(--muted); }
+    .cmd-note .sw { color: var(--acc); }
+
+    /* logs card */
+    .lg { padding: 10px 12px; height: 210px; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; font-size: 12px; line-height: 1.8; }
+    .lg div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: slidein .35s var(--ease); }
+    .lg .ts { color: var(--muted); }
+    .lg .ev { color: var(--warn); }
+    .lg .ok { color: var(--acc); }
+    .lg .lvl { color: #7aa7e0; }
+
+    /* limits card */
+    .lim { padding: 14px 14px 10px; display: grid; gap: 10px; }
+    .lim .lr { display: grid; grid-template-columns: 74px 1fr 64px; gap: 10px; align-items: center; font-size: 12px; }
+    .lim .lr > span:first-child { color: var(--muted); }
+    .lim .bar { height: 8px; border-radius: 4px; background: #1a1c29; overflow: hidden; }
+    .lim .bar i { display: block; height: 100%; width: var(--v); background: linear-gradient(90deg, var(--acc), var(--acc-2)); border-radius: 4px; transition: width 1s var(--ease); }
+    .lim .lr b { color: #fff; font-weight: 600; text-align: right; }
+    .lim .cmdl { margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--line-2); color: var(--text); font-size: 12px; white-space: nowrap; overflow: hidden; min-height: 28px; }
+    .lim .cmdl::before { content: "$ "; color: var(--acc); }
+
+    /* secrets card */
+    .env { padding: 10px 12px; font-size: 12px; line-height: 2; }
+    .env div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .env .k { color: #7aa7e0; }
+    .env .v { color: var(--text); }
+    .env .v.mask { color: var(--muted); letter-spacing: .1em; }
+    .env-k { display: flex; align-items: center; gap: 8px; padding: 0 12px 12px; color: var(--muted); font-size: 12px; }
+    .env-k kbd.hit { animation: press .45s var(--ease); border-color: var(--acc); }
+
+    /* platform card */
+    .plat { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 40px; align-items: center; min-height: 0; }
+    .plat-word { font-family: var(--mono); font-weight: 800; font-size: clamp(40px, 7vw, 92px); letter-spacing: -.04em; color: var(--hi); line-height: 1; white-space: nowrap; }
+    .plat-word .c { color: var(--acc); }
+    .plat-os { font-family: var(--mono); color: var(--acc); font-size: 13px; margin-bottom: 12px; letter-spacing: .1em; text-transform: uppercase; }
+    .plat-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+    .plat-list li { display: flex; gap: 10px; color: var(--text); animation: slidein .5s var(--ease) both; animation-delay: calc(var(--i) * 80ms); }
+    .plat-list li::before { content: "▸"; color: var(--acc); }
+    .plat-tabs { display: flex; gap: 8px; margin-top: 22px; }
+    .plat-tabs button {
+      font-family: var(--mono); font-size: 12px; color: var(--muted); background: transparent; border: 1px solid var(--line-2);
+      padding: 6px 12px; border-radius: 99px; cursor: pointer; position: relative; overflow: hidden;
+    }
+    .plat-tabs button.on { color: #fff; border-color: var(--line); }
+    .plat-tabs button.on::after { content: ""; position: absolute; left: 0; bottom: 0; height: 2px; background: var(--acc); animation: fill 3.6s linear both; }
+    @keyframes fill { from { width: 0; } to { width: 100%; } }
+
+    /* ---------- stats ---------- */
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2); margin-top: 140px; }
+    .stat { padding: 40px 28px; border-right: 1px solid var(--line-2); }
+    .stat:last-child { border-right: 0; }
+    .stat .v { font-size: clamp(36px, 4.5vw, 56px); font-weight: 700; letter-spacing: -.04em; color: var(--hi); line-height: 1; font-variant-numeric: tabular-nums; }
+    .stat .v small { font-size: .45em; color: var(--acc); margin-left: 4px; letter-spacing: 0; }
+    .stat .l { margin-top: 10px; color: var(--muted); font-size: 14px; }
+
+    /* ---------- keys ---------- */
+    .keymap { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+    .kt {
+      padding: 18px; border-radius: 14px; background: var(--bg-2); border: 1px solid var(--line-2);
+      transition: border-color .35s, background .35s, transform .35s var(--ease);
+    }
+    .kt .kk { display: flex; gap: 5px; margin-bottom: 14px; }
+    .kt .kk kbd { transition: border-color .35s, color .35s, transform .2s; }
+    .kt b { display: block; color: var(--hi); font-weight: 600; font-size: 15px; }
+    .kt span { color: var(--muted); font-size: 13px; }
+    .kt.hot, .kt:hover { border-color: rgba(110,171,147,.45); background: #0d1512; transform: translateY(-3px); }
+    .kt.hot kbd, .kt:hover kbd { border-color: var(--acc); color: #fff; }
+    .kt.hot kbd { animation: press .5s var(--ease); }
+    .mouse { margin-top: 22px; color: var(--muted); font-size: 14.5px; display: flex; gap: 10px; align-items: center; }
+
+    /* ---------- video ---------- */
+    .film { position: relative; border-radius: 18px; padding: 1px; background: linear-gradient(140deg, rgba(110,171,147,.6), var(--line-2) 35%, var(--line-2) 65%, rgba(255,190,45,.35)); }
+    .film video { display: block; width: 100%; border-radius: 17px; background: #000; aspect-ratio: 16 / 9; object-fit: contain; }
+
+    /* ---------- install ---------- */
+    .inst { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); gap: 48px; align-items: start; }
+    .itabs { display: grid; gap: 8px; margin-top: 30px; }
+    .itab {
+      display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 12px; cursor: pointer;
+      background: transparent; border: 1px solid var(--line-2); color: var(--text); font: inherit; font-size: 15px; text-align: left;
+      transition: background .25s, border-color .25s, color .25s;
+    }
+    .itab:hover { border-color: var(--line); }
+    .itab[aria-selected="true"] { background: var(--bg-2); border-color: var(--acc); color: #fff; }
+    .itab small { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+    .iterm { border-radius: 14px; overflow: hidden; border: 1px solid var(--line); background: var(--bg-2); box-shadow: 0 40px 100px -40px rgba(0,0,0,.9); }
+    .iterm .chrome span { transform: none; margin: 0; }
+    .copy { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 4px 10px; cursor: pointer; transition: border-color .2s, color .2s; }
+    .copy:hover, .copy.done { border-color: var(--acc); color: var(--acc); }
+    .ibody { margin: 0; padding: 20px 22px 26px; font-family: var(--mono); font-size: 13.5px; line-height: 1.9; min-height: 290px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--hi); }
+    .ibody .c { color: var(--muted); }
+    .ibody .p { color: var(--acc); }
+    .ibody .o { color: var(--acc); }
+    .ibody .caret { display: inline-block; width: .6em; height: 1.1em; vertical-align: -.2em; background: var(--acc); animation: blink 1s steps(1) infinite; }
+
+    /* ---------- final ---------- */
+    .final { padding: 180px 0 120px; text-align: center; position: relative; overflow: hidden; }
+    .final::before { content: ""; position: absolute; left: 50%; top: 55%; width: 900px; height: 500px; transform: translate(-50%, -50%); background: radial-gradient(closest-side, rgba(110,171,147,.18), transparent); z-index: -1; }
+    .big { font-family: var(--mono); font-weight: 800; font-size: clamp(34px, 7.5vw, 96px); letter-spacing: -.05em; color: var(--hi); line-height: 1; margin: 0 0 40px; }
+    .big .p { color: var(--acc); }
+    .big .caret { display: inline-block; width: .55em; height: .85em; background: var(--acc); vertical-align: -.08em; margin-left: .08em; animation: blink 1s steps(1) infinite; box-shadow: 0 0 30px var(--acc-glow); }
+    footer { border-top: 1px solid var(--line-2); padding: 28px 0 40px; color: var(--muted); font-size: 13px; }
+    footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+    footer a:hover { color: var(--hi); }
+
+    /* ---------- responsive ---------- */
+    @media (max-width: 980px) {
+      .levels, .inst { grid-template-columns: 1fr; gap: 40px; }
+      .bento { grid-template-columns: 1fr 1fr; }
+      .card.s3 { grid-column: span 2; }
+      .keymap { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .stats { grid-template-columns: 1fr 1fr; }
+      .stat:nth-child(2) { border-right: 0; }
+      .stat:nth-child(-n+2) { border-bottom: 1px solid var(--line-2); }
+      .plat { grid-template-columns: 1fr; gap: 24px; }
+    }
+    @media (max-width: 680px) {
+      .wrap { width: calc(100% - 32px); }
+      .hero { padding-top: 120px; }
+      .stage { margin-top: 48px; }
+      .bento { grid-template-columns: 1fr; }
+      .card.s2, .card.s3 { grid-column: auto; }
+      .card { padding: 20px; min-height: 0; }
+      .graphs { grid-template-columns: 1fr; }
+      .keymap { grid-template-columns: 1fr 1fr; }
+      .sec { padding-top: 100px; }
+      .lv { aspect-ratio: 4 / 4.2; font-size: 11px; }
+      .lv-mid { grid-template-columns: 1fr; }
+      .lv-gr { display: none; }
+      .keycast { font-size: 13.5px; flex-wrap: wrap; gap: 10px; }
+      .ibody { font-size: 12px; }
     }
 
-    .code-label {
-      color: var(--text-soft);
-      font-family: var(--mono);
-      font-size: 11px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }
-
-    .code-body {
-      margin: 0;
-      padding: 12px 10px 8px;
-      overflow-x: auto;
-    }
-
-    .code-line {
-      display: block;
-      color: var(--text-muted);
-      font-family: var(--mono);
-      font-size: 13px;
-      white-space: pre;
-    }
-
-    .code-line.comment {
-      color: var(--text-soft);
-    }
-
-    .code-line.command {
-      color: var(--text);
-    }
-
-    .code-line.success {
-      color: var(--accent);
-    }
-
-    .copy-button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 28px;
-      padding: 3px 7px;
-      border: 1px solid transparent;
-      border-radius: 8px;
-      background: transparent;
-      color: var(--text-soft);
-      cursor: pointer;
-      font-family: var(--sans);
-      font-size: 12px;
-      transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
-    }
-
-    .copy-button:hover,
-    .copy-button.copied {
-      background: var(--accent-soft);
-      border-color: var(--accent);
-      color: var(--accent);
-    }
-
-    .usage {
-      margin-top: 32px;
-    }
-
-    .contribute {
-      text-align: center;
-    }
-
-    .contribute .section-inner {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-
-    .contribute p:not(.eyebrow) {
-      max-width: 480px;
-      margin: 16px auto 36px;
-      color: var(--text-muted);
-    }
-
-    footer {
-      width: min(800px, calc(100% - 96px));
-      margin: 0 auto;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      flex-wrap: wrap;
-      padding: 28px 0;
-      border-top: 1px solid var(--border);
-      color: var(--text-soft);
-      font-size: 13px;
-    }
-
-    footer strong {
-      color: var(--text-soft);
-      font-family: var(--mono);
-      font-weight: 600;
-    }
-
-    footer a {
-      color: var(--text-muted);
-      text-decoration: none;
-    }
-
-    .icon {
-      width: 18px;
-      height: 18px;
-    }
-
-    @media (max-width: 760px) {
-      .site-nav {
-        width: calc(100% - 40px);
-        padding: 14px 18px;
-      }
-
-      .nav-links {
-        gap: 16px;
-      }
-
-      .hero {
-        min-height: auto;
-        padding: 104px 20px 32px;
-      }
-
-      .quick-command {
-        align-items: flex-start;
-        width: 100%;
-      }
-
-      .section {
-        padding: 72px 20px;
-      }
-
-      .section-inner {
-        padding: 0;
-      }
-
-      .source-grid {
-        grid-template-columns: 1fr;
-      }
-
-      footer {
-        width: calc(100% - 40px);
-        padding: 24px 0;
-      }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+      .track { animation: none; }
+      [data-r] { opacity: 1; transform: none; filter: none; }
     }
   </style>
 </head>
 
 <body>
-  <nav class="site-nav" aria-label="Primary navigation">
-    <a class="brand" href="#">g-systemctl</a>
+  <nav class="nav" id="nav" aria-label="Primary">
+    <a class="brand" href="#top"><span class="brand-mark">g</span>g-systemctl</a>
     <div class="nav-links">
+      <a class="opt" href="#features">Features</a>
+      <a class="opt" href="#keys">Keys</a>
       <a href="#install">Install</a>
-      <a href="https://github.com/shakg/g-systemctl" target="_blank" rel="noopener">
-        <svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <path
-            d="M12 2C6.48 2 2 6.58 2 12.26c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49 0-.24-.01-1.05-.01-1.9-2.78.62-3.37-1.22-3.37-1.22-.45-1.18-1.11-1.49-1.11-1.49-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.64-1.37-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.04 1.03-2.75-.1-.26-.45-1.3.1-2.72 0 0 .84-.28 2.75 1.05A9.34 9.34 0 0 1 12 6.97c.85 0 1.7.12 2.5.34 1.91-1.33 2.75-1.05 2.75-1.05.55 1.42.2 2.46.1 2.72.64.71 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .27.18.59.69.49A10.14 10.14 0 0 0 22 12.26C22 6.58 17.52 2 12 2Z" />
-        </svg>
-        GitHub
+      <a class="gh" href="https://github.com/shakg/g-systemctl" target="_blank" rel="noopener">
+        <svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.58 2 12.26c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49 0-.24-.01-1.05-.01-1.9-2.78.62-3.37-1.22-3.37-1.22-.45-1.18-1.11-1.49-1.11-1.49-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.64-1.37-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.04 1.03-2.75-.1-.26-.45-1.3.1-2.72 0 0 .84-.28 2.75 1.05A9.34 9.34 0 0 1 12 6.97c.85 0 1.7.12 2.5.34 1.91-1.33 2.75-1.05 2.75-1.05.55 1.42.2 2.46.1 2.72.64.71 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .27.18.59.69.49A10.14 10.14 0 0 0 22 12.26C22 6.58 17.52 2 12 2Z" /></svg>
+        <span class="opt-t">GitHub</span><span class="stars" id="stars"></span>
       </a>
     </div>
   </nav>
 
-  <main>
+  <main id="top">
+    <!-- ================= HERO ================= -->
     <section class="hero">
-      <div class="hero-inner">
-        <h1>Graphical Service Manager <span>for Linux and macOS</span></h1>
-        <p class="hero-copy">View, search, and control system services right in your terminal.</p>
-        <div class="actions">
-          <a class="button primary" href="https://github.com/shakg/g-systemctl" target="_blank" rel="noopener">
-            <svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <path
-                d="M12 2C6.48 2 2 6.58 2 12.26c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49 0-.24-.01-1.05-.01-1.9-2.78.62-3.37-1.22-3.37-1.22-.45-1.18-1.11-1.49-1.11-1.49-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.64-1.37-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.04 1.03-2.75-.1-.26-.45-1.3.1-2.72 0 0 .84-.28 2.75 1.05A9.34 9.34 0 0 1 12 6.97c.85 0 1.7.12 2.5.34 1.91-1.33 2.75-1.05 2.75-1.05.55 1.42.2 2.46.1 2.72.64.71 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .27.18.59.69.49A10.14 10.14 0 0 0 22 12.26C22 6.58 17.52 2 12 2Z" />
-            </svg>
-            View on GitHub
+      <canvas id="field" aria-hidden="true"></canvas>
+      <div class="wrap hero-copy">
+        <a class="pill" href="#features"><b>NEW</b><span id="pill-text">Live graphs and a Docker containers tab</span></a>
+        <h1>
+          <span class="w" style="--i:0">Every</span> <span class="w" style="--i:1">service.</span><br />
+          <span class="w acc" style="--i:2">One</span> <span class="w acc" style="--i:3">terminal.</span>
+        </h1>
+        <p class="lede">A keyboard-driven TUI for <code>systemd</code>, <code>launchd</code> and <code>Docker</code>. Filter,
+          inspect, graph, restart and follow logs — without typing a unit name twice.</p>
+        <div class="ctas">
+          <a class="btn primary" href="#install">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>
+            Install
           </a>
-          <a class="button" href="#install">Install &amp; Build</a>
+          <a class="btn" href="https://github.com/shakg/g-systemctl" target="_blank" rel="noopener">
+            View source <span class="k">C++17 · MIT</span>
+          </a>
+        </div>
+      </div>
+
+      <div class="wrap">
+        <div class="stage">
+          <div class="term" id="term" role="img"
+            aria-label="Animated g-systemctl session: filtering services, opening the nginx detail page with live graphs and logs, confirming a restart, then changing a Docker container's limits.">
+            <div class="chrome"><i></i><i></i><i></i><span>~ — sudo g-systemctl</span></div>
+            <div class="tbody">
+              <div class="scr" id="scr"></div>
+            </div>
+          </div>
+          <div class="keycast" aria-hidden="true">
+            <div class="keys" id="kc-keys"></div>
+            <div class="cap" id="kc-cap"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="marquee" aria-label="Commands g-systemctl runs for you">
+        <div class="marquee-label">No agent, no daemon. It runs the commands you would.</div>
+        <div class="track" id="track"></div>
+      </div>
+    </section>
+
+    <!-- ================= LEVELS ================= -->
+    <section class="sec" id="navigate">
+      <div class="wrap levels">
+        <div>
+          <p class="eyebrow" data-r>Navigation</p>
+          <h2 data-r style="--d:1">Enter goes down.<br /><span class="m">Esc comes back.</span></h2>
+          <ol class="steps" id="steps">
+            <li data-r style="--d:2" class="on"><span class="n">01</span>
+              <div>
+                <h4>List</h4>
+                <p>Every unit or container with status, PID, CPU and memory. Type anywhere to filter.</p>
+              </div>
+            </li>
+            <li data-r style="--d:3"><span class="n">02</span>
+              <div>
+                <h4>Detail page</h4>
+                <p>Summary, live graphs and a short log strip. Actions target the item shown.</p>
+              </div>
+            </li>
+            <li data-r style="--d:4"><span class="n">03</span>
+              <div>
+                <h4>Full-size logs</h4>
+                <p>The strip expands to the whole screen. <code>PgUp</code> / <code>PgDn</code> to scroll.</p>
+              </div>
+            </li>
+          </ol>
+        </div>
+        <div class="lv-wrap" data-r style="--d:2">
+          <div class="lv" id="lv" data-level="0" aria-hidden="true">
+            <div class="lv-bar"><b>g-systemctl</b><span>Services</span><span style="margin-left:auto">Filter: _</span></div>
+            <div class="lv-list" id="lv-list"></div>
+            <div class="lv-detail">
+              <div class="lv-title">nginx.service <span class="st">● active (running)</span>
+                <div class="bts"><span>Start</span><span>Stop</span><span>Restart</span><span>Back</span></div>
+              </div>
+              <div class="lv-mid">
+                <div class="lv-sum">
+                  <div><span>State</span><span>active (running)</span></div>
+                  <div><span>Unit file</span><span>enabled</span></div>
+                  <div><span>Main PID</span><span>1184</span></div>
+                  <div><span>Tasks</span><span>5</span></div>
+                  <div><span>Memory</span><span>12.4 MiB</span></div>
+                  <div><span>Restart</span><span>on-failure</span></div>
+                </div>
+                <div class="lv-gr" id="lv-gr"></div>
+              </div>
+              <div></div>
+              <div class="lv-logs">
+                <div class="lv-lh">Logs <span>journalctl -u nginx -f</span><em id="lv-exp">⤢ Expand</em></div>
+                <div class="lv-ll" id="lv-ll"></div>
+              </div>
+            </div>
+          </div>
+          <div class="lv-key" id="lv-key"></div>
         </div>
       </div>
     </section>
 
-    <section class="section surface" aria-labelledby="demo-title">
-      <div class="section-inner">
-        <div class="demo-frame">
-          <video class="demo-video" controls autoplay muted playsinline preload="metadata">
+    <!-- ================= FEATURES ================= -->
+    <section class="sec" id="features">
+      <div class="wrap">
+        <div class="head">
+          <p class="eyebrow" data-r>Features</p>
+          <h2 data-r style="--d:1">What you reach for,<br /><span class="m">one key away.</span></h2>
+        </div>
+
+        <div class="bento">
+          <!-- graphs -->
+          <article class="card s2" data-r>
+            <div class="vg">
+              <div class="win">
+                <div class="win-h"><b>postgresql.service</b> · graphs <span class="r8">every 2s</span></div>
+                <div class="graphs" id="graphs"></div>
+              </div>
+            </div>
+            <div>
+              <h3>Live graphs on the detail page</h3>
+              <p>CPU, memory, tasks and IO, sampled every 2 seconds with 10 minutes of history. Beside the summary at 100+
+                columns; <code>Alt+g</code> swaps them in on narrow terminals.</p>
+            </div>
+          </article>
+
+          <!-- filter -->
+          <article class="card" data-r style="--d:1">
+            <div class="vg">
+              <div class="win">
+                <div class="fl-in">Filter: <span id="fl-q"></span><span class="cur">▏</span></div>
+                <ul class="fl-list" id="fl-list"></ul>
+              </div>
+            </div>
+            <div>
+              <h3>Filter as you type</h3>
+              <p>No search mode. Start typing; the list narrows. <code>-f nginx</code> starts filtered.</p>
+            </div>
+          </article>
+
+          <!-- safe -->
+          <article class="card" data-r>
+            <div class="vg">
+              <div class="safe">
+                <div class="svcrow"><span>postgresql.service</span><span class="s" id="sf-s">● active</span></div>
+                <div class="cdlg" id="sf-d">
+                  <div class="t">Confirm</div>
+                  <div class="q">Stop postgresql.service?</div>
+                  <div class="bb"><span class="yes">y  Stop</span><span class="no">n  Cancel</span></div>
+                  <div class="f">y confirm · n / Esc cancel</div>
+                </div>
+                <div class="ks"><kbd id="sf-enter">Enter</kbd><kbd id="sf-y">y</kbd><span class="tag bad" id="sf-t1">ignored</span><span class="tag good" id="sf-t2">stopped</span></div>
+              </div>
+            </div>
+            <div>
+              <h3>Safe by default</h3>
+              <p><code>Enter</code> only navigates. Stop and restart ask first, and only <code>y</code> or a click confirms.</p>
+            </div>
+          </article>
+
+          <!-- command -->
+          <article class="card s2" data-r style="--d:1">
+            <div class="vg">
+              <div class="win">
+                <div class="win-h"><b>worker.service</b> · summary</div>
+                <div class="cmd" id="cmd">
+                  <div class="row"><span class="lbl">Type</span><span>simple</span></div>
+                  <div class="row"><span class="lbl">User</span><span>app</span></div>
+                  <div class="row"><span class="lbl">Command</span><span class="one">sh -c "cd /srv/app &amp;&amp; exec python3 server.py --workers 4 --bind 0.0.0.0:80"</span>
+                    <div class="lines">
+                      <div style="--i:0"><span class="bin">sh</span> <span class="op">-c</span></div>
+                      <div style="--i:1">  <span class="val">cd /srv/app</span></div>
+                      <div style="--i:2">  <span class="sepr">&amp;&amp;</span> <span class="val">exec</span> <span class="bin">python3</span> <span class="val">server.py</span></div>
+                      <div style="--i:3">    <span class="op">--workers</span> <span class="val">4</span></div>
+                      <div style="--i:4">    <span class="op">--bind</span> <span class="val">0.0.0.0:80</span></div>
+                    </div>
+                  </div>
+                  <div class="row"><span class="lbl">Wanted by</span><span>multi-user.target</span></div>
+                </div>
+                <div class="cmd-note"><span class="sw" id="cmd-sw">●</span><span id="cmd-st">one long line</span></div>
+              </div>
+            </div>
+            <div>
+              <h3>Commands you can read</h3>
+              <p>Long <code>ExecStart</code> lines and Docker entrypoints are split one option per line. The script of
+                <code>sh -c</code> is indented one level deeper.</p>
+            </div>
+          </article>
+
+          <!-- logs -->
+          <article class="card" data-r>
+            <div class="vg">
+              <div class="win">
+                <div class="win-h"><b>api</b> · docker logs -f</div>
+                <div class="lg" id="lg"></div>
+              </div>
+            </div>
+            <div>
+              <h3>Logs that keep following</h3>
+              <p><code>journalctl -f</code> for services, <code>docker logs -f</code> for containers. Reattaches after a
+                restart or a recreate with the same name.</p>
+            </div>
+          </article>
+
+          <!-- limits -->
+          <article class="card" data-r style="--d:1">
+            <div class="vg">
+              <div class="win">
+                <div class="win-h"><b>Resources</b> <span style="color:var(--warn)">api</span></div>
+                <div class="lim" id="lim">
+                  <div class="lr"><span>CPUs</span><span class="bar"><i id="lm-c" style="--v:25%"></i></span><b id="lm-cv">1.00</b></div>
+                  <div class="lr"><span>Memory</span><span class="bar"><i id="lm-m" style="--v:25%"></i></span><b id="lm-mv">1g</b></div>
+                  <div class="lr"><span>PIDs</span><span class="bar"><i id="lm-p" style="--v:40%"></i></span><b id="lm-pv">200</b></div>
+                  <div class="lr"><span>Restart</span><span style="color:var(--text)">unless-stopped</span><b></b></div>
+                  <div class="cmdl" id="lm-cmd"></div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <h3>Limits, changed in place</h3>
+              <p><code>Alt+u</code> edits CPUs, memory, swap, PIDs and restart policy with <code>docker update</code>. No recreate.</p>
+            </div>
+          </article>
+
+          <!-- secrets -->
+          <article class="card" data-r style="--d:2">
+            <div class="vg">
+              <div class="win">
+                <div class="win-h"><b>api</b> · environment</div>
+                <div class="env" id="env"></div>
+                <div class="env-k"><kbd id="env-k">Alt</kbd><kbd id="env-k2">s</kbd><span id="env-s">hidden</span></div>
+              </div>
+            </div>
+            <div>
+              <h3>Secrets stay masked</h3>
+              <p>Env values whose names look secret — <code>PASSWORD</code>, <code>TOKEN</code>, <code>KEY</code> — are hidden
+                until you press <code>Alt+s</code>.</p>
+            </div>
+          </article>
+
+          <!-- platform -->
+          <article class="card s3" data-r style="min-height:0">
+            <div class="plat">
+              <div>
+                <div class="plat-os" id="pl-os">Linux</div>
+                <div class="plat-word" id="pl-w">systemctl</div>
+                <div class="plat-tabs" id="pl-tabs">
+                  <button type="button" data-i="0" class="on">systemd</button>
+                  <button type="button" data-i="1">launchd</button>
+                  <button type="button" data-i="2">Docker</button>
+                </div>
+              </div>
+              <ul class="plat-list" id="pl-l"></ul>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <div class="wrap">
+        <div class="stats" id="stats">
+          <div class="stat" data-r><div class="v"><span data-count="2">0</span><small>s</small></div><div class="l">Refresh interval for lists, stats and graphs</div></div>
+          <div class="stat" data-r style="--d:1"><div class="v"><span data-count="300">0</span></div><div class="l">Samples per graph — 10 minutes of history</div></div>
+          <div class="stat" data-r style="--d:2"><div class="v"><span data-count="3">0</span></div><div class="l">Backends: systemd, launchd, Docker</div></div>
+          <div class="stat" data-r style="--d:3"><div class="v"><span data-count="2">0</span><small>arch</small></div><div class="l">Linux packages for amd64 and arm64</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= KEYS ================= -->
+    <section class="sec" id="keys">
+      <div class="wrap">
+        <div class="head">
+          <p class="eyebrow" data-r>Keyboard</p>
+          <h2 data-r style="--d:1">Hands stay on the keys.</h2>
+          <p class="sub" data-r style="--d:2">Explicit shortcuts for every action. Press <code>?</code> in the app for the full list.</p>
+        </div>
+        <div class="keymap" id="keymap"></div>
+        <div class="mouse" data-r>
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="6" /><path d="M12 7v4" /></svg>
+          Mouse works too: scroll lists and logs, click rows, click Start / Stop / Restart / Back.
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= FILM ================= -->
+    <section class="sec" id="demo">
+      <div class="wrap">
+        <div class="head">
+          <p class="eyebrow" data-r>Recording</p>
+          <h2 data-r style="--d:1">The real thing, <span class="m">unedited.</span></h2>
+        </div>
+        <div class="film" data-r style="--d:2">
+          <video id="film" muted loop playsinline preload="none" controls>
             <source src="assets/demo.mp4" type="video/mp4" />
-            Your browser does not support the video tag.
           </video>
         </div>
       </div>
     </section>
 
-    <section id="install" class="section surface" aria-labelledby="install-title">
-      <div class="section-inner">
-        <div class="section-header">
-          <p class="eyebrow">Get started</p>
-          <h2 id="install-title">Install</h2>
-        </div>
-
-        <div class="tabs" role="tablist" aria-label="Install methods">
-          <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-macos" id="tab-macos"
-            data-tab="macos">
-            <svg class="tab-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <path
-                d="M16.9 12.6c0-2 1.7-3 1.8-3.1-1-1.4-2.4-1.6-2.9-1.6-1.2-.1-2.4.7-3 0-.6-.7-1.6-.9-2.6-.8-1.3 0-2.6.8-3.2 2-1.4 2.4-.4 5.9 1 7.8.7 1 1.5 2 2.6 2 1 0 1.4-.6 2.7-.6 1.2 0 1.6.6 2.7.6s1.8-1 2.5-1.9c.8-1.1 1.1-2.2 1.1-2.3 0 0-2.7-1-2.7-3.1Z" />
-              <path d="M15 5.9c.6-.7 1-1.7.9-2.7-.9 0-1.9.6-2.5 1.3-.6.6-1 1.6-.9 2.5.9.1 1.9-.4 2.5-1.1Z" />
-            </svg>
-            macOS - Homebrew
-          </button>
-          <button class="tab" type="button" role="tab" aria-selected="true" aria-controls="panel-deb" id="tab-deb"
-            data-tab="deb">
-            <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-              <path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Z" />
-              <path d="m4 7.5 8 4.5 8-4.5" />
-              <path d="M12 12v9" />
-            </svg>
-            Debian / Ubuntu
-          </button>
-          <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-binary"
-            id="tab-binary" data-tab="binary">
-            <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-              <path d="M12 3v12" />
-              <path d="m7 10 5 5 5-5" />
-              <path d="M5 21h14" />
-            </svg>
-            Linux binary
-          </button>
-          <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-source"
-            id="tab-source" data-tab="source">
-            <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-              <path d="m8 9-4 3 4 3" />
-              <path d="m16 9 4 3-4 3" />
-              <path d="m14 5-4 14" />
-            </svg>
-            Compile from source
-          </button>
-          <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-checksums"
-            id="tab-checksums" data-tab="checksums">
-            Checksums
-          </button>
-        </div>
-
-        <div class="tab-panel" id="panel-macos" role="tabpanel" aria-labelledby="tab-macos" hidden>
-          <div class="code-block">
-            <div class="code-head"><span class="code-label">Homebrew formula</span><button class="copy-button"
-                type="button" data-copy-target="macos-code">Copy</button></div>
-            <pre class="code-body" id="macos-code"><span class="code-line comment"># Download the formula from the latest release</span>
-<span class="code-line command">$ curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/g-systemctl.rb</span>
-<span class="code-line command">$ brew install ./g-systemctl.rb</span>
-<span class="code-line success">g-systemctl installed</span></pre>
+    <!-- ================= INSTALL ================= -->
+    <section class="sec" id="install">
+      <div class="wrap inst">
+        <div>
+          <p class="eyebrow" data-r>Install</p>
+          <h2 data-r style="--d:1">Up in <span class="m">ten seconds.</span></h2>
+          <p class="sub" data-r style="--d:2">Prebuilt for Ubuntu 22.04+, Debian 12+, Fedora 35+ and macOS. Run with
+            <code>sudo</code> to start and stop system services.</p>
+          <div class="itabs" role="tablist" aria-label="Install method" data-r style="--d:3">
+            <button class="itab" role="tab" aria-selected="true" data-k="deb">Debian / Ubuntu <small>.deb</small></button>
+            <button class="itab" role="tab" aria-selected="false" data-k="bin">Linux binary <small>tar.gz</small></button>
+            <button class="itab" role="tab" aria-selected="false" data-k="brew">macOS <small>Homebrew</small></button>
+            <button class="itab" role="tab" aria-selected="false" data-k="src">From source <small>CMake</small></button>
           </div>
         </div>
-
-        <div class="tab-panel" id="panel-deb" role="tabpanel" aria-labelledby="tab-deb">
-          <div class="code-block">
-            <div class="code-head"><span class="code-label">Debian package</span><button class="copy-button"
-                type="button" data-copy-target="deb-code">Copy</button></div>
-            <pre class="code-body" id="deb-code"><span class="code-line command">$ curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/g-systemctl-linux-amd64.deb</span>
-<span class="code-line command">$ sudo apt install ./g-systemctl-linux-amd64.deb</span>
-<span class="code-line success">g-systemctl installed</span></pre>
-          </div>
-        </div>
-
-        <div class="tab-panel" id="panel-binary" role="tabpanel" aria-labelledby="tab-binary" hidden>
-          <div class="code-block">
-            <div class="code-head"><span class="code-label">Release tarball</span><button class="copy-button"
-                type="button" data-copy-target="binary-code">Copy</button></div>
-            <pre class="code-body" id="binary-code"><span class="code-line command">$ curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/g-systemctl-linux-x86_64.tar.gz</span>
-<span class="code-line command">$ tar -xzf g-systemctl-linux-x86_64.tar.gz</span>
-<span class="code-line command">$ sudo install -m 755 g-systemctl-*/g-systemctl /usr/local/bin/g-systemctl</span>
-<span class="code-line success">Installed to /usr/local/bin/g-systemctl</span></pre>
-          </div>
-        </div>
-
-        <div class="tab-panel" id="panel-source" role="tabpanel" aria-labelledby="tab-source" hidden>
-          <div class="source-grid">
-            <div>
-              <p class="platform-label">Linux</p>
-              <div class="code-block">
-                <div class="code-head"><span class="code-label">Clone &amp; build</span><button class="copy-button"
-                    type="button" data-copy-target="linux-source-code">Copy</button></div>
-                <pre class="code-body" id="linux-source-code"><span class="code-line comment"># Prerequisites: CMake 3.14+, GCC 7+ or Clang 5+</span>
-<span class="code-line command">$ git clone https://github.com/shakg/g-systemctl.git</span>
-<span class="code-line command">$ cd g-systemctl</span>
-<span class="code-line command">$ mkdir build &amp;&amp; cd build</span>
-<span class="code-line command">$ cmake -DCMAKE_BUILD_TYPE=Release ..</span>
-<span class="code-line command">$ make -j$(nproc)</span>
-<span class="code-line command">$ sudo make install</span>
-<span class="code-line success">Installed to /usr/local/bin/g-systemctl</span></pre>
-              </div>
-            </div>
-            <div>
-              <p class="platform-label">macOS</p>
-              <div class="code-block">
-                <div class="code-head"><span class="code-label">Clone &amp; build</span><button class="copy-button"
-                    type="button" data-copy-target="macos-source-code">Copy</button></div>
-                <pre class="code-body" id="macos-source-code"><span class="code-line comment"># Prerequisites: Xcode CLT, CMake 3.14+</span>
-<span class="code-line command">$ git clone https://github.com/shakg/g-systemctl.git</span>
-<span class="code-line command">$ cd g-systemctl</span>
-<span class="code-line command">$ mkdir build &amp;&amp; cd build</span>
-<span class="code-line command">$ cmake -DCMAKE_BUILD_TYPE=Release ..</span>
-<span class="code-line command">$ make</span>
-<span class="code-line command">$ sudo make install</span>
-<span class="code-line success">Installed to /usr/local/bin/g-systemctl</span></pre>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="tab-panel" id="panel-checksums" role="tabpanel" aria-labelledby="tab-checksums" hidden>
-          <div class="code-block">
-            <div class="code-head"><span class="code-label">Release checksums</span><button class="copy-button"
-                type="button" data-copy-target="checksums-code">Copy</button></div>
-            <pre class="code-body" id="checksums-code"><span class="code-line command">$ curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/SHA256SUMS.txt</span>
-<span class="code-line command">$ sha256sum --ignore-missing -c SHA256SUMS.txt</span></pre>
-          </div>
-        </div>
-
-        <div class="usage">
-          <div class="code-block">
-            <div class="code-head"><span class="code-label">Basic usage</span><button class="copy-button" type="button"
-                data-copy-target="usage-code">Copy</button></div>
-            <pre class="code-body" id="usage-code">
-<span class="code-line command">$ g-systemctl</span>
-<span class="code-line command">$ g-systemctl -f nginx</span>
-<span class="code-line comment"># Target system services explicitly</span>
-<span class="code-line command">$ g-systemctl --system -f postgres</span></pre>
-          </div>
+        <div class="iterm" data-r style="--d:2">
+          <div class="chrome"><i></i><i></i><i></i><span id="i-title">bash</span><button class="copy" id="copy" type="button">Copy</button></div>
+          <pre class="ibody" id="ibody" role="tabpanel" aria-live="polite"></pre>
         </div>
       </div>
     </section>
 
-    <section class="section contribute">
-      <div class="section-inner">
-        <p class="eyebrow">Open source</p>
-        <h2>Built in the open</h2>
-        <p>g-systemctl is MIT licensed and welcomes contributions. Bug reports, feature ideas, and pull requests are all
-          appreciated.</p>
-        <a class="button" href="https://github.com/shakg/g-systemctl" target="_blank" rel="noopener">
-          <svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path
-              d="M12 2C6.48 2 2 6.58 2 12.26c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49 0-.24-.01-1.05-.01-1.9-2.78.62-3.37-1.22-3.37-1.22-.45-1.18-1.11-1.49-1.11-1.49-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.64-1.37-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.04 1.03-2.75-.1-.26-.45-1.3.1-2.72 0 0 .84-.28 2.75 1.05A9.34 9.34 0 0 1 12 6.97c.85 0 1.7.12 2.5.34 1.91-1.33 2.75-1.05 2.75-1.05.55 1.42.2 2.46.1 2.72.64.71 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .27.18.59.69.49A10.14 10.14 0 0 0 22 12.26C22 6.58 17.52 2 12 2Z" />
-          </svg>
-          Star on GitHub
-        </a>
+    <!-- ================= FINAL ================= -->
+    <section class="final">
+      <div class="wrap">
+        <p class="big" data-r><span class="p">$</span> sudo g-systemctl<span class="caret"></span></p>
+        <div class="ctas" style="animation:none">
+          <a class="btn primary" href="#install">Install</a>
+          <a class="btn" href="https://github.com/shakg/g-systemctl" target="_blank" rel="noopener">Star on GitHub</a>
+          <a class="btn" href="https://github.com/shakg/g-systemctl/blob/main/docs/CONTRIBUTING.md" target="_blank" rel="noopener">Contribute</a>
+        </div>
       </div>
     </section>
   </main>
 
   <footer>
-    <strong>g-systemctl</strong>
-    <span>MIT License - <a href="https://github.com/shakg/g-systemctl">github.com/shakg/g-systemctl</a></span>
+    <div class="wrap">
+      <span>g-systemctl · MIT License</span>
+      <span><a href="https://github.com/shakg/g-systemctl">github.com/shakg/g-systemctl</a> · <a href="https://github.com/shakg/g-systemctl/releases/latest">Releases</a></span>
+    </div>
   </footer>
 
   <script>
-    const nav = document.querySelector(".site-nav");
-    const setNavState = () => nav.classList.toggle("scrolled", window.scrollY > 40);
-    setNavState();
-    window.addEventListener("scroll", setNavState, { passive: true });
+    (() => {
+      "use strict";
+      const $ = (s, r = document) => r.querySelector(s);
+      const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+      const RM = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+      const rnd = (a, b) => a + Math.random() * (b - a);
+      const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-    const tabs = Array.from(document.querySelectorAll("[data-tab]"));
-    const panels = Array.from(document.querySelectorAll(".tab-panel"));
+      // A clock that only advances while `el` is on screen and the tab is visible.
+      function gate(el, threshold = 0.15) {
+        let vis = false; const waiters = [];
+        const flush = () => { if (vis && !document.hidden) waiters.splice(0).forEach((f) => f()); };
+        new IntersectionObserver(([e]) => { vis = e.isIntersecting; flush(); }, { threshold }).observe(el);
+        document.addEventListener("visibilitychange", flush);
+        const ready = () => (vis && !document.hidden) ? Promise.resolve() : new Promise((r) => waiters.push(r));
+        const wait = async (ms) => { await sleep(ms); await ready(); };
+        wait.visible = () => vis && !document.hidden;
+        wait.ready = ready;
+        return wait;
+      }
 
-    tabs.forEach((tab) => {
-      tab.addEventListener("click", () => {
-        const selected = tab.dataset.tab;
-        tabs.forEach((item) => item.setAttribute("aria-selected", String(item === tab)));
-        panels.forEach((panel) => {
-          panel.hidden = panel.id !== `panel-${selected}`;
+      // Block-character bar graph, `h` rows tall.
+      const BL = " ▁▂▃▄▅▆▇█";
+      function blocks(vals, width, h, max, lo = 0) {
+        const v = vals.slice(-width); while (v.length < width) v.unshift(0);
+        const rows = [];
+        for (let r = 0; r < h; r++) {
+          let s = "";
+          for (const x of v) {
+            const lvl = (Math.max(0, x - lo) / ((max - lo) || 1)) * h * 8;
+            let n = clamp(Math.round(lvl - (h - 1 - r) * 8), 0, 8);
+            if (r === h - 1 && x > 0 && n === 0) n = 1;
+            s += BL[n];
+          }
+          rows.push(s);
+        }
+        return rows;
+      }
+      const walk = (prev, lo, hi, step) => clamp(prev + rnd(-step, step), lo, hi);
+
+      /* ---------------- nav ---------------- */
+      const nav = $("#nav");
+      const onScroll = () => {
+        nav.classList.toggle("solid", scrollY > 30);
+        const t = clamp(scrollY / 360, 0, 1);
+        $("#term").style.setProperty("--t", RM ? 1 : t.toFixed(3));
+      };
+      addEventListener("scroll", onScroll, { passive: true }); onScroll();
+
+      fetch("https://api.github.com/repos/shakg/g-systemctl").then((r) => r.ok ? r.json() : null).then((d) => {
+        if (d && typeof d.stargazers_count === "number") $("#stars").textContent = "★ " + d.stargazers_count;
+      }).catch(() => { });
+      fetch("https://api.github.com/repos/shakg/g-systemctl/releases/latest").then((r) => r.ok ? r.json() : null).then((d) => {
+        if (d && d.tag_name) $("#pill-text").textContent = d.tag_name + " — live graphs and a Docker containers tab";
+      }).catch(() => { });
+
+      /* ---------------- reveal ---------------- */
+      const ro = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); ro.unobserve(e.target); } }), { threshold: 0.12, rootMargin: "0px 0px -40px 0px" });
+      $$("[data-r]").forEach((el) => ro.observe(el));
+
+      // pointer spotlight on cards
+      $$(".card").forEach((c) => c.addEventListener("pointermove", (e) => {
+        const b = c.getBoundingClientRect();
+        c.style.setProperty("--mx", (e.clientX - b.left) + "px");
+        c.style.setProperty("--my", (e.clientY - b.top) + "px");
+      }));
+
+      /* ---------------- hero LED field ---------------- */
+      (function field() {
+        const c = $("#field"), x = c.getContext("2d");
+        let w = 0, h = 0, pts = [], vis = true;
+        const G = 24;
+        function size() {
+          const dpr = Math.min(2, devicePixelRatio || 1);
+          w = c.clientWidth; h = c.clientHeight;
+          c.width = w * dpr; c.height = h * dpr; x.setTransform(dpr, 0, 0, dpr, 0, 0);
+          pts = [];
+          for (let yy = G / 2; yy < h; yy += G) for (let xx = (w % G) / 2; xx < w; xx += G)
+            pts.push({ x: xx, y: yy, ph: Math.random() * 6.28, f: rnd(.4, 1.4), on: Math.random() < .8, fl: 0 });
+        }
+        function draw(now) {
+          const t = now / 1000;
+          x.clearRect(0, 0, w, h);
+          const cx = w / 2, cy = h * .32, R = Math.max(w, h) * .62;
+          const wave = ((t % 7) / 7) * R * 1.2;
+          if (!RM && Math.random() < .5) { const p = pts[(Math.random() * pts.length) | 0]; if (p) { p.on = !p.on; p.fl = 1; } }
+          for (const p of pts) {
+            const d = Math.hypot(p.x - cx, (p.y - cy) * 1.3);
+            const fade = 1 - d / R; if (fade <= 0) continue;
+            const ring = Math.exp(-((d - wave) ** 2) / 3200) * (1 - wave / (R * 1.2));
+            const tw = .5 + .5 * Math.sin(t * p.f + p.ph);
+            let a = (p.on ? .10 + .16 * tw : .05) * fade + ring * .45 * fade;
+            let col = p.on ? "110,171,147" : "103,110,140";
+            if (p.fl > 0) { a += p.fl * .7 * fade; col = p.on ? "147,214,185" : "255,80,96"; p.fl = Math.max(0, p.fl - .02); }
+            x.fillStyle = `rgba(${col},${a.toFixed(3)})`;
+            const s = 2 + ring * 1.5 + p.fl;
+            x.fillRect(p.x - s / 2, p.y - s / 2, s, s);
+          }
+          if (vis && !RM) requestAnimationFrame(draw);
+        }
+        size(); addEventListener("resize", size);
+        new IntersectionObserver(([e]) => { const was = vis; vis = e.isIntersecting; if (vis && !was && !RM) requestAnimationFrame(draw); }).observe(c);
+        requestAnimationFrame(draw);
+      })();
+
+      /* ---------------- marquee ---------------- */
+      (function () {
+        const cmds = ["systemctl list-units", "systemctl show -p", "journalctl -u nginx -f", "systemctl edit --full", "systemctl daemon-reload",
+          "launchctl list", "launchctl load", "docker ps", "docker stats", "docker inspect", "docker logs -f --tail 200", "docker update --cpus 2"];
+        const html = cmds.map((c) => `<span>${esc(c)}</span>`).join("");
+        $("#track").innerHTML = html + html;
+      })();
+
+      /* ================= HERO TUI ================= */
+      (function hero() {
+        const COLS = 88, ROWS = 24;
+        const scr = $("#scr");
+        const wait = gate($("#term"), 0.05);
+
+        const len = (segs) => segs.reduce((n, s) => n + s[0].length, 0);
+        function line(segs, cls = "") {
+          let n = 0, html = "";
+          for (const [t, c] of segs) { n += t.length; html += c ? `<span class="${c}">${esc(t)}</span>` : esc(t); }
+          if (n < COLS) html += " ".repeat(COLS - n);
+          return `<div class="r ${cls}">${html}</div>`;
+        }
+        function spread(left, right, cls) { return line([...left, [" ".repeat(Math.max(1, COLS - len(left) - len(right)))], ...right], cls); }
+        const pad = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s + " ".repeat(n - s.length));
+        const lpad = (s, n) => (s.length >= n ? s.slice(0, n) : " ".repeat(n - s.length) + s);
+
+        const SVCS = [
+          ["accounts-daemon.service", 1, "703", "0.0%", "7.2MB"],
+          ["bluetooth.service", 0],
+          ["containerd.service", 1, "921", "0.3%", "41.8MB"],
+          ["cron.service", 1, "640", "0.0%", "2.1MB"],
+          ["cups.service", 0],
+          ["docker.service", 1, "980", "0.8%", "94.2MB"],
+          ["NetworkManager.service", 1, "711", "0.1%", "18.9MB"],
+          ["nginx.service", 1, "1184", "0.3%", "12.4MB"],
+          ["nginx-exporter.service", 1, "2011", "0.1%", "9.8MB"],
+          ["postgresql.service", 1, "1302", "1.2%", "186.0MB"],
+          ["redis-server.service", 1, "1250", "0.4%", "8.1MB"],
+          ["ssh.service", 1, "812", "0.0%", "6.3MB"],
+          ["systemd-journald.service", 1, "402", "0.2%", "24.6MB"],
+          ["systemd-resolved.service", 1, "588", "0.0%", "12.0MB"],
+          ["ufw.service", 1, "-", "-", "-"],
+          ["unattended-upgrades.service", 0],
+          ["wpa_supplicant.service", 0],
+        ];
+        const CTRS = [
+          { n: "web", i: "nginx:1.27-alpine", on: 1, up: "Up 3 hours", c: 0.4, m: 18, lim: "512MiB", p: 3 },
+          { n: "api", i: "node:22-slim", on: 1, up: "Up 3 hours", c: 12.7, m: 214, lim: "1GiB", p: 23 },
+          { n: "postgres", i: "postgres:16", on: 1, up: "Up 2 days", c: 2.1, m: 96, lim: "2GiB", p: 9 },
+          { n: "redis", i: "redis:7.4", on: 1, up: "Up 2 days", c: 0.3, m: 8, lim: "256MiB", p: 6 },
+          { n: "worker", i: "python:3.12-slim", on: 1, up: "Up 41 minutes", c: 31.0, m: 388, lim: "1GiB", p: 14 },
+          { n: "traefik", i: "traefik:v3.1", on: 1, up: "Up 2 days", c: 0.6, m: 41, lim: "256MiB", p: 11 },
+          { n: "minio", i: "minio/minio", on: 1, up: "Up 2 days", c: 1.1, m: 152, lim: "1GiB", p: 18 },
+          { n: "loki", i: "grafana/loki:3.2", on: 1, up: "Up 5 hours", c: 3.8, m: 121, lim: "512MiB", p: 15 },
+          { n: "grafana", i: "grafana/grafana", on: 0, up: "Exited (0) 2h", c: 0, m: 0, lim: "", p: 0 },
+          { n: "mailhog", i: "mailhog/mailhog", on: 0, up: "Exited (2) 3d", c: 0, m: 0, lim: "", p: 0 },
+        ];
+
+        let S;
+        function reset() {
+          S = {
+            tab: "svc", filter: "", sel: 0, view: "list", dialog: null, state: "active", pid: "1184",
+            logs: [], cpu: [], mem: [], tasks: [], io: [], clock: 9 * 3600 + 41 * 60 + 7, status: "", edit: null, flash: "", shake: false,
+          };
+          for (let i = 0; i < 42; i++) sample();
+          for (let i = 0; i < 5; i++) addLog(access());
+          CTRS[1].lim = "1GiB";
+        }
+        function sample() {
+          const spike = S.state !== "active" ? 1 : 0;
+          S.cpu.push(spike ? rnd(6, 9) : walk(S.cpu.at(-1) ?? 1, 0.2, 4.2, 0.9));
+          S.mem.push(spike ? rnd(4, 7) : walk(S.mem.at(-1) ?? 12, 10.5, 13.8, 0.4));
+          S.tasks.push(S.state === "active" ? 5 : 1);
+          S.io.push(Math.random() < .25 ? rnd(40, 220) : rnd(2, 30));
+        }
+        const hhmmss = (s) => [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60].map((n) => String(n).padStart(2, "0")).join(":");
+        const IPS = ["192.168.1.24", "10.0.0.7", "192.168.1.31", "10.0.0.12", "172.17.0.3"];
+        const REQS = [["GET", "/api/health", 200, 2], ["GET", "/", 200, 5120], ["GET", "/assets/app.js", 200, 48211], ["POST", "/api/login", 302, 0], ["GET", "/favicon.ico", 404, 153], ["GET", "/api/orders?page=2", 200, 7724]];
+        function access() { const q = REQS[(Math.random() * REQS.length) | 0]; return { src: `nginx[${S ? S.pid : 1184}]`, msg: `${IPS[(Math.random() * IPS.length) | 0]} "${q[0]} ${q[1]} HTTP/2.0" ${q[2]} ${q[3]}` }; }
+        function addLog(l) { S.clock += 1 + ((Math.random() * 3) | 0); S.logs.push({ ...l, ts: "Nov 05 " + hhmmss(S.clock), fresh: true }); if (S.logs.length > 40) S.logs.shift(); }
+
+        function topBar() {
+          const svc = S.tab === "svc";
+          return spread(
+            [[" g-systemctl ", "a b"], [" "], [" Services ", svc ? "tabon" : "m"], ["│", "ln"], [" Containers ", svc ? "m" : "tabon"]],
+            [[svc ? " Reload(Alt+R) " : " Refresh(Alt+R) ", "m"], [" Shortcuts(?) ", "m"]], "pn");
+        }
+        function hints(text) { return line([[" " + text, "m"]], "pn"); }
+        function filterRow() { return line([[" Filter: ", "m"], [S.filter, "w"], ["▏", "cur"]]); }
+        function fill(rows, n) { while (rows.length < n) rows.push(line([])); }
+
+        function listView() {
+          const rows = [topBar(), filterRow()];
+          const W = COLS - 1 - 11 - 7 - 7 - 8;
+          rows.push(line([[" "], [pad("SERVICE", W), "h"], [pad("STATUS", 11), "h"], [lpad("PID", 7), "h"], [lpad("CPU", 7), "h"], [lpad("MEM", 8), "h"]], "pn"));
+          const items = SVCS.filter((s) => s[0].toLowerCase().includes(S.filter));
+          items.slice(0, ROWS - 5).forEach((s, i) => {
+            const sel = i === S.sel, on = s[1];
+            rows.push(line([[sel ? "▌" : " ", "a"], [pad(s[0], W), sel ? "w b" : "t"], [pad(on ? "● active" : "○ inactive", 11), on ? "a b" : "off"],
+            [lpad(s[2] || "-", 7), "m"], [lpad(s[3] || "-", 7), "m"], [lpad(s[4] || "-", 8), "m"]], sel ? "sel" : ""));
+          });
+          fill(rows, ROWS - 2);
+          rows.push(line([[` ${items.length} of ${SVCS.length} services · --system`, "m"]]));
+          rows.push(hints("Enter details  Alt+o start  Alt+x stop  Alt+r restart  Tab containers  ? help"));
+          return rows;
+        }
+
+        function stateSeg() {
+          if (S.state === "active") return ["● active (running)", "a b"];
+          if (S.state === "deactivating") return ["● deactivating (stop-sigterm)", "wa b"];
+          return ["● activating (start)", "wa b"];
+        }
+        function titleRow() {
+          return spread([[" nginx.service ", "w b"], [" "], stateSeg()],
+            [[" ▶ Start ", "bt"], [" "], [" ■ Stop ", "bt"], [" "], [" ↻ Restart ", "bt" + (S.flash === "restart" ? " flash" : "")], [" "], [" ← Back ", "bt"], [" "]], "pn");
+        }
+        function logRows(n) {
+          return S.logs.slice(-n).map((l) => {
+            const r = line([[" " + l.ts + " ", "m"], ["web ", "m"], [l.src + ": ", l.sys ? "wa" : "a"], [l.msg, l.sys ? "t" : "t"]], l.fresh ? "newrow" : "");
+            l.fresh = false; return r;
+          });
+        }
+        function detailView(full) {
+          const rows = [topBar(), titleRow()];
+          if (!full) {
+            rows.push(line([["─".repeat(COLS), "ln"]]));
+            const st = S.state === "active" ? "active (running) since 09:41:07" : S.state;
+            const sum = [
+              ["Description", "A high performance web server", "t"],
+              ["State", st, S.state === "active" ? "a" : "wa"],
+              ["Unit file", "enabled · /lib/systemd/system/nginx.service", "t"],
+              ["Type", "forking", "t"],
+              ["Main PID", S.state === "active" ? S.pid : "-", "t"],
+              ["Tasks", String(S.tasks.at(-1)), "t"],
+              ["Memory", S.mem.at(-1).toFixed(1) + " MiB", "t"],
+              ["CPU time", (2.481 + S.cpu.length * 0.013).toFixed(3) + "s", "t"],
+              ["Restart", "on-failure", "t"],
+              ["User", "root", "t"],
+              ["Command", "/usr/sbin/nginx", "w"],
+              ["", "  -g daemon on; master_process on;", "a"],
+              ["Wanted by", "multi-user.target", "t"],
+            ];
+            const GW = 41;
+            const g = [];
+            const metric = (name, vals, max, fmt, cls, lo = 0) => {
+              const last = vals.at(-1), mx = Math.max(...vals.slice(-GW));
+              const l = ` ${name}  ${fmt(last)}`, r = `max ${fmt(mx)} `;
+              g.push([[l, "t"], [" ".repeat(Math.max(1, 43 - l.length - r.length))], [r, "m"]]);
+              blocks(vals, GW, 2, max, lo).forEach((s) => g.push([[" "], [s, cls + " gb"], [" "]]));
+            };
+            g.push([]);
+            metric("CPU", S.cpu, 9, (v) => v.toFixed(1) + "%", "a");
+            metric("Memory", S.mem, 15, (v) => v.toFixed(1) + " MiB", "a", 8);
+            metric("Tasks", S.tasks, 10, (v) => String(Math.round(v)), "a");
+            metric("IO", S.io, 240, (v) => v.toFixed(0) + " KB/s", "wa");
+            for (let i = 0; i < 13; i++) {
+              const [k, v, c] = sum[i];
+              rows.push(line([[" "], [pad(k, 12), "m"], [pad(v, 31), c], ["│", "ln"], ...(g[i] || [])]));
+            }
+          }
+          rows.push(spread([[" Logs ", "w b"], [" journalctl -u nginx.service -f", "m"]],
+            [[full ? " ▤ Info " : " ▦ Hide graphs ", "m"], [full ? " ⤡ Shrink " : " ⤢ Expand ", "a"], [" "]], "pn"));
+          const n = ROWS - rows.length - 1;
+          rows.push(...logRows(n));
+          fill(rows, ROWS - 1);
+          rows.push(hints(full ? "Enter shrink  PgUp/PgDn scroll  Esc back  Alt+r restart" : "Enter expand logs  Alt+g graphs  Alt+o/x/r start/stop/restart  Esc back"));
+          return rows;
+        }
+
+        function ctrView() {
+          const rows = [topBar(), filterRow()];
+          const W = COLS - 1 - 18 - 10 - 15 - 7 - 18 - 6;
+          rows.push(line([[" "], [pad("CONTAINER", W), "h"], [pad("IMAGE", 18), "h"], [pad("STATE", 10), "h"], [pad("STATUS", 15), "h"], [lpad("CPU", 7), "h"], [lpad("MEM", 18), "h"], [lpad("PIDS", 6), "h"]], "pn"));
+          CTRS.forEach((c, i) => {
+            const sel = i === S.sel;
+            const mem = c.on ? `${c.m.toFixed(0)}MiB / ${c.lim}` : "-";
+            rows.push(line([[sel ? "▌" : " ", "a"], [pad(c.n, W), sel ? "w b" : "t"], [pad(c.i, 17) + " ", "m"], [pad(c.on ? "running" : "exited", 10), c.on ? "a b" : "off"],
+            [pad(c.up, 15), "m"], [lpad(c.on ? c.c.toFixed(1) + "%" : "-", 7), c.on && c.c > 20 ? "wa" : "t"], [lpad(mem, 18), "t"], [lpad(c.on ? String(c.p) : "-", 6), "m"]], sel ? "sel" : ""));
+          });
+          fill(rows, ROWS - 2);
+          rows.push(line([[" " + (S.status || `${CTRS.length} containers · docker · refreshing every 2s`), S.status ? "a" : "m"]]));
+          rows.push(hints("Enter details  Alt+u limits  Alt+s secrets  Alt+o/x/r start/stop/restart  Tab services"));
+          return rows;
+        }
+
+        function dialogHtml() {
+          if (S.dialog === "confirm") {
+            return `<div class="dlg${S.shake ? " shake" : ""}" style="left:21ch;top:calc(7 * var(--lh));width:46ch">` +
+              `<div class="r"><span class="wa b"> Confirm</span></div><div class="sep"></div>` +
+              `<div class="r"> Restart nginx.service?</div><div class="r"> </div>` +
+              `<div class="r" style="text-align:right"><span class="yes"> y  Restart </span>   <span class="no"> n  Cancel </span> </div>` +
+              `<div class="sep"></div><div class="r m"> y confirm · n / Esc cancel</div></div>`;
+          }
+          if (S.dialog === "limits") {
+            const E = S.edit;
+            const f = (i, label, v) => `<div class="r"> <span class="m">${pad(label, 16)}</span><span class="fld${E.field === i ? " on" : ""}"> ${esc(pad(v + (E.field === i ? "▏" : ""), 18))}</span></div>`;
+            return `<div class="dlg" style="left:18ch;top:calc(5 * var(--lh));width:52ch">` +
+              `<div class="r"> <span class="a b">Resources  </span><span class="wa">api</span></div><div class="sep"></div>` +
+              f(0, "CPUs", E.cpus) + f(1, "Memory", E.mem) + f(2, "Memory + swap", E.swap) + f(3, "PIDs limit", E.pids) + f(4, "Restart policy", E.policy) +
+              `<div class="r"> </div><div class="r m"> Applied live with \`docker update\`. Env, ports and</div><div class="r m"> volumes need the container to be recreated.</div>` +
+              `<div class="sep"></div><div class="r m"> Tab/↑↓ field  Enter apply  Esc cancel</div></div>`;
+          }
+          return "";
+        }
+
+        function render() {
+          let rows;
+          if (S.tab === "ctr") rows = ctrView();
+          else if (S.view === "list") rows = listView();
+          else rows = detailView(S.view === "logs");
+          scr.innerHTML = rows.join("") + dialogHtml();
+          scr.classList.toggle("dimmed", !!S.dialog);
+        }
+
+        // keycast
+        const kcKeys = $("#kc-keys"), kcCap = $("#kc-cap");
+        let capText = "";
+        function key(keys, cap) {
+          kcKeys.innerHTML = keys.map((k) => `<kbd>${esc(k)}</kbd>`).join("");
+          if (cap !== undefined && cap !== capText) caption(cap);
+        }
+        function caption(t) {
+          capText = t; kcCap.classList.add("out");
+          setTimeout(() => { kcCap.textContent = t; kcCap.classList.remove("out"); }, 200);
+        }
+
+        // live tickers
+        let liveT = null, ctrT = null;
+        function startLive() {
+          stopLive();
+          let k = 0;
+          liveT = setInterval(() => {
+            if (!wait.visible()) return;
+            sample(); if (k++ % 2 === 0 && S.state === "active") addLog(access());
+            if (S.view !== "list" && S.tab === "svc") render();
+          }, 650);
+        }
+        function stopLive() { clearInterval(liveT); liveT = null; }
+        function startCtr() {
+          stopCtr();
+          ctrT = setInterval(() => {
+            if (!wait.visible()) return;
+            CTRS.forEach((c) => { if (c.on) { c.c = walk(c.c, 0.1, c.n === "worker" ? 48 : c.n === "api" ? 24 : 4, c.n === "worker" ? 6 : 1.5); c.m = walk(c.m, c.m * .97, c.m * 1.03, c.m * .02); } });
+            render();
+          }, 900);
+        }
+        function stopCtr() { clearInterval(ctrT); ctrT = null; }
+
+        async function type(field, text, ms = 150) { for (const ch of text) { field(ch); render(); await wait(ms); } }
+
+        async function loop() {
+          for (; ;) {
+            reset(); stopCtr(); render();
+            key([], "Every unit on the machine, with live status");
+            await wait(2000);
+            caption("Type to filter. No search mode.");
+            for (const ch of "nginx") { S.filter += ch; S.sel = 0; key([ch]); render(); await wait(240); }
+            await wait(900);
+            key(["↓"]); S.sel = 1; render(); await wait(500);
+            key(["↑"]); S.sel = 0; render(); await wait(600);
+            key(["Enter"], "Enter opens the detail page: summary, graphs, logs");
+            S.view = "detail"; render(); startLive(); await wait(4200);
+            key(["Alt", "r"], "Restart asks first");
+            S.flash = "restart"; S.dialog = "confirm"; render(); S.flash = ""; await wait(1700);
+            key(["Enter"], "Enter does nothing here — no accidental restarts");
+            S.shake = true; render(); S.shake = false; await wait(1900);
+            key(["y"], "Only y confirms");
+            S.dialog = null; S.state = "deactivating";
+            addLog({ src: "systemd[1]", msg: "Stopping nginx.service - A high performance web server...", sys: 1 }); render(); await wait(1100);
+            S.state = "activating"; S.pid = String(4000 + ((Math.random() * 900) | 0));
+            addLog({ src: "systemd[1]", msg: "nginx.service: Deactivated successfully.", sys: 1 });
+            addLog({ src: "systemd[1]", msg: "Starting nginx.service - A high performance web server...", sys: 1 }); render(); await wait(1100);
+            S.state = "active";
+            addLog({ src: "systemd[1]", msg: "Started nginx.service - A high performance web server.", sys: 1 }); render(); await wait(2200);
+            key(["Enter"], "Enter again: full-size logs");
+            S.view = "logs"; render(); await wait(3000);
+            key(["Esc"], "Esc goes back one level");
+            S.view = "detail"; render(); await wait(1100);
+            key(["Esc"]); S.view = "list"; stopLive(); render(); await wait(1000);
+            key(["Esc"], "…then clears the filter");
+            S.filter = ""; S.sel = 7; render(); await wait(1300);
+            key(["Tab"], "Tab: Docker containers with live CPU and memory");
+            S.tab = "ctr"; S.sel = 0; render(); startCtr(); await wait(1600);
+            key(["↓"]); S.sel = 1; render(); await wait(1600);
+            key(["Alt", "u"], "Change limits in place with docker update");
+            S.edit = { field: 0, cpus: "1.00", mem: "1g", swap: "2g", pids: "200", policy: "unless-stopped" };
+            S.dialog = "limits"; render(); await wait(1100);
+            S.edit.cpus = ""; render(); await wait(250);
+            await type((c) => (S.edit.cpus += c), "2.00");
+            key(["Tab"]); S.edit.field = 1; render(); await wait(450);
+            S.edit.mem = ""; render(); await wait(200);
+            await type((c) => (S.edit.mem += c), "2g");
+            await wait(500);
+            key(["Enter"], "Applied live. No recreate.");
+            S.dialog = null; CTRS[1].lim = "2GiB"; S.status = "Updated api: --cpus 2.00 --memory 2g"; render(); await wait(2800);
+            key(["Tab"], ""); S.tab = "svc"; stopCtr(); S.status = "";
+          }
+        }
+
+        if (RM) {
+          reset(); S.filter = "nginx"; S.view = "detail"; render();
+          caption("Detail page: summary, live graphs and logs");
+        } else {
+          loop();
+        }
+      })();
+
+      /* ================= LEVELS ================= */
+      (function levels() {
+        const lv = $("#lv"), list = $("#lv-list"), keyEl = $("#lv-key"), steps = $$("#steps li");
+        const names = [["docker.service", 1, 70], ["cron.service", 1, 40], ["nginx.service", 1, 55], ["postgresql.service", 1, 85], ["cups.service", 0, 30], ["ssh.service", 1, 45], ["redis-server.service", 1, 60]];
+        list.innerHTML = names.map(([n, on, w], i) => `<div class="lv-row${on ? "" : " offr"}${i === 2 ? " cur" : ""}"><span class="dot"></span><span>${n}</span><span class="sp"></span><span class="sk" style="width:${w}px"></span></div>`).join("");
+        const gr = $("#lv-gr");
+        gr.innerHTML = ["CPU", "Memory", "Tasks"].map((n) => `<div><div class="gl">${n} <b>–</b></div><div class="lv-gb">${"<i></i>".repeat(28)}</div></div>`).join("");
+        const ll = $("#lv-ll");
+        const lines = ['"GET /api/health" 200', '"GET / HTTP/2.0" 200 5120', '"POST /api/login" 302', '"GET /assets/app.js" 200', '"GET /favicon.ico" 404', '"GET /api/orders" 200'];
+        let sec = 7;
+        function addLine() {
+          sec++; const d = document.createElement("div");
+          d.innerHTML = `<span class="ts">09:41:${String(sec % 60).padStart(2, "0")}</span> nginx[1184]: ${esc(lines[(Math.random() * lines.length) | 0])}`;
+          ll.appendChild(d); while (ll.children.length > 18) ll.firstChild.remove();
+        }
+        for (let i = 0; i < 18; i++) addLine();
+        function setRow() {
+          const row = list.children[2], b = lv.getBoundingClientRect(), r = row.getBoundingClientRect();
+          const top = r.top - b.top - 34, h = b.height - 34;
+          lv.style.setProperty("--rt", (top / h * 100).toFixed(2) + "%");
+          lv.style.setProperty("--rb", ((h - top - r.height) / h * 100).toFixed(2) + "%");
+        }
+        setRow(); addEventListener("resize", setRow);
+        const wait = gate(lv, 0.3);
+        function bars() {
+          $$(".lv-gb", gr).forEach((g) => $$("i", g).forEach((i) => (i.style.height = rnd(15, 100).toFixed(0) + "%")));
+          $$(".gl b", gr).forEach((b, i) => (b.textContent = [rnd(.2, 3).toFixed(1) + "%", rnd(11, 13).toFixed(1) + " MiB", "5"][i]));
+        }
+        function level(n, k) {
+          lv.dataset.level = n;
+          steps.forEach((s, i) => s.classList.toggle("on", i === n));
+          $("#lv-exp").textContent = n === 2 ? "⤡ Shrink" : "⤢ Expand";
+          if (k) { keyEl.innerHTML = `<kbd class="hit">${k}</kbd>`; }
+        }
+        bars();
+        if (RM) { level(1); return; }
+        setInterval(() => { if (wait.visible()) { bars(); addLine(); } }, 900);
+        (async () => {
+          for (; ;) {
+            level(0, "↓"); await wait(1800);
+            level(1, "Enter"); await wait(2600);
+            level(2, "Enter"); await wait(2600);
+            level(1, "Esc"); await wait(1800);
+            level(0, "Esc"); await wait(1400);
+          }
+        })();
+      })();
+
+      /* ================= GRAPHS CARD ================= */
+      (function graphs() {
+        const root = $("#graphs");
+        const M = [
+          { n: "CPU", cls: "", max: 60, v: [], f: (x) => x.toFixed(1) + "%", g: (p) => walk(p ?? 18, 2, 55, 7) },
+          { n: "Memory", cls: "cool", lo: 140, max: 250, v: [], f: (x) => x.toFixed(0) + " MiB", g: (p) => walk(p ?? 186, 170, 240, 5) },
+          { n: "Tasks", cls: "warm", lo: 4, max: 22, v: [], f: (x) => String(Math.round(x)), g: (p) => clamp(Math.round(walk(p ?? 9, 7, 20, 2)), 7, 20) },
+          { n: "IO", cls: "pink", max: 900, v: [], f: (x) => x.toFixed(0) + " KB/s", g: () => (Math.random() < .3 ? rnd(300, 880) : rnd(10, 160)) },
+        ];
+        root.innerHTML = M.map((m) => `<div class="gm ${m.cls}"><div class="gl"><span>${m.n}</span><b></b></div><pre></pre></div>`).join("");
+        const els = $$(".gm", root);
+        let cols = 40;
+        const probe = document.createElement("span"); probe.style.cssText = "position:absolute;visibility:hidden;font:13px var(--mono)"; probe.textContent = "0".repeat(20);
+        root.appendChild(probe);
+        function measure() { const cw = probe.getBoundingClientRect().width / 20 || 7.8; cols = Math.max(16, Math.floor(els[0].querySelector("pre").clientWidth / cw)); }
+        new ResizeObserver(measure).observe(root);
+        M.forEach((m) => { for (let i = 0; i < 80; i++) m.v.push(m.g(m.v.at(-1))); });
+        function draw() {
+          M.forEach((m, i) => {
+            els[i].querySelector("pre").textContent = blocks(m.v, cols, 3, m.max, m.lo || 0).join("\n");
+            els[i].querySelector("b").textContent = m.f(m.v.at(-1));
+          });
+        }
+        measure(); draw();
+        if (RM) return;
+        const wait = gate(root);
+        setInterval(() => { if (!wait.visible()) return; M.forEach((m) => { m.v.push(m.g(m.v.at(-1))); if (m.v.length > 300) m.v.shift(); }); draw(); }, 420);
+      })();
+
+      /* ================= FILTER CARD ================= */
+      (function filter() {
+        const items = ["containerd.service", "cron.service", "docker.service", "nginx.service", "postgresql.service", "postgres-exporter.service", "redis-server.service", "ssh.service"];
+        const off = new Set(["postgres-exporter.service"]);
+        const ul = $("#fl-list"), q = $("#fl-q");
+        ul.innerHTML = items.map((n) => `<li data-n="${n}"><span class="nm">${n}</span><span class="s${off.has(n) ? " o" : ""}">${off.has(n) ? "○ inactive" : "● active"}</span></li>`).join("");
+        const lis = $$("li", ul);
+        function apply(s) {
+          q.textContent = s;
+          lis.forEach((li) => {
+            const n = li.dataset.n, i = s ? n.indexOf(s) : -1;
+            li.classList.toggle("out", !!s && i < 0);
+            li.querySelector(".nm").innerHTML = i >= 0 ? esc(n.slice(0, i)) + "<mark>" + esc(n.slice(i, i + s.length)) + "</mark>" + esc(n.slice(i + s.length)) : esc(n);
+          });
+        }
+        apply("");
+        if (RM) { apply("pos"); return; }
+        const wait = gate(ul);
+        (async () => {
+          for (; ;) {
+            for (const word of ["pos", "dock", "ngi", "redis"]) {
+              let s = "";
+              for (const ch of word) { s += ch; apply(s); await wait(260); }
+              await wait(1500);
+              while (s) { s = s.slice(0, -1); apply(s); await wait(90); }
+              await wait(500);
+            }
+          }
+        })();
+      })();
+
+      /* ================= SAFE CARD ================= */
+      (function safe() {
+        const d = $("#sf-d"), st = $("#sf-s"), en = $("#sf-enter"), y = $("#sf-y"), t1 = $("#sf-t1"), t2 = $("#sf-t2");
+        if (RM) return;
+        const wait = gate(d);
+        const hit = (k, cls) => { k.classList.remove("hit", "bad", "good"); void k.offsetWidth; k.classList.add("hit", cls); };
+        (async () => {
+          for (; ;) {
+            [en, y].forEach((k) => k.classList.remove("hit", "bad", "good")); t1.classList.remove("on"); t2.classList.remove("on");
+            d.classList.remove("gone"); st.textContent = "● active"; st.classList.remove("o");
+            await wait(1400);
+            hit(en, "bad"); d.classList.remove("shake"); void d.offsetWidth; d.classList.add("shake"); t1.classList.add("on");
+            await wait(1600);
+            t1.classList.remove("on"); hit(y, "good");
+            await wait(300);
+            d.classList.add("gone"); st.textContent = "○ inactive"; st.classList.add("o"); t2.classList.add("on");
+            await wait(2400);
+          }
+        })();
+      })();
+
+      /* ================= COMMAND CARD ================= */
+      (function command() {
+        const c = $("#cmd"), st = $("#cmd-st"), sw = $("#cmd-sw");
+        const set = (f) => { c.classList.toggle("fmt", f); st.textContent = f ? "format_command: one option per line" : "one long line, cut off"; sw.style.color = f ? "var(--acc)" : "var(--warn)"; };
+        if (RM) { set(true); return; }
+        const wait = gate(c);
+        (async () => { for (; ;) { set(false); await wait(1800); set(true); await wait(4200); } })();
+      })();
+
+      /* ================= LOGS CARD ================= */
+      (function logs() {
+        const el = $("#lg");
+        let t = 9 * 3600 + 42 * 60;
+        const ts = () => { t += 1 + ((Math.random() * 2) | 0); return [Math.floor(t / 3600), Math.floor(t / 60) % 60, t % 60].map((n) => String(n).padStart(2, "0")).join(":"); };
+        const MSG = [["info", "GET /v1/orders 200 12ms"], ["info", "GET /v1/users/42 200 4ms"], ["info", "POST /v1/checkout 201 38ms"], ["warn", "slow query 412ms orders_by_user"], ["info", "GET /health 200 1ms"]];
+        function push(html) { const d = document.createElement("div"); d.innerHTML = html; el.appendChild(d); while (el.children.length > 12) el.firstChild.remove(); }
+        const app = () => { const m = MSG[(Math.random() * MSG.length) | 0]; push(`<span class="ts">${ts()}</span> <span class="lvl">${m[0]}</span> ${esc(m[1])}`); };
+        for (let i = 0; i < 7; i++) app();
+        if (RM) return;
+        const wait = gate(el);
+        (async () => {
+          for (; ;) {
+            for (let i = 0; i < 6; i++) { app(); await wait(650); }
+            push(`<span class="ts">${ts()}</span> <span class="ev">── api exited (137) · waiting for it to run again ──</span>`);
+            await wait(2200);
+            const since = ts();
+            push(`<span class="ts">${since}</span> <span class="ok">── api running · reattached with --since ${since} ──</span>`);
+            await wait(600);
+            push(`<span class="ts">${ts()}</span> <span class="lvl">info</span> listening on :8080`);
+            await wait(700);
+          }
+        })();
+      })();
+
+      /* ================= LIMITS CARD ================= */
+      (function limits() {
+        const c = $("#lm-c"), m = $("#lm-m"), p = $("#lm-p"), cv = $("#lm-cv"), mv = $("#lm-mv"), pv = $("#lm-pv"), cmd = $("#lm-cmd");
+        const set = (a) => {
+          c.style.setProperty("--v", a ? "50%" : "25%"); m.style.setProperty("--v", a ? "50%" : "25%"); p.style.setProperty("--v", a ? "60%" : "40%");
+          cv.textContent = a ? "2.00" : "1.00"; mv.textContent = a ? "2g" : "1g"; pv.textContent = a ? "300" : "200";
+        };
+        if (RM) { set(true); cmd.textContent = "docker update --cpus 2.00 --memory 2g --pids-limit 300 api"; return; }
+        const wait = gate(cmd);
+        (async () => {
+          for (; ;) {
+            set(false); cmd.textContent = ""; await wait(1200);
+            const s = "docker update --cpus 2.00 --memory 2g --pids-limit 300 api";
+            for (let i = 1; i <= s.length; i++) { cmd.textContent = s.slice(0, i); await wait(32); }
+            await wait(300); set(true); await wait(3200);
+          }
+        })();
+      })();
+
+      /* ================= SECRETS CARD ================= */
+      (function secrets() {
+        const env = [["NODE_ENV", "production", 0], ["PORT", "8080", 0], ["POSTGRES_PASSWORD", "s3cr3t-h0rse-battery", 1], ["API_TOKEN", "tk_live_9f2c81ad77e0", 1], ["AWS_SECRET_ACCESS_KEY", "wJalrXUtnFEMI/K7MDENG", 1], ["LOG_LEVEL", "info", 0]];
+        const el = $("#env"), k1 = $("#env-k"), k2 = $("#env-k2"), s = $("#env-s");
+        el.innerHTML = env.map(([k, v, sec]) => `<div><span class="k">${k}</span>=<span class="v${sec ? " mask" : ""}" data-v="${esc(v)}">${sec ? "••••••••" : esc(v)}</span></div>`).join("");
+        const vals = $$(".v.mask", el);
+        if (RM) return;
+        const wait = gate(el);
+        const CH = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz0123456789/_-";
+        async function reveal(show) {
+          [k1, k2].forEach((k) => { k.classList.remove("hit"); void k.offsetWidth; k.classList.add("hit"); });
+          s.textContent = show ? "shown" : "hidden";
+          for (let f = 0; f <= 10; f++) {
+            vals.forEach((v) => {
+              const real = v.dataset.v;
+              if (show) { const n = Math.floor(real.length * f / 10); v.textContent = real.slice(0, n) + Array.from({ length: real.length - n }, () => CH[(Math.random() * CH.length) | 0]).join(""); }
+              else v.textContent = f < 10 ? Array.from({ length: Math.max(8, real.length - f * 2) }, () => CH[(Math.random() * CH.length) | 0]).join("") : "••••••••";
+            });
+            await sleep(45);
+          }
+          vals.forEach((v) => v.classList.toggle("mask", !show));
+        }
+        (async () => { for (; ;) { await wait(2200); await reveal(true); await wait(2400); await reveal(false); } })();
+      })();
+
+      /* ================= PLATFORM CARD ================= */
+      (function platform() {
+        const P = [
+          { os: "Linux · systemd", w: "systemctl", l: ["System and --user units", "Details from systemctl show", "Logs from journalctl -f", "Edit unit files with Alt+e", "daemon-reload with Alt+Shift+r"] },
+          { os: "macOS · launchd", w: "launchctl", l: ["Jobs from launchctl list", "Start and stop with load / unload", "Details from launchctl list <label>", "Install with Homebrew"] },
+          { os: "Linux or Docker Desktop", w: "docker", l: ["docker ps and docker stats every 2s", "Inspect env, ports, mounts, networks", "Logs from docker logs -f --tail 200", "Limits and restart policy with docker update", "Filter by name, image or Compose project"] },
+        ];
+        const word = $("#pl-w"), os = $("#pl-os"), ul = $("#pl-l"), tabs = $$("#pl-tabs button");
+        const CH = "abcdefghijklmnopqrstuvwxyz_-/";
+        let cur = 0, token = 0;
+        async function show(i) {
+          const my = ++token; cur = i;
+          tabs.forEach((b, j) => { b.classList.toggle("on", j === i); if (j === i) { b.classList.remove("on"); void b.offsetWidth; b.classList.add("on"); } });
+          os.textContent = P[i].os;
+          ul.innerHTML = P[i].l.map((t, k) => `<li style="--i:${k}">${esc(t)}</li>`).join("");
+          const from = word.textContent, to = P[i].w, n = Math.max(from.length, to.length);
+          if (RM) { word.textContent = to; return; }
+          for (let f = 0; f <= 14; f++) {
+            if (my !== token) return;
+            let s = "";
+            for (let k = 0; k < n; k++) {
+              const settle = (k / n) * 10 + 3;
+              if (f >= settle) s += to[k] || "";
+              else s += Math.random() < .5 ? (from[k] || "") : CH[(Math.random() * CH.length) | 0];
+            }
+            word.innerHTML = esc(s).replace(/ctl$/, '<span class="c">ctl</span>');
+            await sleep(40);
+          }
+          word.innerHTML = esc(to).replace(/ctl$/, '<span class="c">ctl</span>');
+        }
+        tabs.forEach((b) => b.addEventListener("click", () => { show(+b.dataset.i); }));
+        show(0);
+        if (RM) return;
+        const wait = gate(word);
+        (async () => { for (; ;) { await wait(3600); show((cur + 1) % P.length); } })();
+      })();
+
+      /* ================= STATS ================= */
+      (function stats() {
+        const io = new IntersectionObserver((es) => es.forEach((e) => {
+          if (!e.isIntersecting) return; io.unobserve(e.target);
+          const el = e.target, to = +el.dataset.count, t0 = performance.now(), D = RM ? 1 : 1400;
+          const step = (now) => { const p = clamp((now - t0) / D, 0, 1), k = 1 - Math.pow(1 - p, 4); el.textContent = Math.round(to * k); if (p < 1) requestAnimationFrame(step); };
+          requestAnimationFrame(step);
+        }), { threshold: .6 });
+        $$("[data-count]").forEach((el) => io.observe(el));
+      })();
+
+      /* ================= KEYMAP ================= */
+      (function keymap() {
+        const K = [
+          [["↑", "↓"], "Move", "Or scroll the detail page"], [["a–z"], "Filter", "Just start typing"],
+          [["Enter"], "Open / expand", "List → detail → full logs"], [["Esc"], "Back", "One level up, then clear filter"],
+          [["Alt", "o"], "Start", "Selected or shown item"], [["Alt", "x"], "Stop", "Asks y/n"],
+          [["Alt", "r"], "Restart", "Asks y/n"], [["Alt", "g"], "Graphs", "Beside or instead of the summary"],
+          [["Alt", "l"], "Logs first", "Open the detail page expanded"], [["Alt", "e"], "Edit unit", "systemctl edit --full"],
+          [["Alt", "⇧", "r"], "Reload", "daemon-reload / refresh now"], [["Alt", "u"], "Limits", "docker update"],
+          [["Alt", "s"], "Secrets", "Show masked env values"], [["Tab"], "Switch tab", "Services ⇄ Containers"],
+          [["?"], "Help", "Every shortcut"], [["Alt", "q"], "Quit", "Or Esc from the list"],
+        ];
+        const root = $("#keymap");
+        root.innerHTML = K.map(([ks, b, s], i) => `<div class="kt" data-r style="--d:${i % 4}"><div class="kk">${ks.map((k) => `<kbd>${esc(k)}</kbd>`).join("")}</div><b>${esc(b)}</b><span>${esc(s)}</span></div>`).join("");
+        const tiles = $$(".kt", root);
+        tiles.forEach((t) => ro.observe(t));
+        if (RM) return;
+        const wait = gate(root, .3);
+        (async () => { let i = 0; for (; ;) { tiles.forEach((t) => t.classList.remove("hot")); const t = tiles[i++ % tiles.length]; void t.offsetWidth; t.classList.add("hot"); await wait(1100); } })();
+      })();
+
+      /* ================= VIDEO ================= */
+      (function video() {
+        const v = $("#film");
+        new IntersectionObserver(([e]) => {
+          if (e.isIntersecting) { if (v.preload === "none") { v.preload = "auto"; v.load(); } v.play().catch(() => { }); }
+          else v.pause();
+        }, { threshold: .35 }).observe(v);
+      })();
+
+      /* ================= INSTALL ================= */
+      (function install() {
+        const R = "https://github.com/shakg/g-systemctl/releases/latest/download";
+        const T = {
+          deb: { title: "bash — Debian / Ubuntu", lines: [["c", "# amd64 (use -arm64.deb on Raspberry Pi OS 64-bit, Graviton, ...)"], ["$", `curl -LO ${R}/g-systemctl-linux-amd64.deb`], ["$", "sudo apt install ./g-systemctl-linux-amd64.deb"], ["$", "sudo g-systemctl"]] },
+          bin: { title: "bash — glibc 2.34+", lines: [["c", "# x86_64 or aarch64, picked by uname -m"], ["$", `curl -LO ${R}/g-systemctl-linux-$(uname -m).tar.gz`], ["$", "tar -xzf g-systemctl-linux-$(uname -m).tar.gz"], ["$", "sudo install -m 755 g-systemctl-*/g-systemctl /usr/local/bin/g-systemctl"], ["$", "sudo g-systemctl"]] },
+          brew: { title: "zsh — macOS", lines: [["c", "# Download the formula from the latest release"], ["$", `curl -LO ${R}/g-systemctl.rb`], ["$", "brew install ./g-systemctl.rb"], ["$", "g-systemctl"]] },
+          src: { title: "bash — CMake 3.14+, GCC 7+ / Clang 5+", lines: [["$", "git clone https://github.com/shakg/g-systemctl.git"], ["$", "cd g-systemctl && mkdir build && cd build"], ["$", "cmake -DCMAKE_BUILD_TYPE=Release .."], ["$", "make -j$(nproc)"], ["$", "sudo make install"]] },
+        };
+        const body = $("#ibody"), title = $("#i-title"), tabs = $$(".itab"), copy = $("#copy");
+        let cur = "deb", token = 0;
+        const lineHtml = (k, s) => k === "c" ? `<span class="c">${esc(s)}</span>` : `<span class="p">$</span> ${esc(s)}`;
+        async function show(k, animate = true) {
+          const my = ++token; cur = k;
+          tabs.forEach((t) => t.setAttribute("aria-selected", String(t.dataset.k === k)));
+          title.textContent = T[k].title;
+          const L = T[k].lines;
+          if (!animate || RM) { body.innerHTML = L.map(([a, b]) => lineHtml(a, b)).join("\n") + "\n<span class=\"p\">$</span> <span class=\"caret\"></span>"; return; }
+          let done = "";
+          for (const [a, s] of L) {
+            for (let i = 1; i <= s.length; i += 2) {
+              if (my !== token) return;
+              body.innerHTML = done + (a === "c" ? `<span class="c">${esc(s.slice(0, i))}</span>` : `<span class="p">$</span> ${esc(s.slice(0, i))}`) + '<span class="caret"></span>';
+              await sleep(a === "c" ? 6 : 12);
+            }
+            done += lineHtml(a, s) + "\n";
+            await sleep(140);
+          }
+          if (my === token) body.innerHTML = done + '<span class="p">$</span> <span class="caret"></span>';
+        }
+        tabs.forEach((t) => t.addEventListener("click", () => show(t.dataset.k)));
+        if (/Mac/i.test(navigator.platform || navigator.userAgent) && !/iPhone|iPad/i.test(navigator.userAgent)) cur = "brew";
+        show(cur, false);
+        let typed = false;
+        new IntersectionObserver(([e]) => { if (e.isIntersecting && !typed) { typed = true; show(cur); } }, { threshold: .5 }).observe(body);
+        copy.addEventListener("click", async () => {
+          const text = T[cur].lines.filter((l) => l[0] === "$").map((l) => l[1]).join("\n");
+          try {
+            if (navigator.clipboard && isSecureContext) await navigator.clipboard.writeText(text);
+            else { const ta = document.createElement("textarea"); ta.value = text; ta.style.cssText = "position:fixed;left:-9999px"; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); }
+            copy.textContent = "Copied"; copy.classList.add("done");
+          } catch { copy.textContent = "Copy failed"; }
+          setTimeout(() => { copy.textContent = "Copy"; copy.classList.remove("done"); }, 1600);
         });
-      });
-    });
-
-    const getCopyText = (button) => {
-      if (button.dataset.copy) {
-        return button.dataset.copy;
-      }
-      const target = document.getElementById(button.dataset.copyTarget);
-      if (!target) {
-        return "";
-      }
-      return Array.from(target.querySelectorAll(".code-line.command"))
-        .map((line) => line.textContent.replace(/^\$\s?/, ""))
-        .join("\n");
-    };
-
-    const copyText = async (text) => {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text);
-        return;
-      }
-      const textarea = document.createElement("textarea");
-      textarea.value = text;
-      textarea.setAttribute("readonly", "");
-      textarea.style.position = "fixed";
-      textarea.style.left = "-9999px";
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand("copy");
-      textarea.remove();
-    };
-
-    document.querySelectorAll(".copy-button").forEach((button) => {
-      button.addEventListener("click", async () => {
-        const text = getCopyText(button);
-        if (!text) {
-          return;
-        }
-        const previous = button.textContent;
-        try {
-          await copyText(text);
-          button.textContent = "Copied";
-          button.classList.add("copied");
-        } catch {
-          button.textContent = "Copy failed";
-        }
-        window.setTimeout(() => {
-          button.textContent = previous;
-          button.classList.remove("copied");
-        }, 1600);
-      });
-    });
+      })();
+    })();
   </script>
 </body>
 
