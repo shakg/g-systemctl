@@ -41,6 +41,8 @@ namespace gsystemctl::ui
         void refresh_now();
         // Stop and restart go through this prompt; without one they are refused.
         void set_confirm(ConfirmFn confirm) { confirm_ = std::move(confirm); }
+        // Graphs on/off state, owned by App and toggled by both tabs.
+        void set_graph_toggle(GraphToggle *graphs) { graphs_ = graphs; }
         bool detail_open() const { return detail_open_; }
         bool logs_full() const { return logs_full_; }
         // Goes up one level (full logs -> detail -> list). False if already at the list.
@@ -107,6 +109,8 @@ namespace gsystemctl::ui
         SummaryPane summary_;
         ActionBar actions_;
         bool show_secrets_ = false;
+        GraphToggle *graphs_ = nullptr;
+        GraphPanel graph_panel_;
 
         bool edit_open_ = false;
         std::string edit_target_id_;

@@ -170,7 +170,27 @@ namespace gsystemctl::ui
         ftxui::Box box_;
     };
 
-    // `graphs`, if set, takes the right half of the summary area.
+    // Graphs take half the width; below this the summary would be too cramped.
+    constexpr int kGraphsMinWidth = 100;
+    inline bool graphs_fit() { return ftxui::Terminal::Size().dimx >= kGraphsMinWidth; }
+
+    // Alt+g. Wide terminals show graphs beside the summary (on by default);
+    // narrow ones swap the summary for full-width graphs (off by default).
+    // Each width class remembers its own choice.
+    struct GraphToggle
+    {
+        bool wide_shown = true;
+        bool narrow_shown = false;
+        bool shown() const { return graphs_fit() ? wide_shown : narrow_shown; }
+        void toggle()
+        {
+            bool &flag = graphs_fit() ? wide_shown : narrow_shown;
+            flag = !flag;
+        }
+    };
+
+    // `graphs`, if set, takes the right half of the summary area, or replaces
+    // the summary when the terminal is narrower than kGraphsMinWidth.
     inline ftxui::Element detail_page(ftxui::Element title_bar, ftxui::Element summary, ftxui::Element logs,
                                       bool logs_full, ftxui::Element graphs = nullptr)
     {
@@ -180,7 +200,11 @@ namespace gsystemctl::ui
         {
             return vbox({std::move(title_bar), rule, std::move(logs) | flex}) | flex;
         }
-        if (graphs)
+        if (graphs && !graphs_fit())
+        {
+            summary = std::move(graphs);
+        }
+        else if (graphs)
         {
             summary = hbox({
                 std::move(summary) | flex,

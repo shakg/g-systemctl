@@ -67,6 +67,9 @@ namespace gsystemctl::ui
             bool has_cpu = false, has_memory = false, has_tasks = false, has_io = false;
         };
         ServiceMetrics service_metrics_;
+        // Alt+g; shared by both tabs.
+        GraphToggle graphs_;
+        GraphPanel service_graphs_;
         std::thread sampler_;
         std::mutex sampler_mutex_;
         std::condition_variable sampler_cv_;

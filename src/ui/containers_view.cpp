@@ -261,7 +261,7 @@ namespace gsystemctl::ui
             {"Disk I/O", "R " + rate(m.read_per_s) + "  W " + rate(m.write_per_s), &m.block, format_metric_rate,
              1024.0, graph_colors::Disk()},
         };
-        return metric_graphs(views);
+        return graph_panel_.render(views);
     }
 
     // ---- selection / filter ---------------------------------------------------
@@ -845,6 +845,10 @@ namespace gsystemctl::ui
                     logs_full_ = !logs_full_;
                     screen_.PostEvent(Event::Custom);
                     return true;
+                case ActionBar::Action::ToggleGraphs:
+                    if (graphs_)
+                        graphs_->toggle();
+                    return true;
                 case ActionBar::Action::None:
                     break;
                 }
@@ -899,8 +903,10 @@ namespace gsystemctl::ui
                             : actions_.render("✕ removed", Colors::error_fg(), false);
         auto title = detail_title_bar(logs_name_, c ? c->image : details_.image, std::move(actions));
         Element summary = logs_full_ ? text("") : summary_.render(render_summary());
-        return detail_page(std::move(title), std::move(summary), logs_.render(actions_.render_logs_toggle(logs_full_)),
-                           logs_full_, logs_full_ ? nullptr : render_graphs());
+        const bool graphs = graphs_ ? graphs_->shown() : graphs_fit();
+        return detail_page(std::move(title), std::move(summary),
+                           logs_.render(actions_.render_log_header(logs_full_, graphs, graphs_fit())), logs_full_,
+                           logs_full_ || !graphs ? nullptr : render_graphs());
     }
 
     Element ContainersView::render_list()

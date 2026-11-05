@@ -175,34 +175,50 @@ namespace gsystemctl::ui
         bool zero_based = true;        // false for gauges (memory, tasks)
     };
 
-    // One block per metric: a header line and a graph sharing the height equally.
-    inline ftxui::Element metric_graphs(const std::vector<MetricView> &metrics)
+    // The graphs column. With room for at least two rows per metric, each gets
+    // a header line and a graph, sharing the height equally; otherwise each is
+    // one line with a one-row graph, so none is cut off.
+    class GraphPanel
     {
-        using namespace ftxui;
-        Elements blocks;
-        for (const auto &m : metrics)
+    public:
+        ftxui::Element render(const std::vector<MetricView> &metrics)
         {
-            const bool collecting = m.history->empty();
-            auto header = hbox({
-                text(" " + m.label) | color(theme::HeaderColor()) | size(WIDTH, EQUAL, 11),
-                text(collecting ? "collecting…" : m.current) | bold | color(collecting ? theme::MutedColor() : m.color),
-                filler(),
-                text(collecting ? ""
-                                : m.zero_based ? "max " + m.format(m.history->max()) + " "
-                                               : m.format(m.history->min()) + " – " + m.format(m.history->max()) + " ") |
-                    color(theme::MutedColor()),
-            });
-            std::vector<double> values(m.history->values().begin(), m.history->values().end());
-            blocks.push_back(vbox({
-                                 header,
-                                 hbox({text(" "), std::make_shared<BarGraph>(std::move(values), m.floor, m.zero_based, m.color),
-                                       text(" ")}) |
-                                     flex,
-                             }) |
-                             flex);
+            using namespace ftxui;
+            // Height from the previous frame, like SummaryPane.
+            const int height = box_.y_max - box_.y_min + 1;
+            const bool compact = height > 0 && height < 2 * static_cast<int>(metrics.size());
+            Elements blocks;
+            for (const auto &m : metrics)
+            {
+                const bool collecting = m.history->empty();
+                auto label = text(" " + m.label) | color(theme::HeaderColor()) | size(WIDTH, EQUAL, 11);
+                auto value =
+                    text(collecting ? "collecting…" : m.current) | bold | color(collecting ? theme::MutedColor() : m.color);
+                auto range = text(collecting      ? ""
+                                  : m.zero_based ? "max " + m.format(m.history->max()) + " "
+                                                 : m.format(m.history->min()) + " – " + m.format(m.history->max()) + " ") |
+                             color(theme::MutedColor());
+                std::vector<double> values(m.history->values().begin(), m.history->values().end());
+                auto graph = std::make_shared<BarGraph>(std::move(values), m.floor, m.zero_based, m.color);
+                if (compact)
+                {
+                    blocks.push_back(hbox({label, value, text("  "), graph | flex, text(" ")}));
+                }
+                else
+                {
+                    blocks.push_back(vbox({
+                                         hbox({label, value, filler(), range}),
+                                         hbox({text(" "), graph, text(" ")}) | flex,
+                                     }) |
+                                     flex);
+                }
+            }
+            return vbox(std::move(blocks)) | reflect(box_);
         }
-        return vbox(std::move(blocks));
-    }
+
+    private:
+        ftxui::Box box_;
+    };
 
     namespace graph_colors
     {

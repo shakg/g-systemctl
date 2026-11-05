@@ -27,6 +27,7 @@ namespace gsystemctl::ui
         service_manager_ = ServiceManager::create(executor_, system_mode_);
         logging_manager_ = LoggingManager::create(executor_);
         containers_view_ = std::make_unique<ContainersView>(screen_, ContainerManager::create(executor_));
+        containers_view_->set_graph_toggle(&graphs_);
         if (initial_tab == Tab::Containers)
         {
             containers_view_->set_filter(initial_filter);
@@ -673,6 +674,9 @@ namespace gsystemctl::ui
                     logs_full_ = !logs_full_;
                     screen_.PostEvent(Event::Custom);
                     return true;
+                case ActionBar::Action::ToggleGraphs:
+                    graphs_.toggle();
+                    return true;
                 case ActionBar::Action::None:
                     break;
                 }
@@ -729,6 +733,10 @@ namespace gsystemctl::ui
         }
         if (event == Event::Special("\x1b" "q")) {
             screen_.Exit();
+            return true;
+        }
+        if (event == Event::Special("\x1b" "g")) {
+            graphs_.toggle();
             return true;
         }
         if (event == Event::Character('?')) {
@@ -1009,8 +1017,8 @@ namespace gsystemctl::ui
         auto title = detail_title_bar(detail_unit_, service ? service->description : "", std::move(actions));
         Element summary = logs_full_ ? text("") : service_summary_.render(render_service_summary());
         return detail_page(std::move(title), std::move(summary),
-                           service_logs_.render(service_actions_.render_logs_toggle(logs_full_)), logs_full_,
-                           logs_full_ ? nullptr : render_service_graphs());
+                           service_logs_.render(service_actions_.render_log_header(logs_full_, graphs_.shown(), graphs_fit())),
+                           logs_full_, logs_full_ || !graphs_.shown() ? nullptr : render_service_graphs());
     }
 
     Element App::render_service_graphs()
@@ -1042,7 +1050,7 @@ namespace gsystemctl::ui
         {
             return nullptr;
         }
-        return metric_graphs(views);
+        return service_graphs_.render(views);
     }
 
     Elements App::render_service_summary()
@@ -1110,6 +1118,7 @@ namespace gsystemctl::ui
                    text(""),
                    text("Detail page") | bold,
                    text("  Enter / Alt+f         Expand / shrink logs"),
+                   text("  Alt+g                 Graphs: beside the info, or instead of it below 100 columns"),
                    text("  ↑↓                    Scroll summary (logs when expanded)"),
                    text("  PgUp / PgDn           Scroll logs"),
                    text("  Esc                   Back one level"),
