@@ -177,7 +177,9 @@ jobs:
       - name: Create or update release
         run: |
           if ! gh release view "$TAG" > /dev/null 2>&1; then
-            gh release create "$TAG" --verify-tag --title "Release $TAG" --generate-notes
+            gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes
+          else
+            gh release edit "$TAG" --title "$TAG"
           fi
           gh release upload "$TAG" --clobber \
             artifacts/g-systemctl-linux-x86_64.tar.gz \
