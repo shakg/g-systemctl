@@ -15,6 +15,7 @@ import os
 import pty
 import select
 import struct
+import tempfile
 import termios
 import time
 
@@ -34,13 +35,20 @@ for name in ("systemctl", "journalctl", "ps", "docker", "sudo"):
     if not os.path.islink(link):
         os.symlink(os.path.join(HERE, "fake.py"), link)
 
+# The compose project the fake docker reports must exist, since the app runs compose from its directory.
+os.makedirs("/tmp/shop", exist_ok=True)
+open("/tmp/shop/compose.yaml", "a").close()
+
 screen = pyte.Screen(COLS, ROWS)
 stream = pyte.ByteStream(screen)
 
 pid, fd = pty.fork()
 if pid == 0:
-    env = dict(os.environ, PATH=FAKE + ":" + os.environ["PATH"], TERM="xterm-256color", COLORTERM="truecolor")
-    os.execve(BIN, [BIN], env)
+    # Fresh config dir: the app saves the compose projects it sees.
+    env = dict(os.environ, PATH=FAKE + ":" + os.environ["PATH"], TERM="xterm-256color", COLORTERM="truecolor",
+               XDG_CONFIG_HOME=tempfile.mkdtemp(prefix="g-systemctl-demo-"))
+    # Start on Services so the demo shows both tabs (the app defaults to Containers).
+    os.execve(BIN, [BIN, "--services"], env)
 fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLS, 0, 0))
 
 
@@ -123,8 +131,9 @@ live(3, 800)
 press(ESC, ["Esc"], "Back one level", 1100, 0.8)
 press(ESC, ["Esc"], "Back one level", 900, 0.8)
 press(ESC, ["Esc"], "On the list, Esc clears the filter", 1400, 0.8)
-press("\t", ["Tab"], "Containers tab", 900, 3.0)
+press("\t", ["Tab"], "Containers tab, grouped by compose project", 1400, 3.0)
 live(2, 900)
+press("\x1b[B", ["↓"], "Select a container", 700)
 press(ESC + "u", ["Alt", "u"], "Edit limits with docker update", 1200, 1.0)
 press("\x7f", ["⌫"], "Edit limits with docker update", 300, 0.3)
 press("2", ["2"], "Edit limits with docker update", 700, 0.3)
@@ -134,6 +143,12 @@ for ch in "2g":
     press(ch, [ch], "Edit limits with docker update", 300, 0.3)
 pump(0.4)
 press("\r", ["Enter"], "Applied while the container runs", 1400, 1.5)
+live(1, 900)
+press("\x1b[A", ["↑"], "⚠ web's compose file changed", 1600, 0.6)
+press("\r", ["Enter"], "Compose project: services, merged logs, graphs", 900, 1.5)
+live(4, 800)
+press(ESC + "u", ["Alt", "u"], "Alt+u runs compose up -d", 1700, 0.8)
+press("y", ["y"], "Changed services are recreated", 1200, 2.5)
 live(2, 900)
 os.kill(pid, 9)
 

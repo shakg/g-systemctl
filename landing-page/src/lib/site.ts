@@ -1,8 +1,8 @@
 export const SITE = {
   name: "g-systemctl",
-  title: "g-systemctl: terminal UI for systemd, launchd and Docker",
+  title: "g-systemctl: terminal UI for Docker, Compose, systemd and launchd",
   description:
-    "Keyboard-driven terminal UI to list, filter, start, stop and restart systemd and launchd services and Docker containers, with live graphs and logs.",
+    "Keyboard-driven terminal UI for Docker containers, Compose projects and systemd or launchd services: filter, start, stop, restart, live graphs and logs.",
   repo: "https://github.com/shakg/g-systemctl",
   author: "shakg",
 } as const;

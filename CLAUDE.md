@@ -35,7 +35,8 @@ g-systemctl/
 │   │   ├── command_executor.hpp # Shell command execution
 │   │   └── command_format.hpp  # Lays out long commands one option per line
 │   ├── container/              # Container runtime support
-│   │   ├── container.hpp       # Container, ContainerDetails, resource-limit diffing
+│   │   ├── container.hpp       # Container, ContainerDetails, resource-limit diffing, compose grouping/drift
+│   │   ├── compose_store.hpp   # Saved compose projects (~/.config/g-systemctl/compose-projects)
 │   │   ├── container_manager.hpp # Abstract container runtime interface
 │   │   └── docker_container_manager.hpp # docker CLI implementation
 │   ├── platform/               # Platform-specific implementations
@@ -63,14 +64,15 @@ g-systemctl/
 - `CommandExecutor` - Wraps shell command execution, handles sudo for privileged operations
 - `ContainerManager` - Abstract container runtime interface. `DockerContainerManager` drives the `docker` CLI with tab-separated Go-template `--format` output (no JSON dependency)
 - `ProcessLogStream` - Runs a command and streams its output lines from a background thread (journalctl, docker logs)
-- `App` - FTXUI-based TUI with Services and Containers tabs, filtering, and keyboard navigation. Navigation is three levels: list → detail page (summary + short log strip) → full-size logs. `Enter` goes down, `Esc` goes up. Start/stop/restart are `Alt+o`/`Alt+x`/`Alt+r`; on the detail page they target the item shown
+- `App` - FTXUI-based TUI with Containers (left, default, `Alt+1`) and Services (`Alt+2`) tabs, filtering, and keyboard navigation. Without `-s`/`-c` it falls back to Services when the first Docker check fails (`ContainersView::set_on_unavailable`). The help (`?`) has its own tabs: Containers, Services, General, Settings; it opens on the one matching the active tab and takes all input while open. Navigation is three levels: list → detail page (summary + short log strip) → full-size logs. `Enter` goes down, `Esc` goes up. Start/stop/restart are `Alt+o`/`Alt+x`/`Alt+r`; on the detail page they target the item shown
 - `ServiceManager::describe_service` - Summary rows for the service detail page (`systemctl show -p ...` on Linux, `launchctl list <label>` on macOS); parsers are static and unit-tested
 - `ServiceManager::sample_service` - Raw counters (CPU ns, memory, tasks, IO bytes) for the service detail graphs. `App` runs a sampler thread every 2s while a detail page is open; it also refreshes the summary rows. Empty on macOS, so no graphs there
 - Container detail graphs come from the existing `docker stats` poll; `ContainersView` keeps a history per running container, so graphs are already filled when a detail page opens
 - `GraphToggle` (`Alt+g` or the log-header button, shared by both tabs) - At 100+ columns graphs sit beside the summary and are on by default; below that they replace the summary and are off by default. `GraphPanel` drops to one line per metric when there are fewer than two rows per metric
 - `format_command` - Splits long commands (service ExecStart, docker entrypoint+cmd) into one option per line; the script of `sh -c`/`bash -c` is indented one level deeper
 - `ConfirmDialog` - Owned by `App`, handed to `ContainersView` via `set_confirm`. Stop and restart go through it (or through the sudo password prompt, which replaces it). Only `y` or a click confirms; Enter is swallowed
-- `ContainersView` - Containers tab. A poller thread refreshes `docker ps`/`docker stats` every 2s while the tab is visible; actions run on a worker thread and post results back with `ScreenInteractive::Post`. The detail page summary comes from `docker inspect` plus the live `docker stats` sample. `docker logs -f` exits when a container stops, so the log strip reattaches with `--since` once the container (or a recreated one with the same name) is running again
+- Compose - `ps` reads the compose labels (project, service, replica, working dir, config files, config hash, one-off, depends_on). `group_compose_projects` (`src/container/compose.cpp`, pure, unit-tested) groups them and adds saved projects that have no containers. `ContainerManager::compose` runs `cd DIR && docker compose -p NAME -f FILE... <action>`; start/stop/restart/down fall back to `-p NAME` alone if the files are gone. The poller compares each service's `config-hash` label with `compose config --hash '*'` (all projects every ~30s, the open project every poll) to flag drift. `ComposeStore` remembers projects so they stay listed after `down`
+- `ContainersView` - Containers tab. List rows are project headers, their containers (tree lines) and standalone containers below a divider; selection is keyed by container ID or `project:NAME`. A project page reuses the detail layout with `compose logs -f` and summed graphs. On a project, `Alt+o/x/r` map to compose start/stop/restart (`up -d` when down), `Alt+u` to `up -d`, plus `Alt+b` build, `Alt+p` pull, `Alt+d` down, `Alt+a` add by path, `Alt+v` container → project. A poller thread refreshes `docker ps`/`docker stats` every 2s while the tab is visible; actions run on a worker thread and post results back with `ScreenInteractive::Post`. The detail page summary comes from `docker inspect` plus the live `docker stats` sample. `docker logs -f` exits when a container stops, so the log strip reattaches with `--since` once the container (or a recreated one with the same name) is running again
 
 **Website (`landing-page/`):**
 
@@ -92,6 +94,7 @@ npm run preview:worker  # build, then serve dist/ with wrangler dev like product
 - Analytics: self-hosted Umami. `BaseHead.astro` adds the tracker only when `PUBLIC_UMAMI_SCRIPT` and `PUBLIC_UMAMI_WEBSITE_ID` are set at build (CI reads repo variables `UMAMI_SCRIPT`, `UMAMI_WEBSITE_ID`); `data-domains` limits it to the production host. Custom events: `data-umami-event` on GitHub/contribute links, `umami.track("install_copy")` in `landing.js`
 - Site URL and base path come from `SITE_URL` / `SITE_BASE` (default `https://g-systemctl.org` + `/`). Link with `url()` from `src/lib/site.ts`, never hard-coded `/` paths
 - Look: soft dark base with pastel accents (tokens in `src/styles/global.css`). Surfaces are filled panels with no border, shadow or glow; 1px lines are used only for the page column frame (`.frame`) and one hairline between sections. Every section is heading + `.sub` line, then content inset inside the frame; grids (bento, keymap, FAQ) are filled cells with an 8px gap, not full-bleed hairline grids. No window chrome or traffic-light dots
+- Feature-card mocks of the app must match the app exactly: square elements (the selected row is a flat band with an accent `▌` glyph, not a rounded box with a left border), real labels and prompts, and no behavior the app lacks (e.g. the filter does not highlight matches). Check a mock against a screenshot of the binary before changing it
 - Keep Lighthouse at 100: CSS is inlined, below-the-fold scripts start via `idle()`, and the hero terminal reserves its height to avoid layout shift
 
 **FTXUI Components Used:**

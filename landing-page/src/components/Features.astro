@@ -67,10 +67,25 @@ const ENV: [string, string, boolean][] = [
 const LIMITS: [string, string][] = [["CPUs", "2"], ["Memory", "2g"], ["Memory+swap", "2g"], ["PIDs limit", "200"], ["Restart", "unless-stopped"]];
 
 const PLATFORMS = [
+  { os: "Linux or Docker Desktop", w: "docker", c: "", l: ["docker ps and docker stats every 2s", "Compose projects: up, down, pull, build", "Inspect env, ports, mounts, networks", "Logs from docker logs -f and compose logs -f", "Limits and restart policy with docker update"] },
   { os: "Linux · systemd", w: "system", c: "ctl", l: ["System and --user units", "Details from systemctl show", "Logs from journalctl -f", "Edit unit files with Alt+e", "daemon-reload with Alt+Shift+r"] },
   { os: "macOS · launchd", w: "launch", c: "ctl", l: ["Jobs from launchctl list", "Start and stop with load / unload", "Details from launchctl list <label>", "Install with Homebrew"] },
-  { os: "Linux or Docker Desktop", w: "docker", c: "", l: ["docker ps and docker stats every 2s", "Inspect env, ports, mounts, networks", "Logs from docker logs -f --tail 200", "Limits and restart policy with docker update", "Filter by name, image or Compose project"] },
 ];
+
+// Rows of the compose card: "p" projects, "c" their containers, "s" standalone containers, "-" the divider.
+type Row = { k: "p" | "c" | "s" | "-"; n: string; m?: string; s?: string; on?: boolean; d?: string; last?: boolean; warn?: boolean };
+const PROJECT: Row[] = [
+  { k: "p", n: "shop", m: "compose · 4 services", s: "● 5/5 up", on: true, d: "⚠ 1 changed" },
+  { k: "c", n: "api", m: "node:22-slim", s: "● running", on: true },
+  { k: "c", n: "postgres", m: "postgres:16", s: "● running", on: true },
+  { k: "c", n: "web", m: "nginx:1.27-alpine", s: "● running", on: true, warn: true },
+  { k: "c", n: "worker #1", m: "python:3.12-slim", s: "● running", on: true },
+  { k: "c", n: "worker #2", m: "python:3.12-slim", s: "● running", on: true, last: true },
+  { k: "p", n: "blog", m: "compose · saved", s: "○ down", d: "Alt+o to bring up" },
+  { k: "-", n: "standalone containers" },
+  { k: "s", n: "traefik", m: "traefik:v3.1", s: "● running", on: true },
+];
+
 
 ---
 
@@ -78,10 +93,56 @@ const PLATFORMS = [
   <div class="wrap">
     <div class="head">
       <h2 data-r>Features</h2>
-      <p class="sub" data-r style="--d:1">What you get on top of <code>systemctl</code>, <code>launchctl</code> and <code>docker</code>.</p>
+      <p class="sub" data-r style="--d:1">What you get on top of <code>docker</code>, <code>docker compose</code>, <code>systemctl</code> and <code>launchctl</code>.</p>
     </div>
 
     <div class="bento">
+      <article class="card s2" data-r>
+        <div class="vg" aria-hidden="true">
+          <div class="win">
+            <div class="win-h"><b>Containers</b> · grouped by compose project <span class="r8">every 2s</span></div>
+            <ul class="cp">
+              {PROJECT.map((r) => r.k === "-" ? <li class="dv">{r.n}</li> : (
+                <li class:list={{ pj: r.k === "p" }}>
+                  <span class="n">{r.k === "p" ? <i>{r.s === "○ down" ? "▹" : "▾"}</i> : r.k === "c" ? <i>{r.last ? "└" : "├"}</i> : null}{r.n}{r.warn && <em> ⚠</em>}</span>
+                  <span class="m">{r.m}</span>
+                  <span class:list={["s", { on: r.on }]}>{r.s}</span>
+                  <span class:list={["d", { w: r.d?.startsWith("⚠") }]}>{r.d}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+        <div>
+          <h3>Docker Compose projects</h3>
+          <p>Containers are grouped under their project and shown by service, with summed CPU and memory. A project row
+            starts, stops or restarts the whole project; <code>Alt+u</code>, <code>Alt+p</code> and <code>Alt+d</code> run
+            <code>up -d</code>, <code>pull</code> and <code>down</code>. Projects stay listed after <code>down</code>.</p>
+        </div>
+      </article>
+
+      <article class="card" data-r style="--d:1">
+        <div class="vg" aria-hidden="true">
+          <div class="win">
+            <div class="win-h"><b>shop</b> · project page</div>
+            <div class="cmd">
+              <div class="row"><span class="lbl">State</span><span class="dr-on">● 5/5 up</span></div>
+              <div class="row"><span class="lbl">Files</span><span>/srv/shop/compose.yaml</span></div>
+              <div class="row"><span class="lbl">Config</span><span class="dr-w">⚠ changed: web</span></div>
+            </div>
+            <div class="dr-run">
+              <div><kbd>Alt</kbd><kbd>u</kbd><span>docker compose up -d</span></div>
+              <div class="dr-ok">✓ containers match the compose files</div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <h3>Spot changed compose files</h3>
+          <p>Each service's config hash is checked against <code>compose config</code>. Edited files show a warning;
+            <code>Alt+u</code> recreates what changed.</p>
+        </div>
+      </article>
+
       <article class="card s2" data-r>
         <div class="vg" aria-hidden="true">
           <div class="win">
@@ -106,13 +167,13 @@ const PLATFORMS = [
       <article class="card" data-r style="--d:1">
         <div class="vg" aria-hidden="true">
           <div class="win">
-            <div class="fl-in">Filter: <span>{FILTER_Q}</span><span class="cur">▏</span></div>
+            <div class="fl-in">Filter: <span>{FILTER_Q}</span><span class="cur">█</span></div>
             <ul class="fl-list">
               {FILTER.map(([n, on]) => {
-                const i = n.indexOf(FILTER_Q);
+                // The app narrows the list; it does not highlight the match.
                 return (
                   <li>
-                    <span>{n.slice(0, i)}<mark>{FILTER_Q}</mark>{n.slice(i + FILTER_Q.length)}</span>
+                    <span>{n}</span>
                     <span class:list={["s", { o: !on }]}>{on ? "● active" : "○ inactive"}</span>
                   </li>
                 );
@@ -130,7 +191,7 @@ const PLATFORMS = [
       <article class="card" data-r>
         <div class="vg" aria-hidden="true">
           <div class="safe">
-            <div class="svcrow"><span>postgresql.service</span><span class="s">● active</span></div>
+            <div class="svcrow"><span><i>▌</i>postgresql.service</span><span class="s">● active</span></div>
             <div class="cdlg">
               <div class="t">Confirm</div>
               <div class="q">Stop service postgresql.service?</div>

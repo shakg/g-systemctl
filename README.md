@@ -25,6 +25,7 @@ https://github.com/user-attachments/assets/1608dc3a-20aa-46fd-b3ea-db577f4c197c
 - Initial filter via command line argument (`-f` / `--filter`)
 - Stream service logs in the TUI via `journalctl`
 - Containers tab for Docker: list with live CPU/memory/PIDs, start/stop/restart, follow logs, inspect env/ports/mounts, and change resource limits and restart policy in place (`docker update`)
+- Docker Compose: containers grouped by project, with per-project start/stop/restart, `up -d`, `up --build`, `pull` and `down`, merged logs, summed graphs, and a warning when a service's compose file changed since its container was created
 
 ## Prerequisites
 
@@ -128,8 +129,8 @@ sudo g-systemctl
 | `Esc` | Back one level: help, full logs, detail page, then clear the filter, then quit |
 | `Alt+c` | Close the detail page |
 | `Alt+q` | Quit |
-| `?` | Show/hide help |
-| `Tab` / `Alt+1` / `Alt+2` | Switch between the Services and Containers tabs |
+| `?` | Show/hide help; `Tab`, `←`/`→` or `1`-`4` switch its tabs (Containers, Services, General, Settings) |
+| `Tab` / `Alt+1` / `Alt+2` | Switch tab (`Alt+1` Containers, `Alt+2` Services) |
 
 Services tab only:
 
@@ -147,7 +148,27 @@ Services tab only:
 | `Alt+s` | Show/hide env values whose names look secret (PASSWORD, TOKEN, KEY, ...) |
 | `Alt+Shift+r` | Refresh now (the list refreshes every 2 seconds while the tab is open) |
 
-Type to filter by container name, image or Compose project.
+Type to filter by container name, image, Compose project or service.
+
+### Docker Compose
+
+Containers created by Compose are grouped under their project, shown by service name (`worker #2` for replicas, `api (run)` for `compose run`). The project row shows how many containers are up and their summed CPU, memory and PIDs. `⚠ N changed` means a service's compose file changed since its container was created; `Alt+u` recreates it.
+
+`Enter` on a project opens its page: directory, compose files, services, dependencies, summed graphs and merged logs (`docker compose logs -f`).
+
+| Key (on a project row or page) | Action |
+|-----|--------|
+| `←` / `→` | Fold / unfold the project |
+| `Alt+o` | `compose start`; `compose up -d` if the project is down |
+| `Alt+x` / `Alt+r` | `compose stop` / `compose restart` (asks y/n) |
+| `Alt+u` | `compose up -d`: apply config and image changes (asks y/n) |
+| `Alt+b` | `compose up -d --build` (asks y/n) |
+| `Alt+p` | `compose pull` |
+| `Alt+d` | `compose down` (asks y/n); on a project that is already down, remove it from the list |
+| `Alt+a` | Add a project by the path of its compose file or directory |
+| `Alt+v` | From a container's page to its project's page |
+
+Compose commands run from the project's directory with the compose files recorded in its container labels. Projects seen once are saved in `~/.config/g-systemctl/compose-projects` (or `$XDG_CONFIG_HOME`), so they stay listed after `compose down` and can be brought up again. `docker compose` is used if available, else `docker-compose`; set `GSYSTEMCTL_COMPOSE` (e.g. `podman compose`) to override.
 
 Environment variables, ports and volumes cannot be changed on an existing container; Docker requires recreating it. Docker also cannot remove a CPU or memory limit in place, so clearing those fields is rejected. Clearing PIDs limit or memory+swap sets them to unlimited.
 
@@ -178,7 +199,9 @@ g-systemctl --system            # Show system services (default)
 g-systemctl --user              # Show user services
 g-systemctl -f <text>           # Start with an initial filter
 g-systemctl --filter <text>     # Start with an initial filter
-g-systemctl --containers        # Open the Containers tab (-c)
+g-systemctl                     # Containers tab, or Services if Docker is unavailable
+g-systemctl --services          # Open the Services tab (-s)
+g-systemctl --containers        # Open the Containers tab even without Docker (-c)
 ```
 
 ## Contributing

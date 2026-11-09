@@ -12,7 +12,6 @@ const home = Astro.url.pathname === url();
   <a class="brand" href={url()}><span class="brand-mark" aria-hidden="true">g</span>g-systemctl</a>
   <div class="nav-links">
     <a class="opt" href={url("#features")}>Features</a>
-    <a class="opt" href={url("#keys")}>Keys</a>
     <a href={url("blog/")} aria-current={onBlog ? "page" : undefined}>Blog</a>
     <a href={url("#install")}>Install</a>
     <a class="gh" href={SITE.repo} target="_blank" rel="noopener" data-umami-event="github_click" data-umami-event-place="nav" aria-label={stars !== null ? `GitHub, ${stars} stars` : "GitHub"}>

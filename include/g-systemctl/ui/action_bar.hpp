@@ -28,14 +28,20 @@ namespace gsystemctl::ui
         // `running`: the item is up, so Start is disabled; otherwise Stop and Restart are.
         ftxui::Element render(const std::string &state_label, ftxui::Color state_color, bool running)
         {
+            return render(state_label, state_color, !running, running);
+        }
+
+        // For groups (compose projects) that can be partly running: both may be enabled.
+        ftxui::Element render(const std::string &state_label, ftxui::Color state_color, bool can_start, bool can_stop)
+        {
             using namespace ftxui;
             using namespace theme;
             visible_ = true;
             return hbox({
                 text(state_label + "  ") | color(state_color) | bold,
-                button("▶ Start", "Alt+o", Colors::running_fg(), !running, start_),
-                button("■ Stop", "Alt+x", Colors::error_fg(), running, stop_),
-                button("↻ Restart", "Alt+r", WarningColor(), running, restart_),
+                button("▶ Start", "Alt+o", Colors::running_fg(), can_start, start_),
+                button("■ Stop", "Alt+x", Colors::error_fg(), can_stop, stop_),
+                button("↻ Restart", "Alt+r", WarningColor(), can_stop, restart_),
                 button("← Back", "Esc", TextColor(), true, back_),
             });
         }

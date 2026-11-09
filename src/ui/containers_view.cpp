@@ -5,8 +5,12 @@
 #include <atomic>
 #include <cctype>
 #include <chrono>
+#include <climits>
 #include <cstdio>
+#include <cstdlib>
 #include <ftxui/component/component_options.hpp>
+#include <sys/stat.h>
+#include <unistd.h>
 
 using namespace ftxui;
 
@@ -72,10 +76,98 @@ namespace gsystemctl::ui
         {
             return value.empty() ? unlimited : value;
         }
+
+        const std::string kProjectKey = "project:";
+        // Drift for every project is checked every this many polls (~30 s); the open project on every poll.
+        constexpr int kDriftEvery = 15;
+
+        std::string trim(const std::string &value)
+        {
+            auto begin = value.find_first_not_of(" \t\r\n");
+            if (begin == std::string::npos)
+                return "";
+            auto end = value.find_last_not_of(" \t\r\n");
+            return value.substr(begin, end - begin + 1);
+        }
+
+        std::string join(const std::vector<std::string> &items, const std::string &sep)
+        {
+            std::string out;
+            for (const auto &item : items)
+                out += (out.empty() ? "" : sep) + item;
+            return out;
+        }
+
+        StateStyle project_style(const ComposeProject &p)
+        {
+            const auto count = std::to_string(p.running) + "/" + std::to_string(p.total);
+            if (p.down())
+                return {"○ down", Colors::stopped_fg()};
+            if (p.running == p.total)
+                return {"● " + count + " up", Colors::running_fg()};
+            if (p.active > 0)
+                return {"◐ " + count + " up", WarningColor()};
+            return {"○ stopped", Colors::stopped_fg()};
+        }
+
+        // "web", "worker #2", "api (run)".
+        std::string service_label(const Container &c, bool multi_replica)
+        {
+            if (c.compose_service.empty())
+                return c.name;
+            std::string label = c.compose_service;
+            if (multi_replica || c.compose_number > 1)
+                label += " #" + std::to_string(c.compose_number);
+            if (c.compose_oneoff)
+                label += " (run)";
+            return label;
+        }
+
+        // "0.0.0.0:8080->80/tcp, [::]:8080->80/tcp, 9000/tcp" -> "8080->80/tcp, 9000/tcp".
+        std::string short_ports(const std::string &ports)
+        {
+            std::vector<std::string> kept;
+            size_t start = 0;
+            while (start <= ports.size())
+            {
+                auto end = ports.find(", ", start);
+                auto entry = trim(ports.substr(start, end == std::string::npos ? std::string::npos : end - start));
+                if (entry.rfind("0.0.0.0:", 0) == 0)
+                    entry.erase(0, 8);
+                if (!entry.empty() && entry.rfind("[::]:", 0) != 0 &&
+                    std::find(kept.begin(), kept.end(), entry) == kept.end())
+                    kept.push_back(entry);
+                if (end == std::string::npos)
+                    break;
+                start = end + 2;
+            }
+            return join(kept, ", ");
+        }
+
+        struct Totals
+        {
+            double cpu = 0, memory = 0, pids = 0;
+            int sampled = 0;
+        };
+        Totals project_totals(const std::vector<Container> &containers, const std::string &project)
+        {
+            Totals t;
+            for (const auto &c : containers)
+            {
+                if (c.compose_project != project || !c.is_running() || c.stats.cpu.empty())
+                    continue;
+                ++t.sampled;
+                t.cpu += std::max(0.0, parse_docker_percent(c.stats.cpu));
+                t.memory += std::max(0.0, parse_docker_size_pair(c.stats.mem_usage).first);
+                t.pids += std::max(0.0, parse_docker_size(c.stats.pids));
+            }
+            return t;
+        }
     } // namespace
 
-    ContainersView::ContainersView(ScreenInteractive &screen, std::shared_ptr<ContainerManager> manager)
-        : screen_(screen), manager_(std::move(manager)), logs_(screen)
+    ContainersView::ContainersView(ScreenInteractive &screen, std::shared_ptr<ContainerManager> manager,
+                                   const std::string &compose_store_path)
+        : screen_(screen), manager_(std::move(manager)), compose_store_(compose_store_path), logs_(screen)
     {
         poller_ = std::thread([this] { poll_loop(); });
     }
@@ -145,19 +237,35 @@ namespace gsystemctl::ui
             auto [ok, message] = manager_->check_available();
             runtime_ok = ok;
             screen_.Post([this, ok = ok, message = message] {
+                const bool first = !checked_;
                 checked_ = true;
                 available_ = ok;
                 availability_message_ = message;
+                if (first && !ok && on_unavailable_)
+                    on_unavailable_();
             });
             screen_.PostEvent(Event::Custom);
             if (!ok)
                 return;
         }
 
+        if (!poller_compose_checked_)
+        {
+            poller_compose_checked_ = true;
+            auto [ok, message] = manager_->compose_available();
+            poller_compose_ok_ = ok;
+            screen_.Post([this, ok = ok, message = message] {
+                compose_ok_ = ok;
+                compose_message_ = message;
+            });
+        }
+
+        std::vector<Container> listed;
         try
         {
             auto listed_at = unix_time_now();
             auto containers = manager_->list_containers();
+            listed = containers;
             screen_.Post([this, containers = std::move(containers), listed_at]() mutable {
                 set_containers(std::move(containers));
                 reattach_logs_if_running(listed_at);
@@ -188,6 +296,74 @@ namespace gsystemctl::ui
         {
             // Stats are best-effort; the list is still useful without them.
         }
+
+        // Compare each compose service's config hash with its files as they are now.
+        bool check_all = false;
+        std::string open_project;
+        {
+            std::lock_guard<std::mutex> lock(poll_mutex_);
+            check_all = poll_drift_all_ || ++poll_count_ % kDriftEvery == 0;
+            poll_drift_all_ = false;
+            open_project = poll_project_;
+        }
+        if (!poller_compose_ok_ || (!check_all && open_project.empty()))
+            return;
+        std::map<std::string, std::vector<std::string>> drift;
+        std::map<std::string, std::string> errors;
+        for (const auto &p : group_compose_projects(listed, {}))
+        {
+            if (!check_all && p.ref.name != open_project)
+                continue;
+            try
+            {
+                drift[p.ref.name] = compose_drifted_services(listed, p.ref.name, manager_->compose_config_hashes(p.ref));
+            }
+            catch (const std::exception &e)
+            {
+                errors[p.ref.name] = e.what();
+            }
+        }
+        screen_.Post([this, drift = std::move(drift), errors = std::move(errors), check_all]() mutable {
+            set_drift(std::move(drift), std::move(errors), check_all);
+        });
+        screen_.PostEvent(Event::Custom);
+    }
+
+    void ContainersView::set_poll_project(const std::string &name, bool check_all)
+    {
+        std::lock_guard<std::mutex> lock(poll_mutex_);
+        poll_project_ = name;
+        poll_drift_all_ = poll_drift_all_ || check_all;
+    }
+
+    void ContainersView::set_drift(std::map<std::string, std::vector<std::string>> drift,
+                                   std::map<std::string, std::string> errors, bool all)
+    {
+        if (all)
+        {
+            drift_ = std::move(drift);
+            drift_error_ = std::move(errors);
+            return;
+        }
+        for (auto &[name, services] : drift)
+        {
+            drift_error_.erase(name);
+            drift_[name] = std::move(services);
+        }
+        for (auto &[name, error] : errors)
+        {
+            drift_.erase(name);
+            drift_error_[name] = std::move(error);
+        }
+    }
+
+    void ContainersView::remember_projects()
+    {
+        for (const auto &p : group_compose_projects(containers_, {}))
+        {
+            if (p.total > 0)
+                compose_store_.remember(p.ref);
+        }
     }
 
     void ContainersView::set_containers(std::vector<Container> containers)
@@ -198,6 +374,7 @@ namespace gsystemctl::ui
             auto it = stats_.find(c.id);
             c.stats = (it != stats_.end() && c.is_running()) ? it->second : ContainerStats{};
         }
+        remember_projects();
         apply_filter();
     }
 
@@ -239,6 +416,54 @@ namespace gsystemctl::ui
             rates(s.net_io, m.net_rx, m.net_tx, m.net_rx_per_s, m.net_tx_per_s, m.net);
             rates(s.block_io, m.block_read, m.block_write, m.read_per_s, m.write_per_s, m.block);
         }
+
+        // Project graphs: the sum over its running containers.
+        struct Sum
+        {
+            double cpu = 0, memory = 0, pids = 0, rx = 0, tx = 0, read = 0, write = 0;
+            bool rates = true;
+        };
+        std::map<std::string, Sum> sums;
+        for (const auto &c : containers_)
+        {
+            auto it = metrics_.find(c.id);
+            if (c.compose_project.empty() || it == metrics_.end())
+                continue;
+            const auto &m = it->second;
+            auto &sum = sums[c.compose_project];
+            sum.cpu += m.cpu.last();
+            sum.memory += m.memory.last();
+            sum.pids += m.pids.last();
+            if (m.net_rx_per_s < 0 || m.net_tx_per_s < 0 || m.read_per_s < 0 || m.write_per_s < 0)
+            {
+                sum.rates = false;
+                continue;
+            }
+            sum.rx += m.net_rx_per_s;
+            sum.tx += m.net_tx_per_s;
+            sum.read += m.read_per_s;
+            sum.write += m.write_per_s;
+        }
+        for (auto it = project_metrics_.begin(); it != project_metrics_.end();)
+        {
+            it = sums.count(it->first) ? std::next(it) : project_metrics_.erase(it);
+        }
+        for (const auto &[name, sum] : sums)
+        {
+            auto &pm = project_metrics_[name];
+            pm.cpu.push(sum.cpu);
+            pm.memory.push(sum.memory);
+            pm.pids.push(sum.pids);
+            if (sum.rates)
+            {
+                pm.net_rx_per_s = sum.rx;
+                pm.net_tx_per_s = sum.tx;
+                pm.read_per_s = sum.read;
+                pm.write_per_s = sum.write;
+                pm.net.push(sum.rx + sum.tx);
+                pm.block.push(sum.read + sum.write);
+            }
+        }
     }
 
     Element ContainersView::render_graphs()
@@ -269,50 +494,157 @@ namespace gsystemctl::ui
     void ContainersView::set_filter(const std::string &filter)
     {
         filter_text_ = filter;
-        apply_filter();
+        apply_filter(true);
     }
 
-    void ContainersView::apply_filter()
+    void ContainersView::apply_filter(bool first_if_gone)
     {
         filtered_.clear();
-        auto needle = lower(filter_text_);
+        rows_.clear();
+        multi_replica_.clear();
+        projects_ = group_compose_projects(containers_, compose_store_.projects());
+
+        const auto needle = lower(filter_text_);
+        auto contains = [&needle](const std::string &value) { return lower(value).find(needle) != std::string::npos; };
+        auto matches = [&](const Container &c) {
+            return needle.empty() || contains(c.name) || contains(c.image) || contains(c.compose_project) ||
+                   contains(c.compose_service);
+        };
+        auto add = [this](const Container &c) {
+            filtered_.push_back(c);
+            return static_cast<int>(filtered_.size()) - 1;
+        };
+        std::map<std::string, const Container *> by_id;
+        std::map<std::string, int> replicas;
         for (const auto &c : containers_)
         {
-            if (needle.empty() || lower(c.name).find(needle) != std::string::npos ||
-                lower(c.image).find(needle) != std::string::npos ||
-                lower(c.compose_project).find(needle) != std::string::npos)
-            {
-                filtered_.push_back(c);
-            }
+            by_id[c.id] = &c;
+            if (!c.compose_project.empty() && !c.compose_oneoff)
+                ++replicas[c.compose_project + "/" + c.compose_service];
+        }
+        for (const auto &[key, count] : replicas)
+        {
+            if (count > 1)
+                multi_replica_.insert(key);
         }
 
-        // Keep the same container selected across refreshes and re-sorts.
-        auto it = std::find_if(filtered_.begin(), filtered_.end(),
-                               [this](const Container &c) { return c.id == selected_id_; });
-        if (it != filtered_.end())
+        bool any_project = false;
+        for (size_t pi = 0; pi < projects_.size(); ++pi)
         {
-            selected_index_ = static_cast<int>(it - filtered_.begin());
+            const auto &p = projects_[pi];
+            // A matching project shows all its containers.
+            const bool project_match = needle.empty() || contains(p.ref.name);
+            std::vector<int> children;
+            for (const auto &id : p.container_ids)
+            {
+                auto it = by_id.find(id);
+                if (it != by_id.end() && (project_match || matches(*it->second)))
+                    children.push_back(add(*it->second));
+            }
+            if (!project_match && children.empty())
+                continue;
+            any_project = true;
+            rows_.push_back({ListRow::Kind::Project, static_cast<int>(pi)});
+            // While filtering, matches are always shown.
+            if (needle.empty() && collapsed_.count(p.ref.name))
+                continue;
+            for (size_t k = 0; k < children.size(); ++k)
+                rows_.push_back({ListRow::Kind::Container, children[k], k + 1 == children.size()});
         }
-        else
+
+        bool divider = false;
+        for (const auto &c : containers_)
         {
-            selected_index_ = std::clamp(selected_index_, 0, std::max(0, static_cast<int>(filtered_.size()) - 1));
-            selected_id_ = filtered_.empty() ? "" : filtered_[selected_index_].id;
+            if (!c.compose_project.empty() || !matches(c))
+                continue;
+            if (any_project && !divider)
+            {
+                rows_.push_back({ListRow::Kind::Divider});
+                divider = true;
+            }
+            rows_.push_back({ListRow::Kind::Container, add(c)});
         }
+
+        // Keep the same row selected across refreshes and re-sorts.
+        auto key_of = [this](const ListRow &row) -> std::string {
+            if (row.kind == ListRow::Kind::Project)
+                return kProjectKey + projects_[row.index].ref.name;
+            if (row.kind == ListRow::Kind::Container)
+                return filtered_[row.index].id;
+            return "";
+        };
+        auto find_key = [&](const std::string &key) {
+            for (size_t i = 0; i < rows_.size(); ++i)
+            {
+                if (!key.empty() && key_of(rows_[i]) == key)
+                    return static_cast<int>(i);
+            }
+            return -1;
+        };
+        int index = find_key(selected_key_);
+        if (index < 0)
+        {
+            // A container hidden by folding its project: select the project.
+            auto it = by_id.find(selected_key_);
+            if (it != by_id.end() && !it->second->compose_project.empty())
+                index = find_key(kProjectKey + it->second->compose_project);
+        }
+        if (index < 0)
+            index = first_if_gone ? 0 : std::clamp(selected_index_, 0, std::max(0, static_cast<int>(rows_.size()) - 1));
+        select(index, rows_.empty() || index < static_cast<int>(rows_.size()) - 1 ? 1 : -1);
+        if (rows_.empty())
+            selected_key_.clear();
     }
 
-    void ContainersView::select(int index)
+    void ContainersView::select(int index, int step)
     {
-        if (filtered_.empty())
+        if (rows_.empty())
             return;
-        selected_index_ = std::clamp(index, 0, static_cast<int>(filtered_.size()) - 1);
-        selected_id_ = filtered_[selected_index_].id;
+        const int last = static_cast<int>(rows_.size()) - 1;
+        index = std::clamp(index, 0, last);
+        // Dividers cannot be selected; move past them, or back if at an end.
+        if (rows_[index].kind == ListRow::Kind::Divider)
+        {
+            int next = index + step;
+            if (next < 0 || next > last)
+                next = index - step;
+            index = std::clamp(next, 0, last);
+        }
+        selected_index_ = index;
+        const auto &row = rows_[index];
+        if (row.kind == ListRow::Kind::Project)
+            selected_key_ = kProjectKey + projects_[row.index].ref.name;
+        else if (row.kind == ListRow::Kind::Container)
+            selected_key_ = filtered_[row.index].id;
     }
 
     const Container *ContainersView::selected() const
     {
-        if (selected_index_ < 0 || selected_index_ >= static_cast<int>(filtered_.size()))
+        if (selected_index_ < 0 || selected_index_ >= static_cast<int>(rows_.size()))
             return nullptr;
-        return &filtered_[selected_index_];
+        const auto &row = rows_[selected_index_];
+        return row.kind == ListRow::Kind::Container ? &filtered_[row.index] : nullptr;
+    }
+
+    const ComposeProject *ContainersView::selected_project() const
+    {
+        if (selected_index_ < 0 || selected_index_ >= static_cast<int>(rows_.size()))
+            return nullptr;
+        const auto &row = rows_[selected_index_];
+        return row.kind == ListRow::Kind::Project ? &projects_[row.index] : nullptr;
+    }
+
+    const ComposeProject *ContainersView::find_project(const std::string &name) const
+    {
+        auto it = std::find_if(projects_.begin(), projects_.end(),
+                               [&name](const ComposeProject &p) { return p.ref.name == name; });
+        return it == projects_.end() ? nullptr : &*it;
+    }
+
+    const Container *ContainersView::find_container(const std::string &id) const
+    {
+        auto it = std::find_if(containers_.begin(), containers_.end(), [&id](const Container &c) { return c.id == id; });
+        return it == containers_.end() ? nullptr : &*it;
     }
 
     void ContainersView::clear_messages()
@@ -323,7 +655,28 @@ namespace gsystemctl::ui
 
     std::string ContainersView::summary() const
     {
-        return std::to_string(filtered_.size()) + "/" + std::to_string(containers_.size()) + " containers";
+        auto text = std::to_string(filtered_.size()) + "/" + std::to_string(containers_.size()) + " containers";
+        if (!projects_.empty())
+            text += " · " + std::to_string(projects_.size()) + (projects_.size() == 1 ? " project" : " projects");
+        return text;
+    }
+
+    std::string ContainersView::hints() const
+    {
+        if (logs_full_)
+            return "";
+        if (detail_open_ && !detail_project_.empty())
+            return "  ·  Alt+u up  ·  Alt+d down  ·  Enter logs  ·  Esc back  ·  ? help  ";
+        if (detail_open_)
+        {
+            const auto *c = action_target();
+            return c && !c->compose_project.empty()
+                       ? "  ·  ↑↓ scroll info  ·  Alt+v project  ·  Enter expand logs  ·  Esc back  ·  ? help  "
+                       : "";
+        }
+        if (selected_project())
+            return "  ·  ←→ fold  ·  Enter open  ·  Alt+o start  ·  Alt+x stop  ·  Alt+d down  ·  Alt+a add  ·  ? help  ";
+        return "";
     }
 
     // ---- actions --------------------------------------------------------------
@@ -354,6 +707,8 @@ namespace gsystemctl::ui
                 }
                 if (detail_open_)
                     reload_details();
+                // The action may have changed which config the containers run.
+                set_poll_project(detail_project_, true);
                 refresh_now();
             });
             screen_.PostEvent(Event::Custom);
@@ -368,6 +723,8 @@ namespace gsystemctl::ui
         };
         if (!detail_open_)
             return selected();
+        if (!detail_project_.empty())
+            return nullptr;
         if (const auto *c = find([this](const Container &c) { return c.id == logs_id_; }))
             return c;
         // Recreated with a new ID and not reattached yet.
@@ -376,6 +733,17 @@ namespace gsystemctl::ui
 
     void ContainersView::start_target()
     {
+        if (const auto *p = project_target())
+        {
+            clear_messages();
+            if (p->down())
+                run_compose(*p, ComposeAction::Up);
+            else if (p->active == p->total)
+                status_message_ = p->ref.name + " is already running (Alt+u applies config changes)";
+            else
+                run_compose(*p, ComposeAction::Start);
+            return;
+        }
         const auto *c = action_target();
         if (!c)
             return;
@@ -392,6 +760,16 @@ namespace gsystemctl::ui
 
     void ContainersView::stop_target()
     {
+        if (const auto *p = project_target())
+        {
+            clear_messages();
+            if (p->active == 0)
+                status_message_ = p->ref.name + " is not running (Alt+o to start)";
+            else
+                confirm_compose(*p, ComposeAction::Stop, "Stop all containers of compose project " + p->ref.name + "?",
+                                "Stop");
+            return;
+        }
         const auto *c = action_target();
         if (!c)
             return;
@@ -415,6 +793,16 @@ namespace gsystemctl::ui
 
     void ContainersView::restart_target()
     {
+        if (const auto *p = project_target())
+        {
+            clear_messages();
+            if (p->active == 0)
+                status_message_ = p->ref.name + " is not running (Alt+o to start)";
+            else
+                confirm_compose(*p, ComposeAction::Restart,
+                                "Restart all containers of compose project " + p->ref.name + "?", "Restart");
+            return;
+        }
         const auto *c = action_target();
         if (!c)
             return;
@@ -436,8 +824,173 @@ namespace gsystemctl::ui
         });
     }
 
+    // ---- compose actions ---------------------------------------------------------
+
+    const ComposeProject *ContainersView::project_target() const
+    {
+        if (!detail_open_)
+            return selected_project();
+        return detail_project_.empty() ? nullptr : find_project(detail_project_);
+    }
+
+    const ComposeProject *ContainersView::require_project()
+    {
+        clear_messages();
+        if (const auto *p = project_target())
+            return p;
+        const auto *c = action_target();
+        if (c && !c->compose_project.empty())
+            status_message_ = "Compose actions work on the project: select its row, or Alt+v";
+        else
+            status_message_ = "Not a compose project";
+        return nullptr;
+    }
+
+    void ContainersView::run_compose(const ComposeProject &project, ComposeAction action)
+    {
+        if (!compose_ok_)
+        {
+            error_message_ = compose_message_.empty() ? "docker compose is not available" : compose_message_;
+            return;
+        }
+        auto ref = project.ref;
+        run_action(compose_action_verb(action) + " " + ref.name + "...",
+                   [this, ref, action] { return manager_->compose(ref, action); },
+                   compose_action_past(action) + " " + ref.name);
+    }
+
+    void ContainersView::confirm_compose(const ComposeProject &project, ComposeAction action,
+                                         const std::string &question, const std::string &label)
+    {
+        if (!confirm_)
+        {
+            error_message_ = label + " needs confirmation, which is unavailable";
+            return;
+        }
+        auto name = project.ref.name;
+        confirm_(question, label, [this, name, action] {
+            // The list may have refreshed while the prompt was open.
+            if (const auto *p = find_project(name))
+                run_compose(*p, action);
+        });
+    }
+
+    void ContainersView::compose_up_target()
+    {
+        const auto *p = require_project();
+        if (!p)
+            return;
+        if (p->down())
+        {
+            run_compose(*p, ComposeAction::Up);
+            return;
+        }
+        confirm_compose(*p, ComposeAction::Up,
+                        "Run `compose up -d` for " + p->ref.name +
+                            "? Services whose config or image changed are recreated.",
+                        "Up");
+    }
+
+    void ContainersView::compose_build_target()
+    {
+        const auto *p = require_project();
+        if (!p)
+            return;
+        confirm_compose(*p, ComposeAction::UpBuild,
+                        "Rebuild images and run `compose up -d` for " + p->ref.name + "?", "Build");
+    }
+
+    void ContainersView::compose_pull_target()
+    {
+        const auto *p = require_project();
+        if (!p)
+            return;
+        run_compose(*p, ComposeAction::Pull);
+    }
+
+    void ContainersView::compose_down_target()
+    {
+        const auto *p = require_project();
+        if (!p)
+            return;
+        if (!confirm_)
+        {
+            error_message_ = "Down needs confirmation, which is unavailable";
+            return;
+        }
+        auto name = p->ref.name;
+        if (p->down())
+        {
+            // Nothing to take down: offer to drop it from the saved list.
+            confirm_("Forget compose project " + name + "? It leaves this list; its files are not touched.", "Forget",
+                     [this, name] {
+                         compose_store_.forget(name);
+                         if (detail_open_ && detail_project_ == name)
+                             close_detail();
+                         apply_filter();
+                         status_message_ = "Forgot " + name;
+                     });
+            return;
+        }
+        confirm_compose(*p, ComposeAction::Down,
+                        "Take down " + name + "? Its containers and networks are removed; volumes are kept.", "Down");
+    }
+
+    void ContainersView::fold_selected(bool collapse)
+    {
+        if (selected_index_ < 0 || selected_index_ >= static_cast<int>(rows_.size()))
+            return;
+        std::string project;
+        if (const auto *p = selected_project())
+            project = p->ref.name;
+        else if (const auto *c = selected(); c && collapse)
+            project = c->compose_project;
+        if (project.empty())
+            return;
+        if (collapse)
+        {
+            collapsed_.insert(project);
+            selected_key_ = kProjectKey + project;
+        }
+        else
+        {
+            collapsed_.erase(project);
+        }
+        apply_filter();
+    }
+
+    void ContainersView::open_project_detail(const std::string &name, bool logs_full)
+    {
+        if (!find_project(name))
+            return;
+        logs_full_ = logs_full;
+        if (detail_open_ && detail_project_ == name)
+            return;
+        if (detail_open_)
+            stop_logs();
+        clear_messages();
+        detail_open_ = true;
+        summary_.reset();
+        detail_project_ = name;
+        logs_id_.clear();
+        logs_name_ = name;
+        details_ = ContainerDetails{};
+        details_error_.clear();
+        set_poll_project(name, false);
+        refresh_now();
+        logs_.open("compose " + name,
+                   "Starting: " + manager_->runtime_name() + " compose -p " + name + " logs -f --tail " +
+                       std::to_string(kLogTail));
+        attach_logs(kLogTail, "", false);
+    }
+
     void ContainersView::open_detail(bool logs_full)
     {
+        if (const auto *p = selected_project(); p && !detail_open_)
+        {
+            open_project_detail(p->ref.name, logs_full);
+            return;
+        }
         const auto *c = selected();
         if (!c)
             return;
@@ -446,6 +999,7 @@ namespace gsystemctl::ui
             return;
         clear_messages();
         detail_open_ = true;
+        detail_project_.clear();
         summary_.reset();
         logs_id_ = c->id;
         logs_name_ = c->name;
@@ -461,6 +1015,8 @@ namespace gsystemctl::ui
         stop_logs();
         detail_open_ = false;
         logs_full_ = false;
+        detail_project_.clear();
+        set_poll_project("", false);
         details_ = ContainerDetails{};
         details_error_.clear();
     }
@@ -501,7 +1057,16 @@ namespace gsystemctl::ui
             screen_.Post([this, generation, ended_at, quiet_retry] { on_logs_ended(generation, ended_at, quiet_retry); });
             screen_.PostEvent(Event::Custom);
         };
-        auto stream = manager_->stream_logs(logs_id_, tail, since, on_line, on_end);
+        std::unique_ptr<LogStream> stream;
+        if (!detail_project_.empty())
+        {
+            const auto *p = find_project(detail_project_);
+            stream = p ? manager_->stream_compose_logs(p->ref, tail, since, on_line, on_end) : nullptr;
+        }
+        else
+        {
+            stream = manager_->stream_logs(logs_id_, tail, since, on_line, on_end);
+        }
         if (!stream)
         {
             error_message_ = "Unable to start log stream";
@@ -538,6 +1103,13 @@ namespace gsystemctl::ui
         // A list fetched before the stream ended may still show the container running.
         if (!detail_open_ || !logs_waiting_ || std::stold(listed_at) <= std::stold(logs_ended_at_))
             return;
+        if (!detail_project_.empty())
+        {
+            const auto *p = find_project(detail_project_);
+            if (p && p->running > 0)
+                attach_logs(-1, logs_ended_at_, true);
+            return;
+        }
         auto it = std::find_if(containers_.begin(), containers_.end(),
                                [this](const Container &c) { return c.id == logs_id_; });
         if (it == containers_.end())
@@ -628,6 +1200,128 @@ namespace gsystemctl::ui
         edit_open_ = false;
         edit_error_.clear();
         screen_.PostEvent(Event::Custom);
+    }
+
+    // ---- add compose project ----------------------------------------------------
+
+    void ContainersView::open_add_dialog()
+    {
+        clear_messages();
+        if (!compose_ok_)
+        {
+            error_message_ = compose_message_.empty() ? "docker compose is not available" : compose_message_;
+            return;
+        }
+        add_path_.clear();
+        add_cursor_ = 0;
+        add_error_.clear();
+        add_open_ = true;
+    }
+
+    void ContainersView::close_add_dialog()
+    {
+        add_open_ = false;
+        add_error_.clear();
+        screen_.PostEvent(Event::Custom);
+    }
+
+    void ContainersView::submit_add_dialog()
+    {
+        auto path = trim(add_path_);
+        if (path.empty())
+        {
+            add_error_ = "Enter a compose file or the directory that holds one";
+            return;
+        }
+        if (path[0] == '~')
+        {
+            const char *home = std::getenv("HOME");
+            path = std::string(home ? home : "") + path.substr(1);
+        }
+        char resolved[PATH_MAX];
+        if (!::realpath(path.c_str(), resolved))
+        {
+            add_error_ = "Not found: " + path;
+            return;
+        }
+        path = resolved;
+        struct stat st;
+        ::stat(path.c_str(), &st);
+        ComposeProjectRef ref;
+        if (S_ISDIR(st.st_mode))
+        {
+            ref.working_dir = path;
+        }
+        else
+        {
+            ref.working_dir = path.substr(0, path.find_last_of('/'));
+            ref.config_files = {path};
+        }
+        try
+        {
+            // Honors a top-level `name:`, and checks the file is valid.
+            ref.name = manager_->compose_project_name(ref);
+        }
+        catch (const std::exception &e)
+        {
+            add_error_ = e.what();
+            return;
+        }
+        const auto *existing = find_project(ref.name);
+        if (existing && !existing->down())
+        {
+            close_add_dialog();
+            status_message_ = ref.name + " is already listed";
+        }
+        else
+        {
+            compose_store_.remember(ref);
+            close_add_dialog();
+            if (!compose_store_.error().empty())
+                error_message_ = compose_store_.error();
+            else
+                status_message_ = "Added compose project " + ref.name + " (Alt+o brings it up)";
+        }
+        collapsed_.erase(ref.name);
+        selected_key_ = kProjectKey + ref.name;
+        apply_filter();
+    }
+
+    Component ContainersView::add_project_dialog()
+    {
+        InputOption option;
+        option.multiline = false;
+        option.cursor_position = &add_cursor_;
+        auto input = Input(&add_path_, "/path/to/compose.yaml or its directory", option);
+        auto renderer = Renderer(input, [this, input] {
+            Elements lines = {
+                text("Add compose project") | bold | color(AccentColor()),
+                separator() | color(BorderColor()),
+                hbox({text("Path ") | color(HeaderColor()), text("[") | color(BorderColor()),
+                      input->Render() | color(TextColor()) | flex, text("]") | color(BorderColor())}),
+                text("Projects with containers show up by themselves. Add one here to") | color(MutedColor()),
+                text("bring it up from g-systemctl, or keep it listed while it is down.") | color(MutedColor()),
+            };
+            if (!add_error_.empty())
+                lines.push_back(paragraph(add_error_) | color(Colors::error_fg()));
+            lines.push_back(separator() | color(BorderColor()));
+            lines.push_back(text("Enter add  Esc cancel") | color(MutedColor()));
+            return vbox(std::move(lines)) | size(WIDTH, GREATER_THAN, 66) | size(WIDTH, LESS_THAN, 90) |
+                   borderStyled(ROUNDED, BorderColor()) | bgcolor(PanelColor());
+        });
+        return CatchEvent(renderer, [this](Event event) {
+            if (event == Event::Return)
+            {
+                submit_add_dialog();
+                return true;
+            }
+            if (event == Event::Escape)
+            {
+                close_add_dialog();
+                return true;
+            }
+            return false;
+        });
     }
 
     Component ContainersView::edit_dialog()
@@ -736,7 +1430,13 @@ namespace gsystemctl::ui
                  event == Event::Special("\x1b" "j"))
         {
             const bool up = event == Event::ArrowUp || event == Event::Special("\x1b" "k");
-            select(selected_index_ + (up ? -1 : 1));
+            select(selected_index_ + (up ? -1 : 1), up ? -1 : 1);
+            clear_messages();
+            return true;
+        }
+        else if (event == Event::ArrowLeft || event == Event::ArrowRight)
+        {
+            fold_selected(event == Event::ArrowLeft);
             clear_messages();
             return true;
         }
@@ -748,7 +1448,9 @@ namespace gsystemctl::ui
 
         // Actions are ignored while a previous one is still running.
         const bool is_action = event == Event::Special("\x1b" "o") || event == Event::Special("\x1b" "x") ||
-                               event == Event::Special("\x1b" "r") || event == Event::Special("\x1b" "u");
+                               event == Event::Special("\x1b" "r") || event == Event::Special("\x1b" "u") ||
+                               event == Event::Special("\x1b" "b") || event == Event::Special("\x1b" "p") ||
+                               event == Event::Special("\x1b" "d");
         if (is_action && busy_)
             return true;
 
@@ -792,7 +1494,40 @@ namespace gsystemctl::ui
         }
         if (event == Event::Special("\x1b" "u"))
         {
-            open_edit_dialog();
+            // On a compose project there are no limits to edit; Alt+u runs `up -d`.
+            if (project_target())
+                compose_up_target();
+            else
+                open_edit_dialog();
+            return true;
+        }
+        if (event == Event::Special("\x1b" "b"))
+        {
+            compose_build_target();
+            return true;
+        }
+        if (event == Event::Special("\x1b" "p"))
+        {
+            compose_pull_target();
+            return true;
+        }
+        if (event == Event::Special("\x1b" "d"))
+        {
+            compose_down_target();
+            return true;
+        }
+        if (event == Event::Special("\x1b" "a"))
+        {
+            if (!detail_open_)
+                open_add_dialog();
+            return true;
+        }
+        if (event == Event::Special("\x1b" "v"))
+        {
+            // From a compose container to its project's page.
+            const auto *c = action_target();
+            if (c && !c->compose_project.empty())
+                open_project_detail(c->compose_project, false);
             return true;
         }
         if (event.is_character() || event == Event::Backspace)
@@ -804,7 +1539,7 @@ namespace gsystemctl::ui
                 filter_text_ += event.character();
             else if (!filter_text_.empty())
                 filter_text_.pop_back();
-            apply_filter();
+            apply_filter(true);
             clear_messages();
             return true;
         }
@@ -815,7 +1550,7 @@ namespace gsystemctl::ui
             {
                 int delta = mouse.button == Mouse::WheelUp ? -1 : 1;
                 if (!detail_open_)
-                    select(selected_index_ + delta);
+                    select(selected_index_ + delta, delta);
                 else if (logs_.contains(mouse.x, mouse.y))
                     logs_.scroll(delta * 3);
                 else if (summary_.contains(mouse.x, mouse.y))
@@ -856,7 +1591,8 @@ namespace gsystemctl::ui
                     return true;
                 for (size_t i = 0; i < item_boxes_.size(); ++i)
                 {
-                    if (item_boxes_[i].Contain(mouse.x, mouse.y))
+                    if (item_boxes_[i].Contain(mouse.x, mouse.y) && i < rows_.size() &&
+                        rows_[i].kind != ListRow::Kind::Divider)
                     {
                         // Clicking the selected row opens it, like Enter.
                         if (static_cast<int>(i) == selected_index_)
@@ -898,6 +1634,8 @@ namespace gsystemctl::ui
 
     Element ContainersView::render_detail()
     {
+        if (!detail_project_.empty())
+            return render_project_detail();
         const auto *c = action_target();
         Element actions = c ? actions_.render(state_style(c->state).label, state_style(c->state).fg, c->is_active())
                             : actions_.render("✕ removed", Colors::error_fg(), false);
@@ -911,10 +1649,11 @@ namespace gsystemctl::ui
 
     Element ContainersView::render_list()
     {
-        if (filtered_.empty())
+        if (rows_.empty())
         {
             item_boxes_.clear();
-            return text(containers_.empty() ? "No containers" : "No containers match the filter") | center | dim;
+            return text(containers_.empty() && projects_.empty() ? "No containers" : "No containers match the filter") |
+                   center | dim;
         }
 
         auto header = hbox({
@@ -931,24 +1670,27 @@ namespace gsystemctl::ui
                       bgcolor(PanelColor());
 
         Elements rows;
-        item_boxes_.resize(filtered_.size());
-        for (size_t i = 0; i < filtered_.size(); ++i)
+        item_boxes_.resize(rows_.size());
+        for (size_t i = 0; i < rows_.size(); ++i)
         {
-            const auto &c = filtered_[i];
-            bool is_selected = static_cast<int>(i) == selected_index_;
-            auto style = state_style(c.state);
-            auto dash = [](const std::string &v) { return v.empty() ? std::string("-") : v; };
-
-            auto row = hbox({
-                flex_cell(c.name, is_selected ? Color::White : TextColor(), is_selected),
-                cell(c.image, 24, MutedColor()),
-                cell(style.label, 13, style.fg, c.is_running()),
-                cell(c.status, 22, MutedColor()),
-                right_cell(dash(c.stats.cpu), 8, MutedColor()),
-                right_cell(dash(c.stats.mem_usage), 22, MutedColor()),
-                right_cell(dash(c.stats.pids), 6, MutedColor()),
-                text(" "),
-            });
+            const auto &r = rows_[i];
+            const bool is_selected = static_cast<int>(i) == selected_index_;
+            Element row;
+            if (r.kind == ListRow::Kind::Divider)
+            {
+                row = hbox({text("  standalone containers") | color(MutedColor()) | dim, filler()});
+                rows.push_back(row | reflect(item_boxes_[i]));
+                continue;
+            }
+            if (r.kind == ListRow::Kind::Project)
+            {
+                row = render_project_row(projects_[r.index], is_selected);
+            }
+            else
+            {
+                const auto &c = filtered_[r.index];
+                row = render_container_row(c, is_selected, !c.compose_project.empty(), r.last_child);
+            }
             if (is_selected)
             {
                 row = hbox({text("▌") | color(AccentColor()), row | flex}) | bgcolor(Colors::selected_bg()) | focus;
@@ -965,6 +1707,74 @@ namespace gsystemctl::ui
                    vbox(std::move(rows)) | vscroll_indicator | yframe | flex,
                }) |
                flex;
+    }
+
+    Element ContainersView::render_project_row(const ComposeProject &p, bool is_selected)
+    {
+        const auto &name = p.ref.name;
+        const bool folded = collapsed_.count(name) && filter_text_.empty();
+        auto style = project_style(p);
+        auto totals = project_totals(containers_, name);
+        auto sampled = [&totals](const std::string &value) { return totals.sampled ? value : std::string("-"); };
+
+        std::string kind = p.down() ? "compose · saved"
+                                    : "compose · " + std::to_string(p.services.size()) +
+                                          (p.services.size() == 1 ? " service" : " services");
+        Element status = text("");
+        if (auto it = drift_.find(name); it != drift_.end() && !it->second.empty())
+            status = text("⚠ " + std::to_string(it->second.size()) + " changed (Alt+u)") | color(WarningColor());
+        else if (drift_error_.count(name))
+            status = text("? config unreadable") | color(MutedColor());
+        else if (p.down())
+            status = text("Alt+o to bring up") | color(MutedColor());
+
+        return hbox({
+            text(p.down() ? "▹ " : folded ? "▸ " : "▾ ") | color(AccentColor()),
+            text(name) | bold | color(is_selected ? Color::White : AccentColor()) | flex,
+            cell(kind, 24, MutedColor()),
+            cell(style.label, 13, style.fg, p.running > 0),
+            status | size(WIDTH, EQUAL, 22),
+            right_cell(sampled(format_metric_percent(totals.cpu)), 8, MutedColor()),
+            right_cell(sampled(format_metric_bytes(totals.memory)), 22, MutedColor()),
+            right_cell(sampled(format_metric_count(totals.pids)), 6, MutedColor()),
+            text(" "),
+        });
+    }
+
+    Element ContainersView::render_container_row(const Container &c, bool is_selected, bool child, bool last_child)
+    {
+        auto style = state_style(c.state);
+        auto dash = [](const std::string &v) { return v.empty() ? std::string("-") : v; };
+        Element name;
+        if (child)
+        {
+            const bool multi = multi_replica_.count(c.compose_project + "/" + c.compose_service) > 0;
+            bool drifted = false;
+            if (auto it = drift_.find(c.compose_project); it != drift_.end())
+                drifted = std::find(it->second.begin(), it->second.end(), c.compose_service) != it->second.end();
+            name = hbox({
+                text(last_child ? "  └ " : "  ├ ") | color(MutedColor()),
+                text(service_label(c, multi)) | color(is_selected ? Color::White : TextColor()),
+                drifted ? text(" ⚠") | color(WarningColor()) : text(""),
+                filler(),
+            });
+            if (is_selected)
+                name = name | bold;
+        }
+        else
+        {
+            name = flex_cell(c.name, is_selected ? Color::White : TextColor(), is_selected);
+        }
+        return hbox({
+            name | flex,
+            cell(c.image, 24, MutedColor()),
+            cell(style.label, 13, style.fg, c.is_running()),
+            cell(c.status, 22, MutedColor()),
+            right_cell(dash(c.stats.cpu), 8, MutedColor()),
+            right_cell(dash(c.stats.mem_usage), 22, MutedColor()),
+            right_cell(dash(c.stats.pids), 6, MutedColor()),
+            text(" "),
+        });
     }
 
     Elements ContainersView::render_summary()
@@ -1007,7 +1817,15 @@ namespace gsystemctl::ui
         }
         lines.push_back(field_row("Started", d.started_at + (d.restart_count.empty() ? "" : " · restarts " + d.restart_count)));
         lines.push_back(field_row("Created", d.created));
-        if (!d.compose_project.empty())
+        if (c && !c->compose_project.empty())
+        {
+            const bool multi = multi_replica_.count(c->compose_project + "/" + c->compose_service) > 0;
+            lines.push_back(field_row("Compose", c->compose_project + " › " + service_label(*c, multi) +
+                                                     "   (Alt+v opens the project)"));
+            if (!c->compose_depends_on.empty())
+                lines.push_back(field_row("Depends on", join(c->compose_depends_on, ", ")));
+        }
+        else if (!d.compose_project.empty())
         {
             lines.push_back(field_row("Compose", d.compose_project + (d.compose_dir.empty() ? "" : "  (" + d.compose_dir + ")")));
         }
@@ -1046,6 +1864,130 @@ namespace gsystemctl::ui
         if (d.env.empty())
             lines.push_back(text(" none") | color(MutedColor()));
         return lines;
+    }
+
+    // ---- compose project page -----------------------------------------------------
+
+    Element ContainersView::render_project_detail()
+    {
+        const auto *p = find_project(detail_project_);
+        Element actions;
+        if (p)
+        {
+            auto style = project_style(*p);
+            actions = actions_.render(style.label, style.fg, p->down() || p->active < p->total, p->active > 0);
+        }
+        else
+        {
+            actions = actions_.render("✕ gone", Colors::error_fg(), false, false);
+        }
+        auto title = detail_title_bar(detail_project_, p ? p->ref.working_dir : "", std::move(actions));
+        Element summary = text("");
+        if (!logs_full_)
+            summary = summary_.render(p ? render_project_summary(*p) : Elements{text(" Project no longer listed") | dim});
+        const bool graphs = graphs_ ? graphs_->shown() : graphs_fit();
+        return detail_page(std::move(title), std::move(summary),
+                           logs_.render(actions_.render_log_header(logs_full_, graphs, graphs_fit())), logs_full_,
+                           logs_full_ || !graphs ? nullptr : render_project_graphs());
+    }
+
+    Elements ContainersView::render_project_summary(const ComposeProject &p)
+    {
+        const auto &name = p.ref.name;
+        Elements lines;
+        auto section = [&lines](const std::string &title) { lines.push_back(section_title(title)); };
+
+        lines.push_back(section_title("Overview", true));
+        auto style = project_style(p);
+        lines.push_back(field_row("State", p.down() ? "down · no containers" : style.label + " (" +
+                                                                                  std::to_string(p.services.size()) +
+                                                                                  " services)",
+                                  style.fg));
+        lines.push_back(field_row("Directory", p.ref.working_dir));
+        if (p.ref.config_files.empty())
+            lines.push_back(field_row("Files", "default (compose.yaml in the directory)"));
+        for (size_t i = 0; i < p.ref.config_files.size(); ++i)
+            lines.push_back(field_row(i == 0 ? "Files" : "", p.ref.config_files[i]));
+        auto totals = project_totals(containers_, name);
+        if (totals.sampled)
+            lines.push_back(field_row("Usage", "CPU " + format_metric_percent(totals.cpu) + " · " +
+                                                   format_metric_bytes(totals.memory) + " · " +
+                                                   format_metric_count(totals.pids) + " PIDs"));
+        lines.push_back(field_row("Compose", compose_ok_ ? compose_message_ : "unavailable: " + compose_message_,
+                                  compose_ok_ ? TextColor() : Colors::error_fg()));
+
+        const auto drift = drift_.find(name);
+        if (auto err = drift_error_.find(name); err != drift_error_.end())
+            lines.push_back(field_row("Config", "cannot read the compose files: " + err->second, MutedColor()));
+        else if (drift != drift_.end() && !drift->second.empty())
+            lines.push_back(field_row("Config", "⚠ changed since created: " + join(drift->second, ", ") +
+                                                    "  (Alt+u recreates)",
+                                      WarningColor()));
+        else if (drift != drift_.end() && !p.down())
+            lines.push_back(field_row("Config", "✓ containers match the compose files", AccentColor()));
+        else if (!p.down())
+            lines.push_back(field_row("Config", "checking...", MutedColor()));
+
+        section("Services");
+        std::map<std::string, std::vector<std::string>> depends;
+        for (const auto &id : p.container_ids)
+        {
+            const auto *c = find_container(id);
+            if (!c)
+                continue;
+            const bool multi = multi_replica_.count(name + "/" + c->compose_service) > 0;
+            const bool drifted = drift != drift_.end() && std::find(drift->second.begin(), drift->second.end(),
+                                                                    c->compose_service) != drift->second.end();
+            auto cs = state_style(c->state);
+            lines.push_back(hbox({
+                text(" "),
+                cell(service_label(*c, multi), 15, TextColor(), true),
+                cell(cs.label, 13, cs.fg),
+                cell(c->status, 24, MutedColor()),
+                drifted ? text("⚠ changed  ") | color(WarningColor()) : text(""),
+                text(short_ports(c->ports)) | color(MutedColor()) | flex,
+            }));
+            if (!c->compose_oneoff && !c->compose_depends_on.empty())
+                depends[c->compose_service] = c->compose_depends_on;
+        }
+        if (p.container_ids.empty())
+            lines.push_back(text(" none") | color(MutedColor()));
+
+        section("Dependencies");
+        for (const auto &[service, deps] : depends)
+            lines.push_back(field_row(service, "→ " + join(deps, ", ")));
+        if (depends.empty())
+            lines.push_back(text(" none") | color(MutedColor()));
+
+        section("Actions");
+        lines.push_back(field_row("Alt+o / x / r", p.down() ? "up -d / stop / restart" : "start / stop / restart"));
+        lines.push_back(field_row("Alt+u", "up -d (apply config and image changes)"));
+        lines.push_back(field_row("Alt+b", "up -d --build"));
+        lines.push_back(field_row("Alt+p", "pull images"));
+        lines.push_back(field_row("Alt+d", p.down() ? "forget (remove from this list)"
+                                                    : "down (remove containers and networks)"));
+        return lines;
+    }
+
+    Element ContainersView::render_project_graphs()
+    {
+        auto it = project_metrics_.find(detail_project_);
+        if (it == project_metrics_.end())
+            return nullptr;
+        const auto &m = it->second;
+        auto rate = [](double v) { return v < 0 ? std::string("-") : format_metric_rate(v); };
+        std::vector<MetricView> views = {
+            {"CPU", format_metric_percent(m.cpu.last()), &m.cpu, format_metric_percent, 1.0,
+             graph_colors::Cpu()},
+            {"Memory", format_metric_bytes(m.memory.last()), &m.memory, format_metric_bytes, 1024.0 * 1024.0,
+             graph_colors::Memory()},
+            {"PIDs", format_metric_count(m.pids.last()), &m.pids, format_metric_count, 1.0, graph_colors::Tasks(), false},
+            {"Net I/O", "↓ " + rate(m.net_rx_per_s) + "  ↑ " + rate(m.net_tx_per_s), &m.net, format_metric_rate,
+             1024.0, graph_colors::Network()},
+            {"Disk I/O", "R " + rate(m.read_per_s) + "  W " + rate(m.write_per_s), &m.block, format_metric_rate,
+             1024.0, graph_colors::Disk()},
+        };
+        return graph_panel_.render(views);
     }
 
 } // namespace gsystemctl::ui

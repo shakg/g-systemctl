@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <sstream>
 #include <stdexcept>
+#include <sys/stat.h>
 
 namespace gsystemctl {
 
@@ -17,7 +18,14 @@ constexpr char kSep = '\t';
 
 const char* const kPsFormat =
     "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.State}}\t{{.Status}}\t{{.Ports}}\t"
-    "{{.Label \"com.docker.compose.project\"}}";
+    "{{.Label \"com.docker.compose.project\"}}\t"
+    "{{.Label \"com.docker.compose.service\"}}\t"
+    "{{.Label \"com.docker.compose.container-number\"}}\t"
+    "{{.Label \"com.docker.compose.project.working_dir\"}}\t"
+    "{{.Label \"com.docker.compose.project.config_files\"}}\t"
+    "{{.Label \"com.docker.compose.config-hash\"}}\t"
+    "{{.Label \"com.docker.compose.oneoff\"}}\t"
+    "{{.Label \"com.docker.compose.depends_on\"}}";
 
 const char* const kStatsFormat =
     "{{.ID}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.BlockIO}}\t{{.PIDs}}";
@@ -84,6 +92,24 @@ int64_t to_int(const std::string& value) {
     char* end = nullptr;
     long long parsed = std::strtoll(cleaned.c_str(), &end, 10);
     return end == cleaned.c_str() ? 0 : static_cast<int64_t>(parsed);
+}
+
+std::string lower(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return std::tolower(c); });
+    return value;
+}
+
+bool file_exists(const std::string& path) {
+    struct stat st;
+    return ::stat(path.c_str(), &st) == 0;
+}
+
+std::string join_quoted(const std::vector<std::string>& argv) {
+    std::string out;
+    for (const auto& arg : argv) {
+        out += (out.empty() ? "" : " ") + shell_quote(arg);
+    }
+    return out;
 }
 
 std::string describe_failure(const CommandResult& result) {
@@ -224,6 +250,193 @@ std::unique_ptr<LogStream> DockerContainerManager::stream_logs(const std::string
     }
 }
 
+// ---- compose ----------------------------------------------------------------
+
+const std::vector<std::string>& DockerContainerManager::compose_prefix() {
+    std::call_once(compose_once_, [this] {
+        std::vector<std::vector<std::string>> candidates;
+        if (const char* env = std::getenv("GSYSTEMCTL_COMPOSE"); env && *env) {
+            std::vector<std::string> words;
+            std::istringstream stream(env);
+            for (std::string word; stream >> word;) {
+                words.push_back(word);
+            }
+            candidates.push_back(words);
+        } else {
+            candidates.push_back({binary_, "compose"});
+            candidates.push_back({"docker-compose"});
+        }
+        for (const auto& prefix : candidates) {
+            auto args = prefix;
+            args.insert(args.end(), {"version", "--short"});
+            auto result = executor_->execute(join_quoted(args));
+            if (result.exit_code == 0) {
+                compose_prefix_ = prefix;
+                compose_version_ = trim(result.stdout_output);
+                return;
+            }
+            if (compose_error_.empty()) {
+                compose_error_ = result.exit_code == 127 ? prefix[0] + " not found in PATH" : describe_failure(result);
+            }
+        }
+        compose_error_ = "docker compose is not installed (" + compose_error_ + ")";
+    });
+    return compose_prefix_;
+}
+
+ContainerManager::Result DockerContainerManager::compose_available() {
+    const auto& prefix = compose_prefix();
+    if (prefix.empty()) {
+        return {false, compose_error_};
+    }
+    std::string name;
+    for (const auto& word : prefix) {
+        auto slash = word.find_last_of('/');
+        name += (name.empty() ? "" : " ") + (slash == std::string::npos ? word : word.substr(slash + 1));
+    }
+    return {true, name + " " + compose_version_};
+}
+
+std::string DockerContainerManager::build_compose_command(const std::vector<std::string>& compose,
+                                                          const ComposeProjectRef& project,
+                                                          const std::vector<std::string>& args, bool with_files) {
+    auto argv = compose;
+    if (!project.name.empty()) {
+        argv.insert(argv.end(), {"-p", project.name});
+    }
+    if (with_files) {
+        for (const auto& file : project.config_files) {
+            argv.insert(argv.end(), {"-f", file});
+        }
+    }
+    argv.insert(argv.end(), args.begin(), args.end());
+    // From the working directory, relative paths (env_file, build context) resolve as when it was created.
+    if (with_files && !project.working_dir.empty()) {
+        return "cd " + shell_quote(project.working_dir) + " && " + join_quoted(argv);
+    }
+    return join_quoted(argv);
+}
+
+ContainerManager::Result DockerContainerManager::compose(const ComposeProjectRef& project, ComposeAction action) {
+    const auto& prefix = compose_prefix();
+    if (prefix.empty()) {
+        return {false, compose_error_};
+    }
+    std::string missing;
+    for (const auto& file : project.config_files) {
+        if (!file_exists(file)) {
+            missing = file;
+            break;
+        }
+    }
+    const bool dir_ok = project.working_dir.empty() || file_exists(project.working_dir);
+    const bool needs_files = action == ComposeAction::Up || action == ComposeAction::UpBuild ||
+                             action == ComposeAction::Pull;
+    bool with_files = missing.empty() && dir_ok && (!project.config_files.empty() || !project.working_dir.empty());
+    if (needs_files && !with_files) {
+        return {false, !missing.empty() ? "compose file not found: " + missing
+                       : !dir_ok        ? "directory not found: " + project.working_dir
+                                        : "no compose file known for " + project.name};
+    }
+    auto result = executor_->execute(build_compose_command(prefix, project, compose_action_args(action), with_files));
+    if (result.exit_code != 0) {
+        // Compose prints progress on stderr; the error is the last line.
+        auto output = trim(result.stderr_output.empty() ? result.stdout_output : result.stderr_output);
+        auto newline = output.find_last_of('\n');
+        if (newline != std::string::npos) {
+            output = trim(output.substr(newline + 1));
+        }
+        return {false, output.empty() ? "exit code " + std::to_string(result.exit_code) : output};
+    }
+    return {true, ""};
+}
+
+std::string DockerContainerManager::parse_config_project_name(const std::string& output) {
+    std::istringstream stream(output);
+    std::string line;
+    while (std::getline(stream, line)) {
+        if (line.rfind("name:", 0) == 0) {
+            auto name = trim(line.substr(5));
+            if (name.size() >= 2 && (name.front() == '"' || name.front() == '\'') && name.back() == name.front()) {
+                name = name.substr(1, name.size() - 2);
+            }
+            return name;
+        }
+    }
+    return "";
+}
+
+std::string DockerContainerManager::compose_project_name(const ComposeProjectRef& project) {
+    const auto& prefix = compose_prefix();
+    if (prefix.empty()) {
+        throw std::runtime_error(compose_error_);
+    }
+    ComposeProjectRef files = project;
+    files.name.clear();
+    auto result = executor_->execute(build_compose_command(prefix, files, {"config"}, true));
+    if (result.exit_code != 0) {
+        throw std::runtime_error(describe_failure(result));
+    }
+    auto name = parse_config_project_name(result.stdout_output);
+    if (name.empty()) {
+        throw std::runtime_error("compose config printed no project name");
+    }
+    return name;
+}
+
+std::map<std::string, std::string> DockerContainerManager::compose_config_hashes(const ComposeProjectRef& project) {
+    const auto& prefix = compose_prefix();
+    if (prefix.empty()) {
+        throw std::runtime_error(compose_error_);
+    }
+    if (project.config_files.empty() && project.working_dir.empty()) {
+        throw std::runtime_error("no compose file known for " + project.name);
+    }
+    if (!project.working_dir.empty() && !file_exists(project.working_dir)) {
+        throw std::runtime_error("directory not found: " + project.working_dir);
+    }
+    auto result = executor_->execute(build_compose_command(prefix, project, {"config", "--hash", "*"}, true));
+    if (result.exit_code != 0) {
+        throw std::runtime_error(describe_failure(result));
+    }
+    return parse_compose_hashes(result.stdout_output);
+}
+
+std::vector<std::string> DockerContainerManager::build_compose_logs_argv(const std::vector<std::string>& compose,
+                                                                         const ComposeProjectRef& project, int tail,
+                                                                         const std::string& since) {
+    // `-p` alone is enough for logs and keeps working if the files moved.
+    auto argv = compose;
+    argv.insert(argv.end(), {"-p", project.name, "logs", "-f", "--no-color", "--tail",
+                             tail < 0 ? "all" : std::to_string(tail)});
+    if (!since.empty()) {
+        argv.insert(argv.end(), {"--since", since});
+    }
+    return argv;
+}
+
+std::unique_ptr<LogStream> DockerContainerManager::stream_compose_logs(const ComposeProjectRef& project, int tail,
+                                                                       const std::string& since,
+                                                                       LoggingManager::LogCallback on_line,
+                                                                       std::function<void()> on_end) {
+    const auto& prefix = compose_prefix();
+    if (prefix.empty()) {
+        if (on_line) {
+            on_line(compose_error_);
+        }
+        return nullptr;
+    }
+    try {
+        return std::make_unique<ProcessLogStream>(build_compose_logs_argv(prefix, project, tail, since), on_line,
+                                                  std::move(on_end));
+    } catch (const std::exception& e) {
+        if (on_line) {
+            on_line(std::string("Unable to start compose logs: ") + e.what());
+        }
+        return nullptr;
+    }
+}
+
 std::vector<Container> DockerContainerManager::parse_ps_output(const std::string& output) {
     std::vector<Container> containers;
     std::istringstream stream(output);
@@ -240,9 +453,15 @@ std::vector<Container> DockerContainerManager::parse_ps_output(const std::string
         c.state = trim(fields[3]);
         c.status = trim(fields[4]);
         c.ports = trim(fields[5]);
-        if (fields.size() > 6) {
-            c.compose_project = clean(fields[6]);
-        }
+        auto field = [&fields](size_t i) { return i < fields.size() ? clean(fields[i]) : std::string(); };
+        c.compose_project = field(6);
+        c.compose_service = field(7);
+        c.compose_number = static_cast<int>(to_int(field(8)));
+        c.compose_working_dir = field(9);
+        c.compose_config_files = field(10);
+        c.compose_config_hash = field(11);
+        c.compose_oneoff = lower(field(12)) == "true";
+        c.compose_depends_on = parse_compose_depends_on(field(13));
         if (!c.id.empty()) {
             containers.push_back(std::move(c));
         }

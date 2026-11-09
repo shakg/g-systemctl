@@ -166,17 +166,18 @@ h1 .acc { color: var(--acc); }
 .fl-in span { color: var(--hi); }
 .fl-list { list-style: none; margin: 0; padding: 6px 0; }
 .fl-list li { display: flex; justify-content: space-between; padding: 0 12px; height: 28px; line-height: 28px; color: var(--text); overflow: hidden; }
-.fl-in .cur { animation: none; }
+.fl-in .cur { animation: none; color: var(--acc); }
 .fl-n { padding: 4px 12px 10px; color: var(--muted); font-size: 12px; }
-.fl-list li mark { background: rgba(110,171,147,.25); color: var(--hi); border-radius: 3px; }
 .fl-list li .s { color: var(--acc); font-size: 12px; }
 .fl-list li .s.o { color: #8a8ea0; }
 
 /* safe card */
 .safe { display: grid; gap: 14px; height: 100%; align-content: center; }
-.svcrow { display: flex; justify-content: space-between; padding: 10px 14px; background: var(--panel); box-shadow: inset 3px 0 0 var(--acc); border-radius: 6px; color: var(--hi); }
+/* Drawn like the app: the selected row is a flat band with an accent ▌ glyph; dialog and buttons are square. */
+.svcrow { display: flex; justify-content: space-between; padding: 10px 14px 10px 0; background: #1b1d25; color: var(--hi); font-weight: 700; }
+.svcrow i { font-style: normal; color: var(--acc); margin-right: 14px; }
 .svcrow .s { color: var(--acc); }
-.cdlg { background: var(--panel); border-radius: 10px; overflow: hidden; }
+.cdlg { background: var(--panel); }
 .cdlg .t { padding: 8px 12px; color: var(--warn); font-weight: 700; background: var(--panel-2); }
 .cdlg .q { padding: 10px 12px; color: var(--text); }
 .cdlg .bb { display: flex; justify-content: flex-end; gap: 10px; padding: 0 12px 10px; }
@@ -225,6 +226,27 @@ h1 .acc { color: var(--acc); }
 .env .v.mask { color: var(--muted); letter-spacing: .1em; }
 .env-k { display: flex; align-items: center; gap: 8px; padding: 0 12px 12px; color: var(--muted); font-size: 12px; }
 
+/* compose card */
+.cp { list-style: none; margin: 0; padding: 6px 0; }
+.cp li { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.2fr) 92px minmax(0, 1fr); gap: 10px; padding: 0 12px; height: 26px; line-height: 26px; color: var(--text); white-space: nowrap; }
+.cp li span { overflow: hidden; text-overflow: ellipsis; }
+.cp .n i { font-style: normal; color: var(--muted); margin: 0 8px 0 14px; }
+.cp .pj .n i { color: var(--acc); margin: 0 8px 0 0; }
+.cp li:not(.pj) .n:not(:has(i)) { padding-left: 14px; }
+.cp .pj .n { color: var(--acc); font-weight: 700; }
+.cp .n em { font-style: normal; color: var(--warn); }
+.cp .m, .cp .d { color: var(--muted); }
+.cp .s { color: #8a8ea0; }
+.cp .s.on { color: var(--acc); }
+.cp .d.w { color: var(--warn); }
+.cp .dv { display: block; color: var(--muted); opacity: .7; padding-left: 14px; }
+.dr-on { color: var(--acc); }
+.dr-w { color: var(--warn); }
+.dr-run { padding: 0 18px 16px; display: grid; gap: 10px; }
+.dr-run div { display: flex; gap: 6px; align-items: center; color: var(--text); }
+.dr-run span { margin-left: 6px; }
+.dr-ok { color: var(--acc) !important; }
+
 /* platform card */
 .card.plat { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; min-height: 0; }
 .plat-word { font-family: var(--mono); font-weight: 800; font-size: clamp(30px, 3.6vw, 46px); letter-spacing: -.04em; color: var(--hi); line-height: 1; margin-bottom: 18px; }
@@ -233,21 +255,6 @@ h1 .acc { color: var(--acc); }
 .plat-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 14.5px; }
 .plat-list li { display: flex; gap: 10px; color: var(--text); }
 .plat-list li::before { content: "▸"; color: var(--acc); }
-
-/* ---------- keys ---------- */
-.keymap { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
-.kt {
-  padding: 22px; border-radius: 10px; background: var(--bg-2);
-  transition: background .35s;
-}
-.kt .kk { display: flex; gap: 5px; margin-bottom: 14px; }
-.kt .kk kbd { transition: background .35s, color .35s; }
-.kt b { display: block; color: var(--hi); font-weight: 600; font-size: 15px; }
-.kt span { color: var(--muted); font-size: 13px; }
-.kt.hot, .kt:hover { background: var(--panel); }
-.kt.hot kbd, .kt:hover kbd { background: var(--acc); color: var(--on-acc); }
-.kt.hot kbd { animation: press .5s var(--ease); }
-.mouse { margin-top: 22px; color: var(--muted); font-size: 14.5px; display: flex; gap: 10px; align-items: center; }
 
 /* ---------- install ---------- */
 .inst { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); gap: 48px; align-items: start; }
@@ -294,7 +301,6 @@ h1 .acc { color: var(--acc); }
   .steps { grid-template-columns: 1fr; }
   .bento { grid-template-columns: 1fr 1fr; }
   .card.s3 { grid-column: span 2; }
-  .keymap { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .card.plat { grid-template-columns: 1fr; gap: 28px; }
   .faq { grid-template-columns: 1fr; }
 }
@@ -303,9 +309,10 @@ h1 .acc { color: var(--acc); }
   .stage { margin-top: 48px; }
   .bento { grid-template-columns: 1fr; }
   .card.s2, .card.s3 { grid-column: auto; }
+  .cp li { grid-template-columns: minmax(0, 1fr) 92px; }
+  .cp .m, .cp .d { display: none; }
   .card { padding: 22px; min-height: 0; }
   .graphs { grid-template-columns: 1fr; }
-  .keymap { grid-template-columns: 1fr 1fr; }
   .sec { padding: 72px 0 80px; }
   .keycast { font-size: 13.5px; flex-wrap: wrap; gap: 10px; }
   .ibody { font-size: 12px; }

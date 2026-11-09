@@ -104,8 +104,8 @@ $$(".card").forEach((c) => c.addEventListener("pointermove", (e) => {
   idle(async () => {
     const [{ default: demo }, { frameHtml, findFrame }] = await Promise.all([import("../data/demo.json"), import("../lib/term.js")]);
     if (RM) {
-      scr.innerHTML = frameHtml(demo, findFrame(demo, "Detail page: summary, graphs and logs") + 3);
-      caption("Detail page: summary, graphs and logs");
+      scr.innerHTML = frameHtml(demo, findFrame(demo, "Compose project: services, merged logs, graphs") + 3);
+      caption("Compose project: services, merged logs, graphs");
       return;
     }
     for (;;) {
@@ -150,15 +150,6 @@ idle(function levels() {
   if (RM) return;
   const wait = gate(lv, 0.3);
   (async () => { for (;;) { await wait(2800); if (!paused) show((level + 1) % 3); } })();
-});
-
-/* ================= KEYMAP ================= */
-idle(function keymap() {
-  const root = $("#keymap");
-  const tiles = $$(".kt", root);
-  if (RM) return;
-  const wait = gate(root, .3);
-  (async () => { let i = 0; for (; ;) { tiles.forEach((t) => t.classList.remove("hot")); const t = tiles[i++ % tiles.length]; void t.offsetWidth; t.classList.add("hot"); await wait(1100); } })();
 });
 
 /* ================= INSTALL ================= */

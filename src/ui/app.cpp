@@ -5,6 +5,7 @@
 #include "g-systemctl/core/command_executor.hpp"
 #include "g-systemctl/core/logging_manager.hpp"
 #include "g-systemctl/platform/platform.hpp"
+#include <ftxui/screen/terminal.hpp>
 #include <algorithm>
 #include <cctype>
 #include <chrono>
@@ -20,7 +21,7 @@ namespace gsystemctl::ui
 {
     using namespace theme;
 
-    App::App(bool system_mode, const std::string &initial_filter, Tab initial_tab)
+    App::App(bool system_mode, const std::string &initial_filter, Tab initial_tab, bool fallback_to_services)
         : screen_(ScreenInteractive::Fullscreen()), system_mode_(system_mode), service_logs_(screen_)
     {
         executor_ = std::make_shared<SystemCommandExecutor>();
@@ -28,6 +29,21 @@ namespace gsystemctl::ui
         logging_manager_ = LoggingManager::create(executor_);
         containers_view_ = std::make_unique<ContainersView>(screen_, ContainerManager::create(executor_));
         containers_view_->set_graph_toggle(&graphs_);
+        if (fallback_to_services)
+        {
+            containers_view_->set_on_unavailable([this] {
+                if (active_tab_ != Tab::Containers)
+                    return;
+                // Carry over a filter given with -f.
+                if (filter_text_.empty() && !containers_view_->filter_text().empty())
+                {
+                    filter_text_ = containers_view_->filter_text();
+                    containers_view_->set_filter("");
+                    apply_filter();
+                }
+                switch_tab(Tab::Services);
+            });
+        }
         if (initial_tab == Tab::Containers)
         {
             containers_view_->set_filter(initial_filter);
@@ -715,11 +731,12 @@ namespace gsystemctl::ui
         if (auth_dialog_open_ || confirm_.is_open() || containers_view_->edit_dialog_open()) {
             return false;
         }
+        if (show_help_) {
+            return handle_help_event(event);
+        }
         if (event == Event::Escape) {
             // Close the innermost thing first; quit only from the plain list.
-            if (show_help_) {
-                show_help_ = false;
-            } else if (active_tab_ == Tab::Containers && containers_view_->back()) {
+            if (active_tab_ == Tab::Containers && containers_view_->back()) {
             } else if (active_tab_ == Tab::Services && services_back()) {
             } else if (active_tab_ == Tab::Containers && !containers_view_->filter_text().empty()) {
                 containers_view_->set_filter("");
@@ -740,7 +757,7 @@ namespace gsystemctl::ui
             return true;
         }
         if (event == Event::Character('?')) {
-            show_help_ = !show_help_;
+            open_help();
             return true;
         }
         if (event == Event::Tab || event == Event::TabReverse) {
@@ -748,11 +765,11 @@ namespace gsystemctl::ui
             return true;
         }
         if (event == Event::Special("\x1b" "1")) {
-            switch_tab(Tab::Services);
+            switch_tab(Tab::Containers);
             return true;
         }
         if (event == Event::Special("\x1b" "2")) {
-            switch_tab(Tab::Containers);
+            switch_tab(Tab::Services);
             return true;
         }
         if (event.is_mouse() && event.mouse().button == Mouse::Left && event.mouse().motion == Mouse::Pressed) {
@@ -766,7 +783,7 @@ namespace gsystemctl::ui
                 return true;
             }
             if (shortcuts_box_.Contain(mouse.x, mouse.y)) {
-                show_help_ = true;
+                open_help();
                 return true;
             }
             if (active_tab_ == Tab::Containers && reload_button_box_.Contain(mouse.x, mouse.y)) {
@@ -812,6 +829,7 @@ namespace gsystemctl::ui
 
         main_component |= Modal(auth_modal, &auth_dialog_open_);
         main_component |= Modal(containers_view_->edit_dialog(), containers_view_->edit_dialog_open_flag());
+        main_component |= Modal(containers_view_->add_project_dialog(), containers_view_->add_project_dialog_open_flag());
         main_component |= Modal(confirm_.component(), confirm_.open_flag());
         containers_view_->set_confirm([this](const std::string &question, const std::string &label,
                                              std::function<void()> on_confirm) {
@@ -853,8 +871,10 @@ namespace gsystemctl::ui
         const auto &filter = containers ? containers_view_->filter_text() : filter_text_;
         const bool on_detail = containers ? containers_view_->detail_open() : detail_open_;
         const bool on_full_logs = containers ? containers_view_->logs_full() : logs_full_;
+        const auto view_hints = containers ? containers_view_->hints() : std::string();
         const std::string hints =
-            on_full_logs ? "  ·  ↑↓ PgUp/PgDn scroll  ·  Enter shrink logs  ·  Esc back  ·  ? help  "
+            !view_hints.empty() ? view_hints
+            : on_full_logs ? "  ·  ↑↓ PgUp/PgDn scroll  ·  Enter shrink logs  ·  Esc back  ·  ? help  "
             : on_detail  ? "  ·  ↑↓ scroll info  ·  PgUp/PgDn scroll logs  ·  Enter expand logs  ·  Esc back  ·  ? help  "
                          : "  ·  ↑↓ move  ·  Enter open  ·  Alt+o start  ·  Alt+x stop  ·  Alt+r restart  ·  ? help  ";
         const auto summary = containers ? containers_view_->summary()
@@ -895,9 +915,9 @@ namespace gsystemctl::ui
             return element | reflect(box);
         };
         return hbox({
-            tab("Services", Tab::Services, services_tab_box_),
-            text("│") | color(BorderColor()),
             tab("Containers", Tab::Containers, containers_tab_box_),
+            text("│") | color(BorderColor()),
+            tab("Services", Tab::Services, services_tab_box_),
         });
     }
 
@@ -1093,49 +1113,156 @@ namespace gsystemctl::ui
         return lines;
     }
 
+    void App::open_help()
+    {
+        help_tab_ = active_tab_ == Tab::Containers ? HelpTab::Containers : HelpTab::Services;
+        show_help_ = true;
+    }
+
+    bool App::handle_help_event(Event event)
+    {
+        auto step = [this](int delta) {
+            help_tab_ = static_cast<HelpTab>((static_cast<int>(help_tab_) + delta + kHelpTabs) % kHelpTabs);
+        };
+        if (event == Event::Special("\x1b" "q"))
+        {
+            screen_.Exit();
+        }
+        else if (event == Event::Escape || event == Event::Character('?'))
+        {
+            show_help_ = false;
+        }
+        else if (event == Event::Tab || event == Event::ArrowRight)
+        {
+            step(1);
+        }
+        else if (event == Event::TabReverse || event == Event::ArrowLeft)
+        {
+            step(-1);
+        }
+        else if (event.is_character() && event.character()[0] >= '1' && event.character()[0] < '1' + kHelpTabs)
+        {
+            help_tab_ = static_cast<HelpTab>(event.character()[0] - '1');
+        }
+        else if (event.is_mouse() && event.mouse().button == Mouse::Left && event.mouse().motion == Mouse::Pressed)
+        {
+            for (int i = 0; i < kHelpTabs; ++i)
+            {
+                if (help_tab_boxes_[i].Contain(event.mouse().x, event.mouse().y))
+                    help_tab_ = static_cast<HelpTab>(i);
+            }
+        }
+        // Everything else is swallowed so nothing behind the dialog reacts.
+        return true;
+    }
+
     Element App::render_help()
     {
-        auto services = vbox({
-            text("Services") | bold,
-            text("  Alt+e        Edit unit file ($GSYSTEMCTL_EDITOR)"),
-            text("  Alt+Shift+r  systemctl daemon-reload"),
-        });
-        auto containers = vbox({
-            text("Containers") | bold,
-            text("  Alt+i        Open detail page (same as Enter)"),
-            text("  Alt+u        Edit resource limits"),
-            text("  Alt+s        Show/hide secret env values"),
-            text("  Alt+Shift+r  Refresh now"),
-        });
+        auto key = [](const std::string &keys, const std::string &action) {
+            return hbox({text("  " + keys) | color(AccentColor()) | size(WIDTH, EQUAL, 23), text(action)});
+        };
+        auto heading = [](const std::string &title) { return text(title) | bold; };
+        auto gap = [] { return text(""); };
+
+        Elements body;
+        switch (help_tab_)
+        {
+        case HelpTab::Containers:
+            body = {
+                heading("Containers"),
+                key("Enter / Alt+i", "Open detail page (summary + logs)"),
+                key("Alt+l", "Open with full-size logs"),
+                key("Alt+o / x / r", "Start / stop / restart (stop, restart ask y/n)"),
+                key("Alt+u", "Edit resource limits (docker update)"),
+                key("Alt+s", "Show/hide secret env values"),
+                key("Alt+Shift+r", "Refresh now"),
+                gap(),
+                heading("Compose projects (on a project row or page)"),
+                key("← / →", "Fold / unfold"),
+                key("Enter", "Project page: services, merged logs, graphs"),
+                key("Alt+o / x / r", "Start (up -d when down) / stop / restart"),
+                key("Alt+u", "up -d: apply config and image changes"),
+                key("Alt+b", "up -d --build"),
+                key("Alt+p", "Pull images"),
+                key("Alt+d", "Down (forget, if already down)"),
+                key("Alt+a", "Add a project by path"),
+                key("Alt+v", "From a container to its project"),
+            };
+            break;
+        case HelpTab::Services:
+            body = {
+                heading("Services"),
+                key("Enter", "Open detail page (summary + logs)"),
+                key("Alt+l", "Open with full-size logs"),
+                key("Alt+o / x / r", "Start / stop / restart (stop, restart ask y/n)"),
+                key("Alt+e", "Edit unit file ($GSYSTEMCTL_EDITOR, default vim)"),
+                key("Alt+Shift+r", "systemctl daemon-reload"),
+                gap(),
+                text("When sudo needs a password, a prompt replaces the y/n confirmation.") | color(MutedColor()),
+            };
+            break;
+        case HelpTab::General:
+            body = {
+                heading("List"),
+                key("↑↓ / Alt+k/j", "Move selection"),
+                key("type / Backspace", "Filter"),
+                key("Enter / click", "Open detail page"),
+                gap(),
+                heading("Detail page"),
+                key("Enter / Alt+f", "Expand / shrink logs"),
+                key("Alt+g", "Graphs on/off (replace the info below 100 cols)"),
+                key("↑↓", "Scroll summary (logs when expanded)"),
+                key("PgUp / PgDn", "Scroll logs"),
+                key("Esc", "Back one level"),
+                gap(),
+                heading("App"),
+                key("Tab", "Switch tab"),
+                key("Alt+1 / Alt+2", "Containers / Services"),
+                key("Esc", "Back, clear filter, then quit"),
+                key("Alt+q", "Quit"),
+            };
+            break;
+        case HelpTab::Settings:
+            body = {
+                heading("Startup options"),
+                key("(none)", "Open the Containers tab; Services if Docker is unavailable"),
+                key("-s, --services", "Open the Services tab"),
+                key("-c, --containers", "Open the Containers tab, even without Docker"),
+                key("--user", "User services instead of system services"),
+                key("-f, --filter TEXT", "Initial filter"),
+                gap(),
+                heading("Environment"),
+                key("GSYSTEMCTL_DOCKER", "Docker CLI binary (default: docker)"),
+                key("GSYSTEMCTL_COMPOSE", "Compose command (default: docker compose)"),
+                key("GSYSTEMCTL_EDITOR", "Editor for unit files (default: vim)"),
+                gap(),
+                heading("Files"),
+                key("compose-projects", "Saved compose projects, in"),
+                text("                         $XDG_CONFIG_HOME/g-systemctl or ~/.config/g-systemctl"),
+            };
+            break;
+        }
+
+        static const char *const labels[kHelpTabs] = {"Containers", "Services", "General", "Settings"};
+        Elements tabs;
+        for (int i = 0; i < kHelpTabs; ++i)
+        {
+            const bool active = static_cast<int>(help_tab_) == i;
+            auto label = text(" " + std::to_string(i + 1) + " " + labels[i] + " ");
+            label = active ? label | color(Color::White) | bold | bgcolor(Colors::selected_bg())
+                           : label | color(MutedColor());
+            tabs.push_back(label | reflect(help_tab_boxes_[i]));
+            if (i + 1 < kHelpTabs)
+                tabs.push_back(text("│") | color(BorderColor()));
+        }
+
         return vbox({
-                   text("g-systemctl - Help") | bold | center,
-                   separator(),
-                   text("List") | bold,
-                   text("  ↑↓ / Alt+k/j          Move selection"),
-                   text("  type / Backspace      Filter"),
-                   text("  Enter / click         Open detail page (summary + logs)"),
-                   text("  Alt+l                 Open with full-size logs"),
-                   text(""),
-                   text("Detail page") | bold,
-                   text("  Enter / Alt+f         Expand / shrink logs"),
-                   text("  Alt+g                 Graphs: beside the info, or instead of it below 100 columns"),
-                   text("  ↑↓                    Scroll summary (logs when expanded)"),
-                   text("  PgUp / PgDn           Scroll logs"),
-                   text("  Esc                   Back one level"),
-                   text(""),
-                   text("Actions (on the selected item, or the one on the detail page)") | bold,
-                   text("  Alt+o                 Start"),
-                   text("  Alt+x                 Stop (asks y/n)"),
-                   text("  Alt+r                 Restart (asks y/n)"),
-                   text(""),
-                   text("General") | bold,
-                   text("  Tab / Alt+1 / Alt+2   Switch tab"),
-                   text("  Esc                   Back, clear filter, then quit"),
-                   text("  Alt+q                 Quit"),
-                   text(""),
-                   hbox({services, text("    "), containers}),
-                   text(""),
-                   text("Press ? to close") | dim | center,
+                   hbox({text(" Help ") | bold | color(AccentColor()), filler(), hbox(std::move(tabs))}),
+                   separator() | color(BorderColor()),
+                   // Fixed size, so switching tabs does not resize the dialog.
+                   vbox(std::move(body)) | size(HEIGHT, EQUAL, 19) | size(WIDTH, EQUAL, 86),
+                   separator() | color(BorderColor()),
+                   text(" Tab / ←→ / 1-4 switch  ·  Esc or ? close") | color(MutedColor()),
                }) |
                borderStyled(ROUNDED, BorderColor()) | bgcolor(BackgroundColor()) | center;
     }
