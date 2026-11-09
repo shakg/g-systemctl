@@ -72,9 +72,10 @@ const PLATFORMS = [
   { os: "macOS · launchd", w: "launch", c: "ctl", l: ["Jobs from launchctl list", "Start and stop with load / unload", "Details from launchctl list <label>", "Install with Homebrew"] },
 ];
 
-// Rows of the compose card: "p" projects, "c" their containers, "s" standalone containers, "-" the divider.
+// Rows of the compose card: "p" projects, "c" their containers, "s" standalone containers, "-" a group label (m: its count).
 type Row = { k: "p" | "c" | "s" | "-"; n: string; m?: string; s?: string; on?: boolean; d?: string; last?: boolean; warn?: boolean };
 const PROJECT: Row[] = [
+  { k: "-", n: "COMPOSE", m: "2 projects" },
   { k: "p", n: "shop", m: "compose · 4 services", s: "● 5/5 up", on: true, d: "⚠ 1 changed" },
   { k: "c", n: "api", m: "node:22-slim", s: "● running", on: true },
   { k: "c", n: "postgres", m: "postgres:16", s: "● running", on: true },
@@ -82,7 +83,7 @@ const PROJECT: Row[] = [
   { k: "c", n: "worker #1", m: "python:3.12-slim", s: "● running", on: true },
   { k: "c", n: "worker #2", m: "python:3.12-slim", s: "● running", on: true, last: true },
   { k: "p", n: "blog", m: "compose · saved", s: "○ down", d: "Alt+o to bring up" },
-  { k: "-", n: "standalone containers" },
+  { k: "-", n: "STANDALONE", m: "1 container" },
   { k: "s", n: "traefik", m: "traefik:v3.1", s: "● running", on: true },
 ];
 
@@ -102,7 +103,7 @@ const PROJECT: Row[] = [
           <div class="win">
             <div class="win-h"><b>Containers</b> · grouped by compose project <span class="r8">every 2s</span></div>
             <ul class="cp">
-              {PROJECT.map((r) => r.k === "-" ? <li class="dv">{r.n}</li> : (
+              {PROJECT.map((r) => r.k === "-" ? <li class:list={["dv", { sa: r.n === "STANDALONE" }]}><i>──</i><b>{r.n}</b>{r.m}<u /></li> : (
                 <li class:list={{ pj: r.k === "p" }}>
                   <span class="n">{r.k === "p" ? <i>{r.s === "○ down" ? "▹" : "▾"}</i> : r.k === "c" ? <i>{r.last ? "└" : "├"}</i> : null}{r.n}{r.warn && <em> ⚠</em>}</span>
                   <span class="m">{r.m}</span>
