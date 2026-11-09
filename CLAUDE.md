@@ -90,7 +90,7 @@ npm run preview:worker  # build, then serve dist/ with wrangler dev like product
 - Hero and Navigation demos replay frames recorded from the real binary (`src/data/demo.json`, rendered by `src/lib/term.js`). After a UI change, rebuild the app and re-record: `pip install pyte && python3 -I landing-page/tools/demo-capture/capture.py` (fake `systemctl`/`journalctl`/`ps`/`docker`/`sudo` live in `tools/demo-capture/fake.py`). Record at 120 columns; narrower layouts squeeze the containers list and the filter bar
 - `src/lib/github.ts` - star count and latest release tag, fetched at build time (no client API calls)
 - Site URL and base path come from `SITE_URL` / `SITE_BASE` (default `https://g-systemctl.org` + `/`). Link with `url()` from `src/lib/site.ts`, never hard-coded `/` paths
-- Look: soft dark base with pastel accents (tokens in `src/styles/global.css`). Surfaces are filled panels with no border, shadow or glow; 1px lines are used only for the page column frame (`.frame`), one hairline between sections and grid cell dividers. No window chrome or traffic-light dots
+- Look: soft dark base with pastel accents (tokens in `src/styles/global.css`). Surfaces are filled panels with no border, shadow or glow; 1px lines are used only for the page column frame (`.frame`) and one hairline between sections. Every section is heading + `.sub` line, then content inset inside the frame; grids (bento, keymap, FAQ) are filled cells with an 8px gap, not full-bleed hairline grids. No window chrome or traffic-light dots
 - Keep Lighthouse at 100: CSS is inlined, below-the-fold scripts start via `idle()`, and the hero terminal reserves its height to avoid layout shift
 
 **FTXUI Components Used:**
