@@ -15,6 +15,7 @@ namespace gsystemctl::ui::theme
     inline ftxui::Color TextColor() { return ftxui::Color::RGB(180, 186, 208); }
     inline ftxui::Color HeaderColor() { return ftxui::Color::RGB(112, 119, 150); }
     inline ftxui::Color AccentColor() { return ftxui::Color::RGB(110, 171, 147); }
+    inline ftxui::Color StandaloneColor() { return ftxui::Color::RGB(150, 160, 220); }
     inline ftxui::Color WarningColor() { return ftxui::Color::RGB(255, 190, 45); }
 
     inline ftxui::Element cell(const std::string &value, int width, ftxui::Color fg = TextColor(), bool bold_text = false)

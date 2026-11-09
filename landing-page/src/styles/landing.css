@@ -239,7 +239,11 @@ h1 .acc { color: var(--acc); }
 .cp .s { color: #8a8ea0; }
 .cp .s.on { color: var(--acc); }
 .cp .d.w { color: var(--warn); }
-.cp .dv { display: block; color: var(--muted); opacity: .7; padding-left: 14px; }
+.cp .dv { display: flex; align-items: center; gap: 8px; color: var(--muted); padding-left: 14px; }
+.cp .dv i, .cp .dv u { font-style: normal; text-decoration: none; color: var(--line); }
+.cp .dv b { color: var(--acc); }
+.cp .dv.sa b { color: var(--sky); }
+.cp .dv u { flex: 1; height: 1px; background: var(--line); }
 .dr-on { color: var(--acc); }
 .dr-w { color: var(--warn); }
 .dr-run { padding: 0 18px 16px; display: grid; gap: 10px; }

@@ -78,6 +78,9 @@ namespace gsystemctl::ui
         }
 
         const std::string kProjectKey = "project:";
+        // ListRow::index of a divider: which group it labels.
+        constexpr int kComposeSection = 0;
+        constexpr int kStandaloneSection = 1;
         // Drift for every project is checked every this many polls (~30 s); the open project on every poll.
         constexpr int kDriftEvery = 15;
 
@@ -559,11 +562,14 @@ namespace gsystemctl::ui
                 continue;
             if (any_project && !divider)
             {
-                rows_.push_back({ListRow::Kind::Divider});
+                rows_.push_back({ListRow::Kind::Divider, kStandaloneSection});
                 divider = true;
             }
             rows_.push_back({ListRow::Kind::Container, add(c)});
         }
+        // Label both groups only when both are listed.
+        if (divider)
+            rows_.insert(rows_.begin(), {ListRow::Kind::Divider, kComposeSection});
 
         // Keep the same row selected across refreshes and re-sorts.
         auto key_of = [this](const ListRow &row) -> std::string {
@@ -1669,6 +1675,20 @@ namespace gsystemctl::ui
                       }) |
                       bgcolor(PanelColor());
 
+        // Projects in the compose group, containers in the standalone group.
+        auto section_count = [this](int section) {
+            int count = 0;
+            bool inside = false;
+            for (const auto &r : rows_)
+            {
+                if (r.kind == ListRow::Kind::Divider)
+                    inside = r.index == section;
+                else if (inside && r.kind == (section == kComposeSection ? ListRow::Kind::Project : ListRow::Kind::Container))
+                    ++count;
+            }
+            return count;
+        };
+
         Elements rows;
         item_boxes_.resize(rows_.size());
         for (size_t i = 0; i < rows_.size(); ++i)
@@ -1678,7 +1698,17 @@ namespace gsystemctl::ui
             Element row;
             if (r.kind == ListRow::Kind::Divider)
             {
-                row = hbox({text("  standalone containers") | color(MutedColor()) | dim, filler()});
+                const bool compose = r.index == kComposeSection;
+                const auto fg = compose ? AccentColor() : StandaloneColor();
+                auto count = section_count(r.index);
+                auto noun = compose ? (count == 1 ? " project" : " projects")
+                                    : (count == 1 ? " container" : " containers");
+                row = hbox({
+                    text(" ──") | color(BorderColor()),
+                    text(compose ? " COMPOSE " : " STANDALONE ") | bold | color(fg),
+                    text(std::to_string(count) + noun + " ") | color(MutedColor()),
+                    separatorCharacter("─") | color(BorderColor()) | flex,
+                });
                 rows.push_back(row | reflect(item_boxes_[i]));
                 continue;
             }
