@@ -2,9 +2,9 @@
 import { defineConfig } from "astro/config";
 import sitemap from "@astrojs/sitemap";
 
-// Override for a custom domain: SITE_URL=https://example.com SITE_BASE=/ npm run build
-const site = process.env.SITE_URL ?? "https://shakg.github.io";
-const base = process.env.SITE_BASE ?? "/g-systemctl";
+// Override for another host, e.g. SITE_URL=https://shakg.github.io SITE_BASE=/g-systemctl npm run build
+const site = process.env.SITE_URL ?? "https://g-systemctl.org";
+const base = process.env.SITE_BASE ?? "/";
 
 export default defineConfig({
   site,

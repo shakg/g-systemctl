@@ -79,7 +79,7 @@ Astro static site: landing page + Markdown blog, deployed to GitHub Pages by `.g
 ```bash
 cd landing-page
 npm ci
-npm run dev      # http://localhost:4321/g-systemctl/
+npm run dev      # http://localhost:4321/
 npm run build    # astro check + static build into dist/
 ```
 
@@ -87,7 +87,7 @@ npm run build    # astro check + static build into dist/
 - `src/content/blog/*.md` - blog posts (schema in `src/content.config.ts`: title ≤70 chars, description 50–160 chars, date, tags, draft)
 - `src/components/BaseHead.astro` - SEO tags (canonical, Open Graph, Twitter, JSON-LD), self-hosted font preloads
 - `src/lib/github.ts` - star count and latest release tag, fetched at build time (no client API calls)
-- Site URL and base path come from `SITE_URL` / `SITE_BASE` (default `https://shakg.github.io` + `/g-systemctl`). Link with `url()` from `src/lib/site.ts`, never hard-coded `/` paths
+- Site URL and base path come from `SITE_URL` / `SITE_BASE` (default `https://g-systemctl.org` + `/`). Link with `url()` from `src/lib/site.ts`, never hard-coded `/` paths
 - Keep Lighthouse at 100: CSS is inlined, below-the-fold scripts start via `idle()`, and the hero terminal reserves its height to avoid layout shift
 
 **FTXUI Components Used:**

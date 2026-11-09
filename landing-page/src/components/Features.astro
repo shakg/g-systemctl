@@ -1,0 +1,259 @@
+---
+// Features section. Each card shows one still frame of the app, rendered at build time: no animation, no script.
+
+// Seeded so every build draws the same graphs.
+function rng(seed: number) {
+  return () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const rand = rng(7);
+const between = (a: number, b: number) => a + rand() * (b - a);
+const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+const walk = (prev: number, lo: number, hi: number, step: number) => clamp(prev + between(-step, step), lo, hi);
+
+// Block-character bar graph, `h` rows tall, newest sample on the right (same drawing as the app).
+const BL = " ▁▂▃▄▅▆▇█";
+function blocks(vals: number[], h: number, max: number, lo = 0) {
+  const rows: string[] = [];
+  for (let r = 0; r < h; r++) {
+    let s = "";
+    for (const x of vals) {
+      let n = clamp(Math.round(((Math.max(0, x - lo) / (max - lo)) * h * 8) - (h - 1 - r) * 8), 0, 8);
+      if (r === h - 1 && x > 0 && n === 0) n = 1;
+      s += BL[n];
+    }
+    rows.push(s);
+  }
+  return rows.join("\n");
+}
+function series(n: number, next: (p: number | undefined) => number) {
+  const v: number[] = [];
+  for (let i = 0; i < n; i++) v.push(next(v.at(-1)));
+  return v;
+}
+const COLS = 90; // wider than any card; the graph is right-aligned and clipped on the left
+const METRICS = [
+  { n: "CPU", cls: "", max: 60, lo: 0, f: (x: number) => x.toFixed(1) + "%", v: series(COLS, (p) => walk(p ?? 18, 2, 55, 7)) },
+  { n: "Memory", cls: "cool", max: 250, lo: 140, f: (x: number) => x.toFixed(0) + " MiB", v: series(COLS, (p) => walk(p ?? 186, 170, 240, 5)) },
+  { n: "Tasks", cls: "warm", max: 22, lo: 4, f: (x: number) => String(Math.round(x)), v: series(COLS, (p) => clamp(Math.round(walk(p ?? 9, 7, 20, 2)), 7, 20)) },
+  { n: "IO", cls: "pink", max: 900, lo: 0, f: (x: number) => x.toFixed(0) + " KB/s", v: series(COLS, () => (rand() < 0.3 ? between(300, 880) : between(10, 160))) },
+];
+
+const FILTER_Q = "pos";
+const FILTER = [
+  ["containerd.service", 1], ["cron.service", 1], ["docker.service", 1], ["nginx.service", 1],
+  ["postgresql.service", 1], ["postgres-exporter.service", 0], ["redis-server.service", 1], ["ssh.service", 1],
+].filter(([n]) => (n as string).includes(FILTER_Q)) as [string, number][];
+
+const LOGS: [string, string, string][] = [
+  ["09:42:01", "info", "GET /v1/orders 200 12ms"],
+  ["09:42:02", "info", "GET /v1/users/42 200 4ms"],
+  ["09:42:04", "warn", "slow query 412ms orders_by_user"],
+  ["09:42:05", "info", "POST /v1/checkout 201 38ms"],
+  ["09:42:07", "ev", "── api exited (137) · waiting for it to run again ──"],
+  ["09:42:11", "ok", "── api running · reattached with --since 09:42:11 ──"],
+  ["09:42:11", "info", "listening on :8080"],
+];
+
+const ENV: [string, string, boolean][] = [
+  ["NODE_ENV", "production", false], ["PORT", "8080", false], ["POSTGRES_PASSWORD", "", true],
+  ["API_TOKEN", "", true], ["AWS_SECRET_ACCESS_KEY", "", true], ["LOG_LEVEL", "info", false],
+];
+
+const PLATFORMS = [
+  { os: "Linux · systemd", w: "system", c: "ctl", l: ["System and --user units", "Details from systemctl show", "Logs from journalctl -f", "Edit unit files with Alt+e", "daemon-reload with Alt+Shift+r"] },
+  { os: "macOS · launchd", w: "launch", c: "ctl", l: ["Jobs from launchctl list", "Start and stop with load / unload", "Details from launchctl list <label>", "Install with Homebrew"] },
+  { os: "Linux or Docker Desktop", w: "docker", c: "", l: ["docker ps and docker stats every 2s", "Inspect env, ports, mounts, networks", "Logs from docker logs -f --tail 200", "Limits and restart policy with docker update", "Filter by name, image or Compose project"] },
+];
+
+const STATS: [string, string, string][] = [
+  ["2", "s", "Refresh interval for lists, stats and graphs"],
+  ["300", "", "Samples per graph — 10 minutes of history"],
+  ["3", "", "Backends: systemd, launchd, Docker"],
+  ["2", "arch", "Linux packages for amd64 and arm64"],
+];
+---
+
+<section class="sec" id="features">
+  <div class="wrap">
+    <div class="head">
+      <p class="eyebrow" data-r>Features</p>
+      <h2 data-r style="--d:1">What you reach for,<br /><span class="m">one key away.</span></h2>
+    </div>
+
+    <div class="bento">
+      <article class="card s2" data-r>
+        <div class="vg" aria-hidden="true">
+          <div class="win">
+            <div class="win-h"><b>postgresql.service</b> · graphs <span class="r8">every 2s</span></div>
+            <div class="graphs">
+              {METRICS.map((m) => (
+                <div class={`gm ${m.cls}`}>
+                  <div class="gl"><span>{m.n}</span><b>{m.f(m.v.at(-1)!)}</b></div>
+                  <div class="gw"><pre>{blocks(m.v, 3, m.max, m.lo)}</pre></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div>
+          <h3>Live graphs on the detail page</h3>
+          <p>CPU, memory, tasks and IO, sampled every 2 seconds with 10 minutes of history. Beside the summary at 100+
+            columns; <code>Alt+g</code> swaps them in on narrow terminals.</p>
+        </div>
+      </article>
+
+      <article class="card" data-r style="--d:1">
+        <div class="vg" aria-hidden="true">
+          <div class="win">
+            <div class="fl-in">Filter: <span>{FILTER_Q}</span><span class="cur">▏</span></div>
+            <ul class="fl-list">
+              {FILTER.map(([n, on]) => {
+                const i = n.indexOf(FILTER_Q);
+                return (
+                  <li>
+                    <span>{n.slice(0, i)}<mark>{FILTER_Q}</mark>{n.slice(i + FILTER_Q.length)}</span>
+                    <span class:list={["s", { o: !on }]}>{on ? "● active" : "○ inactive"}</span>
+                  </li>
+                );
+              })}
+            </ul>
+            <div class="fl-n">{FILTER.length} of 8 services</div>
+          </div>
+        </div>
+        <div>
+          <h3>Filter as you type</h3>
+          <p>No search mode. Start typing; the list narrows. <code>-f nginx</code> starts filtered.</p>
+        </div>
+      </article>
+
+      <article class="card" data-r>
+        <div class="vg" aria-hidden="true">
+          <div class="safe">
+            <div class="svcrow"><span>postgresql.service</span><span class="s">● active</span></div>
+            <div class="cdlg">
+              <div class="t">Confirm</div>
+              <div class="q">Stop postgresql.service?</div>
+              <div class="bb"><span class="yes">y  Stop</span><span class="no">n  Cancel</span></div>
+              <div class="f">y confirm · n / Esc cancel</div>
+            </div>
+            <div class="ks"><kbd class="bad">Enter</kbd><span class="tag bad">ignored</span><kbd class="good">y</kbd><span class="tag good">confirms</span></div>
+          </div>
+        </div>
+        <div>
+          <h3>Safe by default</h3>
+          <p><code>Enter</code> only navigates. Stop and restart ask first, and only <code>y</code> or a click confirms.</p>
+        </div>
+      </article>
+
+      <article class="card s2" data-r style="--d:1">
+        <div class="vg" aria-hidden="true">
+          <div class="win">
+            <div class="win-h"><b>worker.service</b> · summary</div>
+            <div class="cmd">
+              <div class="row"><span class="lbl">Type</span><span>simple</span></div>
+              <div class="row"><span class="lbl">User</span><span>app</span></div>
+              <div class="row"><span class="lbl">Command</span>
+                <div class="lines">
+                  <div><span class="bin">sh</span> <span class="op">-c</span></div>
+                  <div>  <span class="val">cd /srv/app</span></div>
+                  <div>  <span class="sepr">&amp;&amp;</span> <span class="val">exec</span> <span class="bin">python3</span> <span class="val">server.py</span></div>
+                  <div>    <span class="op">--workers</span> <span class="val">4</span></div>
+                  <div>    <span class="op">--bind</span> <span class="val">0.0.0.0:80</span></div>
+                </div>
+              </div>
+              <div class="row"><span class="lbl">Wanted by</span><span>multi-user.target</span></div>
+            </div>
+            <div class="cmd-note"><span class="sw">●</span><span>one option per line instead of one long, cut-off line</span></div>
+          </div>
+        </div>
+        <div>
+          <h3>Commands you can read</h3>
+          <p>Long <code>ExecStart</code> lines and Docker entrypoints are split one option per line. The script of
+            <code>sh -c</code> is indented one level deeper.</p>
+        </div>
+      </article>
+
+      <article class="card" data-r>
+        <div class="vg" aria-hidden="true">
+          <div class="win">
+            <div class="win-h"><b>api</b> · docker logs -f</div>
+            <div class="lg">
+              {LOGS.map(([ts, kind, msg]) => (
+                <div><span class="ts">{ts}</span> {kind === "ev" || kind === "ok" ? <span class={kind}>{msg}</span> : <><span class="lvl">{kind}</span> {msg}</>}</div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div>
+          <h3>Logs that keep following</h3>
+          <p><code>journalctl -f</code> for services, <code>docker logs -f</code> for containers. Reattaches after a
+            restart or a recreate with the same name.</p>
+        </div>
+      </article>
+
+      <article class="card" data-r style="--d:1">
+        <div class="vg" aria-hidden="true">
+          <div class="win">
+            <div class="win-h"><b>Resources</b> <span style="color:var(--warn)">api</span></div>
+            <div class="lim">
+              <div class="lr"><span>CPUs</span><span class="bar"><i style="--v:50%"></i></span><b>2.00</b></div>
+              <div class="lr"><span>Memory</span><span class="bar"><i style="--v:50%"></i></span><b>2g</b></div>
+              <div class="lr"><span>PIDs</span><span class="bar"><i style="--v:60%"></i></span><b>300</b></div>
+              <div class="lr"><span>Restart</span><span style="color:var(--text)">unless-stopped</span><b></b></div>
+              <div class="cmdl">docker update --cpus 2.00 --memory 2g --pids-limit 300 api</div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <h3>Limits, changed in place</h3>
+          <p><code>Alt+u</code> edits CPUs, memory, swap, PIDs and restart policy with <code>docker update</code>. No recreate.</p>
+        </div>
+      </article>
+
+      <article class="card" data-r style="--d:2">
+        <div class="vg" aria-hidden="true">
+          <div class="win">
+            <div class="win-h"><b>api</b> · environment</div>
+            <div class="env">
+              {ENV.map(([k, v, secret]) => (
+                <div><span class="k">{k}</span>=<span class:list={["v", { mask: secret }]}>{secret ? "••••••••" : v}</span></div>
+              ))}
+            </div>
+            <div class="env-k"><kbd>Alt</kbd><kbd>s</kbd><span>show / hide</span></div>
+          </div>
+        </div>
+        <div>
+          <h3>Secrets stay masked</h3>
+          <p>Env values whose names look secret — <code>PASSWORD</code>, <code>TOKEN</code>, <code>KEY</code> — are hidden
+            until you press <code>Alt+s</code>.</p>
+        </div>
+      </article>
+
+      <article class="card s3 plat" data-r>
+        {PLATFORMS.map((p) => (
+          <div>
+            <div class="plat-os">{p.os}</div>
+            <div class="plat-word">{p.w}{p.c && <span class="c">{p.c}</span>}</div>
+            <ul class="plat-list">{p.l.map((t) => <li>{t}</li>)}</ul>
+          </div>
+        ))}
+      </article>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="stats">
+      {STATS.map(([v, unit, label], i) => (
+        <div class="stat" data-r style={`--d:${i}`}>
+          <div class="v">{v}{unit && <small>{unit}</small>}</div>
+          <div class="l">{label}</div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
