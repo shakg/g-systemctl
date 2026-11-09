@@ -13,9 +13,10 @@ export interface Props {
   published?: Date;
   modified?: Date;
   jsonLd?: Record<string, unknown> | Record<string, unknown>[];
+  noindex?: boolean;
 }
 
-const { title, description, image = "og.png", type = "website", published, modified, jsonLd } = Astro.props;
+const { title, description, image = "og.png", type = "website", published, modified, jsonLd, noindex = false } = Astro.props;
 const canonical = new URL(Astro.url.pathname, Astro.site);
 const ogImage = new URL(url(image), Astro.site);
 
@@ -34,7 +35,7 @@ const fontFaces = `
 <link rel="canonical" href={canonical} />
 <meta name="theme-color" content="#111217" />
 <meta name="color-scheme" content="dark" />
-<meta name="robots" content="index, follow, max-image-preview:large" />
+<meta name="robots" content={noindex ? "noindex" : "index, follow, max-image-preview:large"} />
 <meta name="generator" content={Astro.generator} />
 
 <link rel="icon" href={url("favicon.svg")} type="image/svg+xml" />

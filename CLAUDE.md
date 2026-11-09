@@ -74,13 +74,14 @@ g-systemctl/
 
 **Website (`landing-page/`):**
 
-Astro static site: landing page + Markdown blog, deployed to GitHub Pages by `.github/workflows/pages.yml`.
+Astro static site: landing page + Markdown blog, served by a Cloudflare Worker with static assets (`landing-page/wrangler.jsonc`). `.github/workflows/deploy-site.yml` builds and deploys on pushes to `main` that touch `landing-page/` (needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets); `npm run deploy` deploys by hand.
 
 ```bash
 cd landing-page
 npm ci
 npm run dev      # http://localhost:4321/
 npm run build    # astro check + static build into dist/
+npm run preview:worker  # build, then serve dist/ with wrangler dev like production
 ```
 
 - `src/pages/index.astro` - landing page markup; `src/scripts/landing.js` drives its animations; `src/styles/landing.css` its styles

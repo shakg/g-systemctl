@@ -1,9 +1,10 @@
 name: Deploy site
 
+# Builds landing-page/ and deploys it to the Cloudflare Worker in landing-page/wrangler.jsonc.
 on:
   push:
     branches: [main]
-    paths: ['landing-page/**', '.github/workflows/pages.yml']
+    paths: ['landing-page/**', '.github/workflows/deploy-site.yml']
   release:
     types: [published]   # refreshes the version shown on the page
   schedule:
@@ -12,15 +13,13 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
+  group: deploy-site
   cancel-in-progress: true
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -41,16 +40,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/upload-pages-artifact@v3
+      - name: Deploy to Cloudflare
+        uses: cloudflare/wrangler-action@v3
         with:
-          path: landing-page/dist
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: landing-page
+          command: deploy

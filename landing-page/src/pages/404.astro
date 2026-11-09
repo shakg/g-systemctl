@@ -1,0 +1,20 @@
+---
+import Base from "../layouts/Base.astro";
+import { url } from "../lib/site";
+---
+
+<Base title="Page not found — g-systemctl" description="This page does not exist. Go to the g-systemctl home page or the blog." noindex>
+  <main id="content" class="page frame">
+    <div class="wrap">
+      <header class="page-head">
+        <p class="eyebrow">404</p>
+        <h1>Page not found</h1>
+        <p class="lead">This page does not exist. Try the <a class="rss" href={url()}>home page</a> or the <a class="rss" href={url("blog/")}>blog</a>.</p>
+      </header>
+    </div>
+  </main>
+</Base>
+
+<style>
+  .rss { color: var(--acc-2); text-decoration: underline; text-underline-offset: 3px; }
+</style>
