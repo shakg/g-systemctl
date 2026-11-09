@@ -202,6 +202,7 @@ idle(function install() {
       if (navigator.clipboard && isSecureContext) await navigator.clipboard.writeText(text);
       else { const ta = document.createElement("textarea"); ta.value = text; ta.style.cssText = "position:fixed;left:-9999px"; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); }
       copy.textContent = "Copied"; copy.classList.add("done");
+      window.oa?.track?.("install_copy", { method: cur });
     } catch { copy.textContent = "Copy failed"; }
     setTimeout(() => { copy.textContent = "Copy"; copy.classList.remove("done"); }, 1600);
   });

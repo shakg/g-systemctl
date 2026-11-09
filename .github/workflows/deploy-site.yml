@@ -39,6 +39,9 @@ jobs:
         run: npm run build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Self-hosted Open Analytics; unset means no tracker in the build.
+          PUBLIC_OA_COLLECTOR: ${{ vars.OA_COLLECTOR }}
+          PUBLIC_OA_KEY: ${{ vars.OA_KEY }}
 
       - name: Deploy to Cloudflare
         uses: cloudflare/wrangler-action@v3
