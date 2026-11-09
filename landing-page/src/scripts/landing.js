@@ -462,15 +462,6 @@ idle(function keymap() {
   (async () => { let i = 0; for (; ;) { tiles.forEach((t) => t.classList.remove("hot")); const t = tiles[i++ % tiles.length]; void t.offsetWidth; t.classList.add("hot"); await wait(1100); } })();
 });
 
-/* ================= VIDEO ================= */
-idle(function video() {
-  const v = $("#film");
-  new IntersectionObserver(([e]) => {
-    if (e.isIntersecting) { if (v.preload === "none") { v.preload = "auto"; v.load(); } v.play().catch(() => { }); }
-    else v.pause();
-  }, { threshold: .35 }).observe(v);
-});
-
 /* ================= INSTALL ================= */
 idle(function install() {
   const R = "https://github.com/shakg/g-systemctl/releases/latest/download";

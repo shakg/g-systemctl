@@ -288,10 +288,6 @@ h1 .acc { color: var(--acc); }
 .kt.hot kbd { animation: press .5s var(--ease); }
 .mouse { margin-top: 22px; color: var(--muted); font-size: 14.5px; display: flex; gap: 10px; align-items: center; }
 
-/* ---------- video ---------- */
-.film { position: relative; border-radius: 14px; padding: 12px; background: var(--panel); }
-.film video { display: block; width: 100%; border-radius: 8px; background: #000; aspect-ratio: 16 / 9; object-fit: contain; }
-
 /* ---------- install ---------- */
 .inst { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); gap: 48px; align-items: start; }
 .itabs { display: grid; gap: 8px; margin-top: 30px; }
