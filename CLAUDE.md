@@ -88,7 +88,7 @@ npm run build    # astro check + static build into dist/
 - `src/components/BaseHead.astro` - SEO tags (canonical, Open Graph, Twitter, JSON-LD), self-hosted font preloads
 - `src/lib/github.ts` - star count and latest release tag, fetched at build time (no client API calls)
 - Site URL and base path come from `SITE_URL` / `SITE_BASE` (default `https://g-systemctl.org` + `/`). Link with `url()` from `src/lib/site.ts`, never hard-coded `/` paths
-- Look: soft dark base with pastel accents (tokens in `src/styles/global.css`). Surfaces are filled panels with no border, shadow or glow; 1px lines are used only for the page column frame (`.frame`), section strips (`SectionBar`) and grid cell dividers
+- Look: soft dark base with pastel accents (tokens in `src/styles/global.css`). Surfaces are filled panels with no border, shadow or glow; 1px lines are used only for the page column frame (`.frame`), one hairline between sections and grid cell dividers. No window chrome or traffic-light dots
 - Keep Lighthouse at 100: CSS is inlined, below-the-fold scripts start via `idle()`, and the hero terminal reserves its height to avoid layout shift
 
 **FTXUI Components Used:**

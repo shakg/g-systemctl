@@ -53,15 +53,12 @@ a { color: inherit; text-decoration: none; }
 }
 .frame > * { position: relative; z-index: 1; }
 
-/* Section strip: full column width, hairlines above and below, window dots and a path label. */
-.sbar {
-  display: flex; align-items: center; gap: 7px; height: 40px; margin: 0 calc(-1 * var(--pad)) 64px; padding: 0 var(--pad);
-  border-block: 1px solid var(--line);
-  font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: .04em;
+/* Sections are separated by one hairline across the page column. */
+.sec::before, .final::before {
+  content: ""; position: absolute; top: 0; left: 50%; z-index: 1; pointer-events: none;
+  width: min(1180px, 100% - 24px); transform: translateX(-50%);
+  border-top: 1px solid var(--line);
 }
-.sbar i { width: 9px; height: 9px; border-radius: 50%; background: var(--panel-2); }
-.sbar i:nth-child(1) { background: var(--err); } .sbar i:nth-child(2) { background: var(--warn); } .sbar i:nth-child(3) { background: var(--acc); }
-.sbar span { margin-left: 10px; }
 
 /* ---------- nav ---------- */
 .nav {
@@ -112,7 +109,7 @@ kbd, .kbd {
 .cap { transition: opacity .3s, transform .3s; }
 .cap.out { opacity: 0; transform: translateY(4px); }
 section { position: relative; }
-.sec { padding: 0 0 112px; }
+.sec { padding: 96px 0 112px; }
 h2 { margin: 0; font-size: clamp(30px, 4.2vw, 52px); line-height: 1.06; letter-spacing: -.03em; color: var(--hi); font-weight: 600; max-width: 820px; }
 .sub { max-width: 600px; margin: 16px 0 0; font-size: 17px; color: var(--text); }
 .head { margin-bottom: 48px; }
