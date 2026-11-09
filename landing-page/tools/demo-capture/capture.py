@@ -35,6 +35,10 @@ for name in ("systemctl", "journalctl", "ps", "docker", "sudo"):
     if not os.path.islink(link):
         os.symlink(os.path.join(HERE, "fake.py"), link)
 
+# The compose project the fake docker reports must exist, since the app runs compose from its directory.
+os.makedirs("/tmp/shop", exist_ok=True)
+open("/tmp/shop/compose.yaml", "a").close()
+
 screen = pyte.Screen(COLS, ROWS)
 stream = pyte.ByteStream(screen)
 
@@ -139,6 +143,12 @@ for ch in "2g":
     press(ch, [ch], "Edit limits with docker update", 300, 0.3)
 pump(0.4)
 press("\r", ["Enter"], "Applied while the container runs", 1400, 1.5)
+live(1, 900)
+press("\x1b[A", ["↑"], "⚠ web's compose file changed", 1600, 0.6)
+press("\r", ["Enter"], "Compose project: services, merged logs, graphs", 900, 1.5)
+live(4, 800)
+press(ESC + "u", ["Alt", "u"], "Alt+u runs compose up -d", 1700, 0.8)
+press("y", ["y"], "Changed services are recreated", 1200, 2.5)
 live(2, 900)
 os.kill(pid, 9)
 

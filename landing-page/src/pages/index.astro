@@ -11,7 +11,7 @@ const { tag } = await repoInfo();
 
 // Stills from the recording of the real app (tools/demo-capture).
 const LEVELS = [
-  { n: "01", title: "List", text: "Units or containers with status, PID, CPU and memory. Type to filter.", key: "↓",
+  { n: "01", title: "List", text: "Containers, compose projects or units with status, CPU and memory. Type to filter.", key: "↓",
     frame: demo.frames.findIndex((f) => f.k[0] === "↓") },
   { n: "02", title: "Detail page", text: "Summary, graphs and the latest log lines. Start, stop and restart act on this item.", key: "Enter",
     frame: findFrame(demo, "Detail page: summary, graphs and logs") + 6 },
@@ -20,8 +20,10 @@ const LEVELS = [
 ];
 
 const CMDS = [
+  "docker ps", "docker stats", "docker inspect", "docker logs -f --tail 200", "docker update --cpus 2",
+  "docker compose up -d", "docker compose logs -f", "docker compose config --hash", "docker compose down",
   "systemctl list-units", "systemctl show -p", "journalctl -u nginx -f", "systemctl edit --full", "systemctl daemon-reload",
-  "launchctl list", "launchctl load", "docker ps", "docker stats", "docker inspect", "docker logs -f --tail 200", "docker update --cpus 2",
+  "launchctl list", "launchctl load",
 ];
 
 const KEYS: [string[], string, string][] = [
@@ -30,9 +32,11 @@ const KEYS: [string[], string, string][] = [
   [["Alt", "o"], "Start", "Selected or open item"], [["Alt", "x"], "Stop", "Asks y/n"],
   [["Alt", "r"], "Restart", "Asks y/n"], [["Alt", "g"], "Graphs", "Beside or instead of the summary"],
   [["Alt", "l"], "Open logs", "Detail page, logs expanded"], [["Alt", "e"], "Edit unit", "systemctl edit --full"],
-  [["Alt", "⇧", "r"], "Reload", "daemon-reload / refresh now"], [["Alt", "u"], "Limits", "docker update"],
-  [["Alt", "s"], "Secrets", "Show masked env values"], [["Tab"], "Switch tab", "Services ⇄ Containers"],
-  [["?"], "Help", "All shortcuts"], [["Alt", "q"], "Quit", "Or Esc on the list"],
+  [["Alt", "⇧", "r"], "Reload", "daemon-reload / refresh now"], [["Alt", "u"], "Limits / up", "docker update, or compose up -d"],
+  [["Alt", "s"], "Secrets", "Show masked env values"], [["Tab"], "Switch tab", "Containers ⇄ Services"],
+  [["←", "→"], "Fold", "Compose project rows"], [["Alt", "d"], "Down", "compose down, asks y/n"],
+  [["Alt", "p"], "Pull", "compose pull"], [["Alt", "a"], "Add project", "By compose file or folder"],
+  [["?"], "Help", "Tabs: containers, services, general, settings"], [["Alt", "q"], "Quit", "Or Esc on the list"],
 ];
 
 // Must match the "deb" entry in scripts/landing.js; this is what renders before JS runs.
@@ -45,8 +49,10 @@ const DEB: [string, string][] = [
 
 // Answers are trusted HTML written here.
 const FAQ: [string, string][] = [
-  ["What is g-systemctl?", "A terminal UI that runs <code>systemctl</code>, <code>launchctl</code> and <code>docker</code> for you. It lists services and containers, filters as you type, shows a detail page with status, graphs and logs, and starts, stops or restarts the selected item."],
-  ["Do I need sudo?", "Only to start, stop or restart system services. Run <code>sudo g-systemctl</code> for that. If sudo needs a password, the app asks for it. <code>--user</code> shows your user units instead."],
+  ["What is g-systemctl?", "A terminal UI that runs <code>docker</code>, <code>docker compose</code>, <code>systemctl</code> and <code>launchctl</code> for you. It lists containers, compose projects and services, filters as you type, shows a detail page with status, graphs and logs, and starts, stops or restarts the selected item."],
+  ["Does it work with Docker Compose?", "Yes. Containers are grouped under their compose project. A project row starts, stops or restarts the whole project, and <code>Alt+u</code>, <code>Alt+b</code>, <code>Alt+p</code> and <code>Alt+d</code> run <code>up -d</code>, <code>up --build</code>, <code>pull</code> and <code>down</code>. Commands run from the project's folder with the compose files recorded on its containers. A warning appears when a compose file changed since its containers were created."],
+  ["Do I need sudo?", "Not for containers, if your user can reach the Docker socket. Starting, stopping or restarting system services needs <code>sudo g-systemctl</code>; if sudo needs a password, the app asks for it. <code>--user</code> shows your user units instead."],
+  ["Which tab opens first?", "Containers. If Docker is not reachable, it opens Services. <code>-s</code> opens Services and <code>-c</code> opens Containers either way."],
   ["Does it work on macOS?", "Yes. It uses <code>launchctl</code> for services and installs with Homebrew. The Containers tab works with Docker Desktop. Service graphs need systemd, so they are Linux only; container graphs work on both."],
   ["Does it install an agent or daemon?", "No. It is one binary. It runs commands such as <code>systemctl show</code>, <code>journalctl -f</code>, <code>docker stats</code> and <code>docker update</code>."],
   ["Can it change a running container's limits?", "Yes. <code>Alt+u</code> edits CPUs, memory, memory + swap, PIDs limit and restart policy with <code>docker update</code>. The container keeps running. Docker cannot change env, ports or volumes without recreating the container, so g-systemctl does not offer that."],
@@ -87,11 +93,11 @@ const jsonLd = [
     <div class="wrap hero-copy">
       {tag && <a class="pill" href={`${SITE.repo}/releases/tag/${tag}`}><b>LATEST</b><span>{tag} release notes</span></a>}
       <h1>
-        <span class="w" style="--i:0">Services</span> <span class="w" style="--i:1">and</span> <span class="w" style="--i:2">containers,</span><br />
+        <span class="w" style="--i:0">Containers</span> <span class="w" style="--i:1">and</span> <span class="w" style="--i:2">services,</span><br />
         <span class="w acc" style="--i:3">in</span> <span class="w acc" style="--i:4">one</span> <span class="w acc" style="--i:5">terminal</span> <span class="w acc" style="--i:6">UI.</span>
       </h1>
-      <p class="lede">For <code>systemd</code>, <code>launchd</code> and <code>Docker</code>. Type to filter, press Enter to see
-        status, graphs and logs, and start, stop or restart with one key.</p>
+      <p class="lede">For <code>Docker</code>, <code>Docker Compose</code>, <code>systemd</code> and <code>launchd</code>. Type to
+        filter, press Enter to see status, graphs and logs, and start, stop or restart with one key.</p>
       <div class="ctas">
         <a class="btn primary" href="#install">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>
@@ -106,7 +112,7 @@ const jsonLd = [
     <div class="wrap">
       <div class="stage">
         <div class="term" id="term" role="img"
-          aria-label="Recording of g-systemctl: filtering services, opening the nginx detail page with graphs and logs, confirming a restart, then changing a Docker container's limits.">
+          aria-label="Recording of g-systemctl: filtering services, opening the nginx detail page with graphs and logs, confirming a restart, changing a Docker container's limits, then opening a Docker Compose project and applying its changed compose file.">
           <div class="chrome"><span>~ — sudo g-systemctl</span></div>
           <div class="tbody">
             <div class="scr tf" id="scr" set:html={frameHtml(demo, 0)}></div>
@@ -200,7 +206,7 @@ const jsonLd = [
     <div class="wrap">
       <div class="head">
         <h2 data-r>FAQ</h2>
-        <p class="sub" data-r style="--d:1">Sudo, macOS, Docker limits and safety.</p>
+        <p class="sub" data-r style="--d:1">Compose, sudo, macOS, Docker limits and safety.</p>
       </div>
       <div class="faq">
         {FAQ.map(([q, a], i) => (
@@ -216,7 +222,7 @@ const jsonLd = [
   <!-- ================= FINAL ================= -->
   <section class="final">
     <div class="wrap">
-      <p class="big" data-r><span class="p">$</span> sudo g-systemctl<span class="caret"></span></p>
+      <p class="big" data-r><span class="p">$</span> g-systemctl<span class="caret"></span></p>
       <div class="ctas" style="animation:none">
         <a class="btn primary" href="#install">Install</a>
         <a class="btn" href={SITE.repo} target="_blank" rel="noopener">Star on GitHub</a>

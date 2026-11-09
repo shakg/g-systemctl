@@ -666,7 +666,7 @@ namespace gsystemctl::ui
         if (logs_full_)
             return "";
         if (detail_open_ && !detail_project_.empty())
-            return "  ·  Alt+u up  ·  Alt+p pull  ·  Alt+d down  ·  Enter expand logs  ·  Esc back  ·  ? help  ";
+            return "  ·  Alt+u up  ·  Alt+d down  ·  Enter logs  ·  Esc back  ·  ? help  ";
         if (detail_open_)
         {
             const auto *c = action_target();

@@ -104,8 +104,8 @@ $$(".card").forEach((c) => c.addEventListener("pointermove", (e) => {
   idle(async () => {
     const [{ default: demo }, { frameHtml, findFrame }] = await Promise.all([import("../data/demo.json"), import("../lib/term.js")]);
     if (RM) {
-      scr.innerHTML = frameHtml(demo, findFrame(demo, "Detail page: summary, graphs and logs") + 3);
-      caption("Detail page: summary, graphs and logs");
+      scr.innerHTML = frameHtml(demo, findFrame(demo, "Compose project: services, merged logs, graphs") + 3);
+      caption("Compose project: services, merged logs, graphs");
       return;
     }
     for (;;) {

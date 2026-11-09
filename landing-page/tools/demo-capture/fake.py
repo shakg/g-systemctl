@@ -113,16 +113,19 @@ CTRS = [  # id, name, image, running, status, ports, project, cpu, mem MiB, limi
 ]
 
 
-COMPOSE_DIR = "/tmp"
+COMPOSE_DIR = "/tmp/shop"  # capture.py creates it with a stub compose.yaml
+# Created by `compose up`; lives in the per-run config dir capture.py sets.
+UP_MARKER = os.path.join(os.environ.get("XDG_CONFIG_HOME", "/tmp"), "fake-compose-up")
 HASH = "5f0c" * 16
 DEPENDS = {"web": "api:service_started:false", "api": "postgres:service_healthy:true,redis:service_started:false",
            "worker": "redis:service_started:false"}
 
 
 def compose():
+    # Global flags come before the subcommand; `logs -f` means follow.
     rest, i = [], 1
     while i < len(args):
-        if args[i] in ("-p", "-f", "--project-directory"):
+        if not rest and args[i] in ("-p", "-f", "--project-directory"):
             i += 2
             continue
         rest.append(args[i])
@@ -131,15 +134,27 @@ def compose():
     if sub == "version":
         print("2.29.7")
     elif sub == "config" and "--hash" in rest:
+        # web's compose file changed until `up` recreates it.
         for c in CTRS:
             if c[6]:
-                print(f"{c[1]} {HASH}")
+                drifted = c[1] == "web" and not os.path.exists(UP_MARKER)
+                print(f"{c[1]} {'a1b2' * 16 if drifted else HASH}")
+    elif sub == "up":
+        open(UP_MARKER, "w").close()
     elif sub == "config":
         print("name: shop\nservices: {}")
     elif sub == "logs":
+        lines = {
+            "web": lambda: f'172.18.0.1 "GET /assets/app.js HTTP/1.1" 200 {random.randint(4000, 49000)}',
+            "api": lambda: f"GET /v1/orders 200 {random.randint(2, 40)}ms",
+            "postgres": lambda: "LOG:  checkpoint complete: wrote 42 buffers",
+            "redis": lambda: "1:M Background saving terminated with success",
+            "worker": lambda: f"processed job #{random.randint(1000, 9999)} in {random.randint(20, 400)}ms",
+        }
         svcs = [c[1] for c in CTRS if c[6]]
         while True:
-            print(f"{random.choice(svcs) + '-1':<10}| GET /v1/orders 200 {random.randint(2, 40)}ms", flush=True)
+            s = random.choice(svcs)
+            print(f"{s + '-1':<11}| {lines[s]()}", flush=True)
             if "-f" not in rest:
                 break
             time.sleep(0.6)
