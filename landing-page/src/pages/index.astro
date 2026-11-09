@@ -1,0 +1,429 @@
+---
+import Base from "../layouts/Base.astro";
+import { SITE, url } from "../lib/site";
+import { repoInfo } from "../lib/github";
+import "../styles/landing.css";
+
+const { tag } = await repoInfo();
+
+const CMDS = [
+  "systemctl list-units", "systemctl show -p", "journalctl -u nginx -f", "systemctl edit --full", "systemctl daemon-reload",
+  "launchctl list", "launchctl load", "docker ps", "docker stats", "docker inspect", "docker logs -f --tail 200", "docker update --cpus 2",
+];
+
+const KEYS: [string[], string, string][] = [
+  [["↑", "↓"], "Move", "Or scroll the detail page"], [["a–z"], "Filter", "Just start typing"],
+  [["Enter"], "Open / expand", "List → detail → full logs"], [["Esc"], "Back", "One level up, then clear filter"],
+  [["Alt", "o"], "Start", "Selected or shown item"], [["Alt", "x"], "Stop", "Asks y/n"],
+  [["Alt", "r"], "Restart", "Asks y/n"], [["Alt", "g"], "Graphs", "Beside or instead of the summary"],
+  [["Alt", "l"], "Logs first", "Open the detail page expanded"], [["Alt", "e"], "Edit unit", "systemctl edit --full"],
+  [["Alt", "⇧", "r"], "Reload", "daemon-reload / refresh now"], [["Alt", "u"], "Limits", "docker update"],
+  [["Alt", "s"], "Secrets", "Show masked env values"], [["Tab"], "Switch tab", "Services ⇄ Containers"],
+  [["?"], "Help", "Every shortcut"], [["Alt", "q"], "Quit", "Or Esc from the list"],
+];
+
+// Must match the "deb" entry in scripts/landing.js; this is what renders before JS runs.
+const DEB: [string, string][] = [
+  ["c", "# amd64 (use -arm64.deb on Raspberry Pi OS 64-bit, Graviton, ...)"],
+  ["$", "curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/g-systemctl-linux-amd64.deb"],
+  ["$", "sudo apt install ./g-systemctl-linux-amd64.deb"],
+  ["$", "sudo g-systemctl"],
+];
+
+// Answers are trusted HTML written here.
+const FAQ: [string, string][] = [
+  ["What is g-systemctl?", "A terminal UI for <code>systemctl</code>, <code>launchctl</code> and <code>docker</code>. It lists services and containers with live status, lets you filter by typing, opens a detail page with graphs and logs, and starts, stops or restarts the selected item."],
+  ["Does it need root?", "Listing and logs work as a normal user. Starting and stopping system services needs root, so run <code>sudo g-systemctl</code>. If sudo asks for a password, the app prompts for it. Use <code>--user</code> for your user units."],
+  ["Does it work on macOS?", "Yes. On macOS it drives <code>launchctl</code> and installs with Homebrew. The Containers tab works with Docker Desktop. Detail-page graphs are Linux only."],
+  ["Does it install an agent or daemon?", "No. It is one binary that runs the same commands you would type: <code>systemctl show</code>, <code>journalctl -f</code>, <code>docker stats</code>, <code>docker update</code>."],
+  ["Can it change a running container's limits?", "Yes. <code>Alt+u</code> edits CPUs, memory, memory + swap, PIDs limit and restart policy with <code>docker update</code>, without recreating the container. Env, ports and volumes need a recreate, so it does not touch them."],
+  ["Can I stop a service by accident?", "No. <code>Enter</code> only navigates. Stop and restart open a prompt that runs only on <code>y</code> or a click on its confirm button."],
+];
+
+const jsonLd = [
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: "g-systemctl",
+    description: SITE.description,
+    url: new URL(url(), Astro.site).href,
+    applicationCategory: "DeveloperApplication",
+    applicationSubCategory: "System administration",
+    operatingSystem: "Linux, macOS",
+    license: "https://opensource.org/licenses/MIT",
+    downloadUrl: `${SITE.repo}/releases/latest`,
+    ...(tag ? { softwareVersion: tag.replace(/^v/, "") } : {}),
+    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+    sameAs: [SITE.repo],
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: SITE.name,
+    url: new URL(url(), Astro.site).href,
+  },
+];
+---
+
+<Base title={SITE.title} description={SITE.description} jsonLd={jsonLd}>
+<main id="content">
+  <!-- ================= HERO ================= -->
+  <section class="hero">
+    <canvas id="field" aria-hidden="true"></canvas>
+    <div class="wrap hero-copy">
+      <a class="pill" href="#features"><b>NEW</b><span>{tag ? `${tag} — live graphs and a Docker containers tab` : "Live graphs and a Docker containers tab"}</span></a>
+      <h1>
+        <span class="w" style="--i:0">Every</span> <span class="w" style="--i:1">service.</span><br />
+        <span class="w acc" style="--i:2">One</span> <span class="w acc" style="--i:3">terminal.</span>
+      </h1>
+      <p class="lede">A keyboard-driven TUI for <code>systemd</code>, <code>launchd</code> and <code>Docker</code>. Filter,
+        inspect, graph, restart and follow logs — without typing a unit name twice.</p>
+      <div class="ctas">
+        <a class="btn primary" href="#install">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>
+          Install
+        </a>
+        <a class="btn" href={SITE.repo} target="_blank" rel="noopener">
+          View source <span class="k">C++17 · MIT</span>
+        </a>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <div class="stage">
+        <div class="term" id="term" role="img"
+          aria-label="Animated g-systemctl session: filtering services, opening the nginx detail page with live graphs and logs, confirming a restart, then changing a Docker container's limits.">
+          <div class="chrome"><i></i><i></i><i></i><span>~ — sudo g-systemctl</span></div>
+          <div class="tbody">
+            <div class="scr" id="scr"></div>
+          </div>
+        </div>
+        <div class="keycast" aria-hidden="true">
+          <div class="keys" id="kc-keys"></div>
+          <div class="cap" id="kc-cap"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="marquee" aria-label="Commands g-systemctl runs for you">
+      <div class="marquee-label">No agent, no daemon. It runs the commands you would.</div>
+      <div class="track">{[...CMDS, ...CMDS].map((c, i) => <span aria-hidden={i >= CMDS.length ? "true" : undefined}>{c}</span>)}</div>
+    </div>
+  </section>
+
+  <!-- ================= LEVELS ================= -->
+  <section class="sec" id="navigate">
+    <div class="wrap levels">
+      <div>
+        <p class="eyebrow" data-r>Navigation</p>
+        <h2 data-r style="--d:1">Enter goes down.<br /><span class="m">Esc comes back.</span></h2>
+        <ol class="steps" id="steps">
+          <li data-r style="--d:2" class="on"><span class="n">01</span>
+            <div>
+              <h3>List</h3>
+              <p>Every unit or container with status, PID, CPU and memory. Type anywhere to filter.</p>
+            </div>
+          </li>
+          <li data-r style="--d:3"><span class="n">02</span>
+            <div>
+              <h3>Detail page</h3>
+              <p>Summary, live graphs and a short log strip. Actions target the item shown.</p>
+            </div>
+          </li>
+          <li data-r style="--d:4"><span class="n">03</span>
+            <div>
+              <h3>Full-size logs</h3>
+              <p>The strip expands to the whole screen. <code>PgUp</code> / <code>PgDn</code> to scroll.</p>
+            </div>
+          </li>
+        </ol>
+      </div>
+      <div class="lv-wrap" data-r style="--d:2">
+        <div class="lv" id="lv" data-level="0" aria-hidden="true">
+          <div class="lv-bar"><b>g-systemctl</b><span>Services</span><span style="margin-left:auto">Filter: _</span></div>
+          <div class="lv-list" id="lv-list"></div>
+          <div class="lv-detail">
+            <div class="lv-title">nginx.service <span class="st">● active (running)</span>
+              <div class="bts"><span>Start</span><span>Stop</span><span>Restart</span><span>Back</span></div>
+            </div>
+            <div class="lv-mid">
+              <div class="lv-sum">
+                <div><span>State</span><span>active (running)</span></div>
+                <div><span>Unit file</span><span>enabled</span></div>
+                <div><span>Main PID</span><span>1184</span></div>
+                <div><span>Tasks</span><span>5</span></div>
+                <div><span>Memory</span><span>12.4 MiB</span></div>
+                <div><span>Restart</span><span>on-failure</span></div>
+              </div>
+              <div class="lv-gr" id="lv-gr"></div>
+            </div>
+            <div></div>
+            <div class="lv-logs">
+              <div class="lv-lh">Logs <span>journalctl -u nginx -f</span><em id="lv-exp">⤢ Expand</em></div>
+              <div class="lv-ll" id="lv-ll"></div>
+            </div>
+          </div>
+        </div>
+        <div class="lv-key" id="lv-key"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= FEATURES ================= -->
+  <section class="sec" id="features">
+    <div class="wrap">
+      <div class="head">
+        <p class="eyebrow" data-r>Features</p>
+        <h2 data-r style="--d:1">What you reach for,<br /><span class="m">one key away.</span></h2>
+      </div>
+
+      <div class="bento">
+        <!-- graphs -->
+        <article class="card s2" data-r>
+          <div class="vg">
+            <div class="win">
+              <div class="win-h"><b>postgresql.service</b> · graphs <span class="r8">every 2s</span></div>
+              <div class="graphs" id="graphs"></div>
+            </div>
+          </div>
+          <div>
+            <h3>Live graphs on the detail page</h3>
+            <p>CPU, memory, tasks and IO, sampled every 2 seconds with 10 minutes of history. Beside the summary at 100+
+              columns; <code>Alt+g</code> swaps them in on narrow terminals.</p>
+          </div>
+        </article>
+
+        <!-- filter -->
+        <article class="card" data-r style="--d:1">
+          <div class="vg">
+            <div class="win">
+              <div class="fl-in">Filter: <span id="fl-q"></span><span class="cur">▏</span></div>
+              <ul class="fl-list" id="fl-list"></ul>
+            </div>
+          </div>
+          <div>
+            <h3>Filter as you type</h3>
+            <p>No search mode. Start typing; the list narrows. <code>-f nginx</code> starts filtered.</p>
+          </div>
+        </article>
+
+        <!-- safe -->
+        <article class="card" data-r>
+          <div class="vg">
+            <div class="safe">
+              <div class="svcrow"><span>postgresql.service</span><span class="s" id="sf-s">● active</span></div>
+              <div class="cdlg" id="sf-d">
+                <div class="t">Confirm</div>
+                <div class="q">Stop postgresql.service?</div>
+                <div class="bb"><span class="yes">y  Stop</span><span class="no">n  Cancel</span></div>
+                <div class="f">y confirm · n / Esc cancel</div>
+              </div>
+              <div class="ks"><kbd id="sf-enter">Enter</kbd><kbd id="sf-y">y</kbd><span class="tag bad" id="sf-t1">ignored</span><span class="tag good" id="sf-t2">stopped</span></div>
+            </div>
+          </div>
+          <div>
+            <h3>Safe by default</h3>
+            <p><code>Enter</code> only navigates. Stop and restart ask first, and only <code>y</code> or a click confirms.</p>
+          </div>
+        </article>
+
+        <!-- command -->
+        <article class="card s2" data-r style="--d:1">
+          <div class="vg">
+            <div class="win">
+              <div class="win-h"><b>worker.service</b> · summary</div>
+              <div class="cmd" id="cmd">
+                <div class="row"><span class="lbl">Type</span><span>simple</span></div>
+                <div class="row"><span class="lbl">User</span><span>app</span></div>
+                <div class="row"><span class="lbl">Command</span><span class="one">sh -c "cd /srv/app &amp;&amp; exec python3 server.py --workers 4 --bind 0.0.0.0:80"</span>
+                  <div class="lines">
+                    <div style="--i:0"><span class="bin">sh</span> <span class="op">-c</span></div>
+                    <div style="--i:1">  <span class="val">cd /srv/app</span></div>
+                    <div style="--i:2">  <span class="sepr">&amp;&amp;</span> <span class="val">exec</span> <span class="bin">python3</span> <span class="val">server.py</span></div>
+                    <div style="--i:3">    <span class="op">--workers</span> <span class="val">4</span></div>
+                    <div style="--i:4">    <span class="op">--bind</span> <span class="val">0.0.0.0:80</span></div>
+                  </div>
+                </div>
+                <div class="row"><span class="lbl">Wanted by</span><span>multi-user.target</span></div>
+              </div>
+              <div class="cmd-note"><span class="sw" id="cmd-sw">●</span><span id="cmd-st">one long line</span></div>
+            </div>
+          </div>
+          <div>
+            <h3>Commands you can read</h3>
+            <p>Long <code>ExecStart</code> lines and Docker entrypoints are split one option per line. The script of
+              <code>sh -c</code> is indented one level deeper.</p>
+          </div>
+        </article>
+
+        <!-- logs -->
+        <article class="card" data-r>
+          <div class="vg">
+            <div class="win">
+              <div class="win-h"><b>api</b> · docker logs -f</div>
+              <div class="lg" id="lg"></div>
+            </div>
+          </div>
+          <div>
+            <h3>Logs that keep following</h3>
+            <p><code>journalctl -f</code> for services, <code>docker logs -f</code> for containers. Reattaches after a
+              restart or a recreate with the same name.</p>
+          </div>
+        </article>
+
+        <!-- limits -->
+        <article class="card" data-r style="--d:1">
+          <div class="vg">
+            <div class="win">
+              <div class="win-h"><b>Resources</b> <span style="color:var(--warn)">api</span></div>
+              <div class="lim" id="lim">
+                <div class="lr"><span>CPUs</span><span class="bar"><i id="lm-c" style="--v:25%"></i></span><b id="lm-cv">1.00</b></div>
+                <div class="lr"><span>Memory</span><span class="bar"><i id="lm-m" style="--v:25%"></i></span><b id="lm-mv">1g</b></div>
+                <div class="lr"><span>PIDs</span><span class="bar"><i id="lm-p" style="--v:40%"></i></span><b id="lm-pv">200</b></div>
+                <div class="lr"><span>Restart</span><span style="color:var(--text)">unless-stopped</span><b></b></div>
+                <div class="cmdl" id="lm-cmd"></div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <h3>Limits, changed in place</h3>
+            <p><code>Alt+u</code> edits CPUs, memory, swap, PIDs and restart policy with <code>docker update</code>. No recreate.</p>
+          </div>
+        </article>
+
+        <!-- secrets -->
+        <article class="card" data-r style="--d:2">
+          <div class="vg">
+            <div class="win">
+              <div class="win-h"><b>api</b> · environment</div>
+              <div class="env" id="env"></div>
+              <div class="env-k"><kbd id="env-k">Alt</kbd><kbd id="env-k2">s</kbd><span id="env-s">hidden</span></div>
+            </div>
+          </div>
+          <div>
+            <h3>Secrets stay masked</h3>
+            <p>Env values whose names look secret — <code>PASSWORD</code>, <code>TOKEN</code>, <code>KEY</code> — are hidden
+              until you press <code>Alt+s</code>.</p>
+          </div>
+        </article>
+
+        <!-- platform -->
+        <article class="card s3" data-r style="min-height:0">
+          <div class="plat">
+            <div>
+              <div class="plat-os" id="pl-os">Linux</div>
+              <div class="plat-word" id="pl-w">systemctl</div>
+              <div class="plat-tabs" id="pl-tabs">
+                <button type="button" data-i="0" class="on">systemd</button>
+                <button type="button" data-i="1">launchd</button>
+                <button type="button" data-i="2">Docker</button>
+              </div>
+            </div>
+            <ul class="plat-list" id="pl-l"></ul>
+          </div>
+        </article>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <div class="stats" id="stats">
+        <div class="stat" data-r><div class="v"><span data-count="2">0</span><small>s</small></div><div class="l">Refresh interval for lists, stats and graphs</div></div>
+        <div class="stat" data-r style="--d:1"><div class="v"><span data-count="300">0</span></div><div class="l">Samples per graph — 10 minutes of history</div></div>
+        <div class="stat" data-r style="--d:2"><div class="v"><span data-count="3">0</span></div><div class="l">Backends: systemd, launchd, Docker</div></div>
+        <div class="stat" data-r style="--d:3"><div class="v"><span data-count="2">0</span><small>arch</small></div><div class="l">Linux packages for amd64 and arm64</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= KEYS ================= -->
+  <section class="sec" id="keys">
+    <div class="wrap">
+      <div class="head">
+        <p class="eyebrow" data-r>Keyboard</p>
+        <h2 data-r style="--d:1">Hands stay on the keys.</h2>
+        <p class="sub" data-r style="--d:2">Explicit shortcuts for every action. Press <code>?</code> in the app for the full list.</p>
+      </div>
+      <div class="keymap" id="keymap">
+        {KEYS.map(([ks, b, s], i) => (
+          <div class="kt" data-r style={`--d:${i % 4}`}>
+            <div class="kk">{ks.map((k) => <kbd>{k}</kbd>)}</div>
+            <b>{b}</b><span>{s}</span>
+          </div>
+        ))}
+      </div>
+      <div class="mouse" data-r>
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="6" /><path d="M12 7v4" /></svg>
+        Mouse works too: scroll lists and logs, click rows, click Start / Stop / Restart / Back.
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= FILM ================= -->
+  <section class="sec" id="demo">
+    <div class="wrap">
+      <div class="head">
+        <p class="eyebrow" data-r>Recording</p>
+        <h2 data-r style="--d:1">The real thing, <span class="m">unedited.</span></h2>
+      </div>
+      <div class="film" data-r style="--d:2">
+        <video id="film" muted loop playsinline preload="none" controls aria-label="Screen recording of g-systemctl managing services and containers">
+          <source src={url("assets/demo.mp4")} type="video/mp4" />
+        </video>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= INSTALL ================= -->
+  <section class="sec" id="install">
+    <div class="wrap inst">
+      <div>
+        <p class="eyebrow" data-r>Install</p>
+        <h2 data-r style="--d:1">Up in <span class="m">ten seconds.</span></h2>
+        <p class="sub" data-r style="--d:2">Prebuilt for Ubuntu 22.04+, Debian 12+, Fedora 35+ and macOS. Run with
+          <code>sudo</code> to start and stop system services.</p>
+        <div class="itabs" role="tablist" aria-label="Install method" data-r style="--d:3">
+          <button class="itab" role="tab" aria-selected="true" data-k="deb">Debian / Ubuntu <small>.deb</small></button>
+          <button class="itab" role="tab" aria-selected="false" data-k="bin">Linux binary <small>tar.gz</small></button>
+          <button class="itab" role="tab" aria-selected="false" data-k="brew">macOS <small>Homebrew</small></button>
+          <button class="itab" role="tab" aria-selected="false" data-k="src">From source <small>CMake</small></button>
+        </div>
+      </div>
+      <div class="iterm" data-r style="--d:2">
+        <div class="chrome"><i></i><i></i><i></i><span id="i-title">bash</span><button class="copy" id="copy" type="button">Copy</button></div>
+        <pre class="ibody" id="ibody" role="tabpanel" aria-live="polite">{DEB.map(([k, s]) => k === "c" ? <><span class="c">{s}</span>{"\n"}</> : <><span class="p">$</span> {s}{"\n"}</>)}<span class="p">$</span> <span class="caret"></span></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= FAQ ================= -->
+  <section class="sec" id="faq">
+    <div class="wrap">
+      <div class="head">
+        <p class="eyebrow" data-r>FAQ</p>
+        <h2 data-r style="--d:1">Questions, answered.</h2>
+      </div>
+      <div class="faq">
+        {FAQ.map(([q, a], i) => (
+          <details data-r style={`--d:${i % 3}`}>
+            <summary>{q}</summary>
+            <p set:html={a} />
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= FINAL ================= -->
+  <section class="final">
+    <div class="wrap">
+      <p class="big" data-r><span class="p">$</span> sudo g-systemctl<span class="caret"></span></p>
+      <div class="ctas" style="animation:none">
+        <a class="btn primary" href="#install">Install</a>
+        <a class="btn" href={SITE.repo} target="_blank" rel="noopener">Star on GitHub</a>
+        <a class="btn" href="https://github.com/shakg/g-systemctl/blob/main/docs/CONTRIBUTING.md" target="_blank" rel="noopener">Contribute</a>
+      </div>
+    </div>
+  </section>
+</main></Base>
+
+<script src="../scripts/landing.js"></script>

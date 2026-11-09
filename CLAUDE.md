@@ -72,6 +72,24 @@ g-systemctl/
 - `ConfirmDialog` - Owned by `App`, handed to `ContainersView` via `set_confirm`. Stop and restart go through it (or through the sudo password prompt, which replaces it). Only `y` or a click confirms; Enter is swallowed
 - `ContainersView` - Containers tab. A poller thread refreshes `docker ps`/`docker stats` every 2s while the tab is visible; actions run on a worker thread and post results back with `ScreenInteractive::Post`. The detail page summary comes from `docker inspect` plus the live `docker stats` sample. `docker logs -f` exits when a container stops, so the log strip reattaches with `--since` once the container (or a recreated one with the same name) is running again
 
+**Website (`landing-page/`):**
+
+Astro static site: landing page + Markdown blog, deployed to GitHub Pages by `.github/workflows/pages.yml`.
+
+```bash
+cd landing-page
+npm ci
+npm run dev      # http://localhost:4321/g-systemctl/
+npm run build    # astro check + static build into dist/
+```
+
+- `src/pages/index.astro` - landing page markup; `src/scripts/landing.js` drives its animations; `src/styles/landing.css` its styles
+- `src/content/blog/*.md` - blog posts (schema in `src/content.config.ts`: title ≤70 chars, description 50–160 chars, date, tags, draft)
+- `src/components/BaseHead.astro` - SEO tags (canonical, Open Graph, Twitter, JSON-LD), self-hosted font preloads
+- `src/lib/github.ts` - star count and latest release tag, fetched at build time (no client API calls)
+- Site URL and base path come from `SITE_URL` / `SITE_BASE` (default `https://shakg.github.io` + `/g-systemctl`). Link with `url()` from `src/lib/site.ts`, never hard-coded `/` paths
+- Keep Lighthouse at 100: CSS is inlined, below-the-fold scripts start via `idle()`, and the hero terminal reserves its height to avoid layout shift
+
 **FTXUI Components Used:**
 - `ScreenInteractive::Fullscreen()` for terminal control
 - `Renderer` for custom rendering
