@@ -48,6 +48,8 @@ namespace gsystemctl::ui
         void set_confirm(ConfirmFn confirm) { confirm_ = std::move(confirm); }
         // Graphs on/off state, owned by App and toggled by both tabs.
         void set_graph_toggle(GraphToggle *graphs) { graphs_ = graphs; }
+        // Runs on the UI thread once, if the first runtime check fails.
+        void set_on_unavailable(std::function<void()> on_unavailable) { on_unavailable_ = std::move(on_unavailable); }
         bool detail_open() const { return detail_open_; }
         // Key hints for the footer; empty to use App's defaults.
         std::string hints() const;
@@ -79,6 +81,7 @@ namespace gsystemctl::ui
         ftxui::ScreenInteractive &screen_;
         std::shared_ptr<ContainerManager> manager_;
         ConfirmFn confirm_;
+        std::function<void()> on_unavailable_;
 
         // UI-thread state.
         bool available_ = false;

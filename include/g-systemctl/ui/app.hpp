@@ -27,13 +27,16 @@ namespace gsystemctl::ui
     class App
     {
     public:
+        // In tab-bar order.
         enum class Tab
         {
-            Services,
             Containers,
+            Services,
         };
 
-        App(bool system_mode = false, const std::string &initial_filter = "", Tab initial_tab = Tab::Services);
+        // `fallback_to_services`: switch to Services if the container runtime turns out to be unavailable.
+        App(bool system_mode = false, const std::string &initial_filter = "", Tab initial_tab = Tab::Containers,
+            bool fallback_to_services = true);
         ~App();
         int run();
 
@@ -80,8 +83,19 @@ namespace gsystemctl::ui
         ActionBar service_actions_;
         ConfirmDialog confirm_;
         bool show_help_ = false;
+        // Tabs of the help dialog, in display order.
+        enum class HelpTab
+        {
+            Containers,
+            Services,
+            General,
+            Settings,
+        };
+        static constexpr int kHelpTabs = 4;
+        HelpTab help_tab_ = HelpTab::Containers;
+        ftxui::Box help_tab_boxes_[kHelpTabs];
         ftxui::Box shortcuts_box_;
-        Tab active_tab_ = Tab::Services;
+        Tab active_tab_ = Tab::Containers;
         std::unique_ptr<ContainersView> containers_view_;
         ftxui::Box services_tab_box_;
         ftxui::Box containers_tab_box_;
@@ -143,6 +157,10 @@ namespace gsystemctl::ui
         // Null when there is nothing to graph.
         ftxui::Element render_service_graphs();
         ftxui::Element render_help();
+        // Opens the help on the tab matching the active app tab.
+        void open_help();
+        // Keys and clicks while the help is open; it takes all of them.
+        bool handle_help_event(ftxui::Event event);
     };
 
 } // namespace gsystemctl::ui

@@ -237,9 +237,12 @@ namespace gsystemctl::ui
             auto [ok, message] = manager_->check_available();
             runtime_ok = ok;
             screen_.Post([this, ok = ok, message = message] {
+                const bool first = !checked_;
                 checked_ = true;
                 available_ = ok;
                 availability_message_ = message;
+                if (first && !ok && on_unavailable_)
+                    on_unavailable_();
             });
             screen_.PostEvent(Event::Custom);
             if (!ok)

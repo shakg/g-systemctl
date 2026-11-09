@@ -129,8 +129,8 @@ sudo g-systemctl
 | `Esc` | Back one level: help, full logs, detail page, then clear the filter, then quit |
 | `Alt+c` | Close the detail page |
 | `Alt+q` | Quit |
-| `?` | Show/hide help |
-| `Tab` / `Alt+1` / `Alt+2` | Switch between the Services and Containers tabs |
+| `?` | Show/hide help; `Tab`, `←`/`→` or `1`-`4` switch its tabs (Containers, Services, General, Settings) |
+| `Tab` / `Alt+1` / `Alt+2` | Switch tab (`Alt+1` Containers, `Alt+2` Services) |
 
 Services tab only:
 
@@ -199,7 +199,9 @@ g-systemctl --system            # Show system services (default)
 g-systemctl --user              # Show user services
 g-systemctl -f <text>           # Start with an initial filter
 g-systemctl --filter <text>     # Start with an initial filter
-g-systemctl --containers        # Open the Containers tab (-c)
+g-systemctl                     # Containers tab, or Services if Docker is unavailable
+g-systemctl --services          # Open the Services tab (-s)
+g-systemctl --containers        # Open the Containers tab even without Docker (-c)
 ```
 
 ## Contributing

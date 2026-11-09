@@ -43,7 +43,8 @@ if pid == 0:
     # Fresh config dir: the app saves the compose projects it sees.
     env = dict(os.environ, PATH=FAKE + ":" + os.environ["PATH"], TERM="xterm-256color", COLORTERM="truecolor",
                XDG_CONFIG_HOME=tempfile.mkdtemp(prefix="g-systemctl-demo-"))
-    os.execve(BIN, [BIN], env)
+    # Start on Services so the demo shows both tabs (the app defaults to Containers).
+    os.execve(BIN, [BIN, "--services"], env)
 fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLS, 0, 0))
 
 
