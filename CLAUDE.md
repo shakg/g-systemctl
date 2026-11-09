@@ -35,7 +35,8 @@ g-systemctl/
 │   │   ├── command_executor.hpp # Shell command execution
 │   │   └── command_format.hpp  # Lays out long commands one option per line
 │   ├── container/              # Container runtime support
-│   │   ├── container.hpp       # Container, ContainerDetails, resource-limit diffing
+│   │   ├── container.hpp       # Container, ContainerDetails, resource-limit diffing, compose grouping/drift
+│   │   ├── compose_store.hpp   # Saved compose projects (~/.config/g-systemctl/compose-projects)
 │   │   ├── container_manager.hpp # Abstract container runtime interface
 │   │   └── docker_container_manager.hpp # docker CLI implementation
 │   ├── platform/               # Platform-specific implementations
@@ -70,7 +71,8 @@ g-systemctl/
 - `GraphToggle` (`Alt+g` or the log-header button, shared by both tabs) - At 100+ columns graphs sit beside the summary and are on by default; below that they replace the summary and are off by default. `GraphPanel` drops to one line per metric when there are fewer than two rows per metric
 - `format_command` - Splits long commands (service ExecStart, docker entrypoint+cmd) into one option per line; the script of `sh -c`/`bash -c` is indented one level deeper
 - `ConfirmDialog` - Owned by `App`, handed to `ContainersView` via `set_confirm`. Stop and restart go through it (or through the sudo password prompt, which replaces it). Only `y` or a click confirms; Enter is swallowed
-- `ContainersView` - Containers tab. A poller thread refreshes `docker ps`/`docker stats` every 2s while the tab is visible; actions run on a worker thread and post results back with `ScreenInteractive::Post`. The detail page summary comes from `docker inspect` plus the live `docker stats` sample. `docker logs -f` exits when a container stops, so the log strip reattaches with `--since` once the container (or a recreated one with the same name) is running again
+- Compose - `ps` reads the compose labels (project, service, replica, working dir, config files, config hash, one-off, depends_on). `group_compose_projects` (`src/container/compose.cpp`, pure, unit-tested) groups them and adds saved projects that have no containers. `ContainerManager::compose` runs `cd DIR && docker compose -p NAME -f FILE... <action>`; start/stop/restart/down fall back to `-p NAME` alone if the files are gone. The poller compares each service's `config-hash` label with `compose config --hash '*'` (all projects every ~30s, the open project every poll) to flag drift. `ComposeStore` remembers projects so they stay listed after `down`
+- `ContainersView` - Containers tab. List rows are project headers, their containers (tree lines) and standalone containers below a divider; selection is keyed by container ID or `project:NAME`. A project page reuses the detail layout with `compose logs -f` and summed graphs. On a project, `Alt+o/x/r` map to compose start/stop/restart (`up -d` when down), `Alt+u` to `up -d`, plus `Alt+b` build, `Alt+p` pull, `Alt+d` down, `Alt+a` add by path, `Alt+v` container → project. A poller thread refreshes `docker ps`/`docker stats` every 2s while the tab is visible; actions run on a worker thread and post results back with `ScreenInteractive::Post`. The detail page summary comes from `docker inspect` plus the live `docker stats` sample. `docker logs -f` exits when a container stops, so the log strip reattaches with `--since` once the container (or a recreated one with the same name) is running again
 
 **Website (`landing-page/`):**
 

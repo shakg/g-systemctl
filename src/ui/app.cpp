@@ -5,6 +5,7 @@
 #include "g-systemctl/core/command_executor.hpp"
 #include "g-systemctl/core/logging_manager.hpp"
 #include "g-systemctl/platform/platform.hpp"
+#include <ftxui/screen/terminal.hpp>
 #include <algorithm>
 #include <cctype>
 #include <chrono>
@@ -812,6 +813,7 @@ namespace gsystemctl::ui
 
         main_component |= Modal(auth_modal, &auth_dialog_open_);
         main_component |= Modal(containers_view_->edit_dialog(), containers_view_->edit_dialog_open_flag());
+        main_component |= Modal(containers_view_->add_project_dialog(), containers_view_->add_project_dialog_open_flag());
         main_component |= Modal(confirm_.component(), confirm_.open_flag());
         containers_view_->set_confirm([this](const std::string &question, const std::string &label,
                                              std::function<void()> on_confirm) {
@@ -853,8 +855,10 @@ namespace gsystemctl::ui
         const auto &filter = containers ? containers_view_->filter_text() : filter_text_;
         const bool on_detail = containers ? containers_view_->detail_open() : detail_open_;
         const bool on_full_logs = containers ? containers_view_->logs_full() : logs_full_;
+        const auto view_hints = containers ? containers_view_->hints() : std::string();
         const std::string hints =
-            on_full_logs ? "  ·  ↑↓ PgUp/PgDn scroll  ·  Enter shrink logs  ·  Esc back  ·  ? help  "
+            !view_hints.empty() ? view_hints
+            : on_full_logs ? "  ·  ↑↓ PgUp/PgDn scroll  ·  Enter shrink logs  ·  Esc back  ·  ? help  "
             : on_detail  ? "  ·  ↑↓ scroll info  ·  PgUp/PgDn scroll logs  ·  Enter expand logs  ·  Esc back  ·  ? help  "
                          : "  ·  ↑↓ move  ·  Enter open  ·  Alt+o start  ·  Alt+x stop  ·  Alt+r restart  ·  ? help  ";
         const auto summary = containers ? containers_view_->summary()
@@ -1095,6 +1099,30 @@ namespace gsystemctl::ui
 
     Element App::render_help()
     {
+        auto general = vbox({
+            text("List") | bold,
+            text("  ↑↓ / Alt+k/j          Move selection"),
+            text("  type / Backspace      Filter"),
+            text("  Enter / click         Open detail page (summary + logs)"),
+            text("  Alt+l                 Open with full-size logs"),
+            text(""),
+            text("Detail page") | bold,
+            text("  Enter / Alt+f         Expand / shrink logs"),
+            text("  Alt+g                 Graphs on/off (replace the info below 100 cols)"),
+            text("  ↑↓                    Scroll summary (logs when expanded)"),
+            text("  PgUp / PgDn           Scroll logs"),
+            text("  Esc                   Back one level"),
+            text(""),
+            text("Actions (on the selected item, or the one on the page)") | bold,
+            text("  Alt+o                 Start"),
+            text("  Alt+x                 Stop (asks y/n)"),
+            text("  Alt+r                 Restart (asks y/n)"),
+            text(""),
+            text("General") | bold,
+            text("  Tab / Alt+1 / Alt+2   Switch tab"),
+            text("  Esc                   Back, clear filter, then quit"),
+            text("  Alt+q                 Quit"),
+        });
         auto services = vbox({
             text("Services") | bold,
             text("  Alt+e        Edit unit file ($GSYSTEMCTL_EDITOR)"),
@@ -1107,33 +1135,31 @@ namespace gsystemctl::ui
             text("  Alt+s        Show/hide secret env values"),
             text("  Alt+Shift+r  Refresh now"),
         });
+        auto compose = vbox({
+            text("Compose projects (on a project row or page)") | bold,
+            text("  ← / →        Fold / unfold"),
+            text("  Alt+o/x/r    Start (up -d when down) / stop / restart"),
+            text("  Alt+u        up -d: apply config changes"),
+            text("  Alt+b        up -d --build"),
+            text("  Alt+p        Pull images"),
+            text("  Alt+d        Down (forget, if already down)"),
+            text("  Alt+a        Add a project by path"),
+            text("  Alt+v        From a container to its project"),
+        });
+        Element body;
+        if (Terminal::Size().dimx >= 126)
+        {
+            body = hbox({general, text("    "),
+                         vbox({services, text(""), containers, text(""), compose})});
+        }
+        else
+        {
+            body = vbox({general, text(""), hbox({services, text("    "), containers}), text(""), compose});
+        }
         return vbox({
                    text("g-systemctl - Help") | bold | center,
                    separator(),
-                   text("List") | bold,
-                   text("  ↑↓ / Alt+k/j          Move selection"),
-                   text("  type / Backspace      Filter"),
-                   text("  Enter / click         Open detail page (summary + logs)"),
-                   text("  Alt+l                 Open with full-size logs"),
-                   text(""),
-                   text("Detail page") | bold,
-                   text("  Enter / Alt+f         Expand / shrink logs"),
-                   text("  Alt+g                 Graphs: beside the info, or instead of it below 100 columns"),
-                   text("  ↑↓                    Scroll summary (logs when expanded)"),
-                   text("  PgUp / PgDn           Scroll logs"),
-                   text("  Esc                   Back one level"),
-                   text(""),
-                   text("Actions (on the selected item, or the one on the detail page)") | bold,
-                   text("  Alt+o                 Start"),
-                   text("  Alt+x                 Stop (asks y/n)"),
-                   text("  Alt+r                 Restart (asks y/n)"),
-                   text(""),
-                   text("General") | bold,
-                   text("  Tab / Alt+1 / Alt+2   Switch tab"),
-                   text("  Esc                   Back, clear filter, then quit"),
-                   text("  Alt+q                 Quit"),
-                   text(""),
-                   hbox({services, text("    "), containers}),
+                   body,
                    text(""),
                    text("Press ? to close") | dim | center,
                }) |

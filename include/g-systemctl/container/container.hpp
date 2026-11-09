@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <utility>
@@ -26,7 +27,15 @@ struct Container {
     std::string state;  // created, running, paused, restarting, removing, exited, dead
     std::string status; // "Up 3 minutes", "Exited (0) 2 hours ago"
     std::string ports;
+    // Compose labels; empty for containers not created by compose.
     std::string compose_project;
+    std::string compose_service;
+    int compose_number = 0;              // replica number, 1-based
+    std::string compose_working_dir;
+    std::string compose_config_files;    // comma-separated absolute paths
+    std::string compose_config_hash;
+    bool compose_oneoff = false;         // created by `docker compose run`
+    std::vector<std::string> compose_depends_on; // service names
     ContainerStats stats;
 
     bool is_running() const { return state == "running"; }
@@ -109,5 +118,60 @@ struct ResourceUpdateResult {
     std::string error;
 };
 ResourceUpdateResult build_resource_update(const ResourceSettings& original, const ResourceSettings& edited);
+
+// ---- compose ------------------------------------------------------------------
+
+// Enough to run `docker compose` against a project from any directory.
+struct ComposeProjectRef {
+    std::string name;
+    std::string working_dir;
+    std::vector<std::string> config_files;
+
+    bool operator==(const ComposeProjectRef& other) const {
+        return name == other.name && working_dir == other.working_dir && config_files == other.config_files;
+    }
+};
+
+// A compose project as seen in the container list, plus saved projects that
+// currently have no containers (after `docker compose down`).
+struct ComposeProject {
+    ComposeProjectRef ref;
+    std::vector<std::string> container_ids; // sorted by service, then replica
+    std::vector<std::string> services;      // distinct, sorted
+    int running = 0;
+    int active = 0; // running, paused or restarting
+    int total = 0;  // one-off containers excluded
+
+    bool down() const { return total == 0; }
+};
+
+enum class ComposeAction { Start, Stop, Restart, Up, UpBuild, Pull, Down };
+
+// "start", "up -d --build", ... as passed to `docker compose`.
+std::vector<std::string> compose_action_args(ComposeAction action);
+// "Starting", "Pulling", ... for status messages.
+std::string compose_action_verb(ComposeAction action);
+std::string compose_action_past(ComposeAction action);
+
+// "db:service_started:false,cache:service_healthy:true" -> {"db", "cache"}.
+std::vector<std::string> parse_compose_depends_on(const std::string& label);
+// "/a/compose.yaml,/a/override.yaml" -> both paths.
+std::vector<std::string> split_compose_files(const std::string& label);
+// Output of `docker compose config --hash '*'`: "service hash" per line.
+std::map<std::string, std::string> parse_compose_hashes(const std::string& output);
+// Default project name compose derives from a directory:
+// "/srv/My Shop" -> "myshop" (lowercase, keeps a-z 0-9 - _).
+std::string compose_project_name_from_dir(const std::string& dir);
+
+// Groups compose containers by project. `saved` adds projects that have no
+// containers. Projects come back sorted by name.
+std::vector<ComposeProject> group_compose_projects(const std::vector<Container>& containers,
+                                                   const std::vector<ComposeProjectRef>& saved);
+
+// Services whose running containers were created from a different config
+// than `current` (service -> hash). Services missing from either side are skipped.
+std::vector<std::string> compose_drifted_services(const std::vector<Container>& containers,
+                                                  const std::string& project,
+                                                  const std::map<std::string, std::string>& current);
 
 } // namespace gsystemctl

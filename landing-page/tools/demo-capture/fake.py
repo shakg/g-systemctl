@@ -113,13 +113,52 @@ CTRS = [  # id, name, image, running, status, ports, project, cpu, mem MiB, limi
 ]
 
 
+COMPOSE_DIR = "/tmp"
+HASH = "5f0c" * 16
+DEPENDS = {"web": "api:service_started:false", "api": "postgres:service_healthy:true,redis:service_started:false",
+           "worker": "redis:service_started:false"}
+
+
+def compose():
+    rest, i = [], 1
+    while i < len(args):
+        if args[i] in ("-p", "-f", "--project-directory"):
+            i += 2
+            continue
+        rest.append(args[i])
+        i += 1
+    sub = rest[0] if rest else ""
+    if sub == "version":
+        print("2.29.7")
+    elif sub == "config" and "--hash" in rest:
+        for c in CTRS:
+            if c[6]:
+                print(f"{c[1]} {HASH}")
+    elif sub == "config":
+        print("name: shop\nservices: {}")
+    elif sub == "logs":
+        svcs = [c[1] for c in CTRS if c[6]]
+        while True:
+            print(f"{random.choice(svcs) + '-1':<10}| GET /v1/orders 200 {random.randint(2, 40)}ms", flush=True)
+            if "-f" not in rest:
+                break
+            time.sleep(0.6)
+
+
 def docker():
     cmd = args[0] if args else ""
     if cmd == "version":
         print("27.3.1")
     elif cmd == "ps":
         for c in CTRS:
-            print("\t".join([c[0], c[1], c[2], "running" if c[3] else "exited", c[4], c[5], c[6]]))
+            labels = ["", "", "", "", "", "", ""]
+            if c[6]:  # compose labels: service, number, dir, files, hash, oneoff, depends_on
+                labels = [c[1], "1", COMPOSE_DIR, COMPOSE_DIR + "/compose.yaml", HASH, "False",
+                          DEPENDS.get(c[1], "")]
+            name = f"{c[6]}-{c[1]}-1" if c[6] else c[1]
+            print("\t".join([c[0], name, c[2], "running" if c[3] else "exited", c[4], c[5], c[6]] + labels))
+    elif cmd == "compose":
+        compose()
     elif cmd == "stats":
         for c in CTRS:
             if c[3]:

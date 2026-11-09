@@ -15,6 +15,7 @@ import os
 import pty
 import select
 import struct
+import tempfile
 import termios
 import time
 
@@ -39,7 +40,9 @@ stream = pyte.ByteStream(screen)
 
 pid, fd = pty.fork()
 if pid == 0:
-    env = dict(os.environ, PATH=FAKE + ":" + os.environ["PATH"], TERM="xterm-256color", COLORTERM="truecolor")
+    # Fresh config dir: the app saves the compose projects it sees.
+    env = dict(os.environ, PATH=FAKE + ":" + os.environ["PATH"], TERM="xterm-256color", COLORTERM="truecolor",
+               XDG_CONFIG_HOME=tempfile.mkdtemp(prefix="g-systemctl-demo-"))
     os.execve(BIN, [BIN], env)
 fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLS, 0, 0))
 
@@ -123,8 +126,9 @@ live(3, 800)
 press(ESC, ["Esc"], "Back one level", 1100, 0.8)
 press(ESC, ["Esc"], "Back one level", 900, 0.8)
 press(ESC, ["Esc"], "On the list, Esc clears the filter", 1400, 0.8)
-press("\t", ["Tab"], "Containers tab", 900, 3.0)
+press("\t", ["Tab"], "Containers tab, grouped by compose project", 1400, 3.0)
 live(2, 900)
+press("\x1b[B", ["↓"], "Select a container", 700)
 press(ESC + "u", ["Alt", "u"], "Edit limits with docker update", 1200, 1.0)
 press("\x7f", ["⌫"], "Edit limits with docker update", 300, 0.3)
 press("2", ["2"], "Edit limits with docker update", 700, 0.3)

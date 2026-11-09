@@ -50,6 +50,24 @@ public:
                                                    LoggingManager::LogCallback on_line,
                                                    std::function<void()> on_end) = 0;
 
+    // ---- compose ----
+    // Detects `docker compose` (plugin) or `docker-compose`. {true, "docker compose 2.29.1"} or {false, reason}.
+    virtual Result compose_available() = 0;
+    // Runs `compose -p NAME -f FILE... <action>` from the project's working directory.
+    // Start/stop/restart/down fall back to `-p NAME` alone if the files are gone.
+    virtual Result compose(const ComposeProjectRef& project, ComposeAction action) = 0;
+    // Project name the files resolve to (top-level `name:`, else the directory name),
+    // via `compose config`. `project.name` is ignored. Throws on failure, e.g. invalid file.
+    virtual std::string compose_project_name(const ComposeProjectRef& project) = 0;
+    // Service -> config hash of the project's files as they are now. Throws on failure.
+    virtual std::map<std::string, std::string> compose_config_hashes(const ComposeProjectRef& project) = 0;
+    // Follows the merged logs of all the project's services, prefixed with the
+    // container name. Ends when every container has stopped.
+    virtual std::unique_ptr<LogStream> stream_compose_logs(const ComposeProjectRef& project, int tail,
+                                                           const std::string& since,
+                                                           LoggingManager::LogCallback on_line,
+                                                           std::function<void()> on_end) = 0;
+
     // Uses $GSYSTEMCTL_DOCKER as the CLI binary if set, otherwise "docker".
     static std::unique_ptr<ContainerManager> create(std::shared_ptr<CommandExecutor> executor);
 };
