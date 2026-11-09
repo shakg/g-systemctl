@@ -132,9 +132,10 @@ const jsonLd = [
         <h2 data-r>Navigation</h2>
         <p class="sub" data-r style="--d:1"><code>Enter</code> opens the next level. <code>Esc</code> goes back one.</p>
       </div>
-      <ol class="steps" id="steps">
+      <ol class="steps" id="steps" data-r style="--d:2">
+        <span class="ind" aria-hidden="true"></span>
         {LEVELS.map((l, i) => (
-          <li data-r style={`--d:${i + 2}`} class:list={{ on: i === 0 }}>
+          <li class:list={{ on: i === 0 }}>
             <button type="button" data-l={i}>
               <span class="n">{l.n}</span>
               <span><b>{l.title}</b><span set:html={l.text} /></span>
@@ -199,6 +200,7 @@ const jsonLd = [
     <div class="wrap">
       <div class="head">
         <h2 data-r>FAQ</h2>
+        <p class="sub" data-r style="--d:1">Sudo, macOS, Docker limits and safety.</p>
       </div>
       <div class="faq">
         {FAQ.map(([q, a], i) => (

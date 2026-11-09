@@ -87,29 +87,48 @@ h1 .acc { color: var(--acc); }
 .js [data-r].in { opacity: 1; transform: none; filter: none; }
 
 /* ---------- levels ---------- */
-.steps { list-style: none; margin: 0 0 16px; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.steps { position: relative; list-style: none; margin: 0 0 16px; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.steps li { border-radius: 10px; background: var(--bg-2); transition: background .3s; }
+.steps li:not(.on):hover { background: var(--panel); }
 .steps button {
   all: unset; box-sizing: border-box; width: 100%; height: 100%; cursor: pointer;
+  position: relative; z-index: 1;
   display: grid; grid-template-columns: 30px 1fr; gap: 10px; padding: 16px 18px; border-radius: 10px;
-  background: var(--bg-2); color: var(--muted); font-size: 14.5px; line-height: 1.5;
-  transition: background .3s, color .3s;
+  color: var(--muted); font-size: 14.5px; line-height: 1.5;
+  transition: color .4s var(--ease);
 }
-.steps button:hover { background: var(--panel); }
+.steps b { transition: color .4s var(--ease); }
 .steps button:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
 .steps .n { font-family: var(--mono); font-size: 13px; padding-top: 2px; }
 .steps b { display: block; margin-bottom: 2px; font-size: 16px; font-weight: 600; color: var(--hi); }
-.steps li.on button { background: var(--acc); color: var(--on-acc); }
+.steps li.on { background: var(--acc); }
+.steps li.on button { color: var(--on-acc); }
+/* With JS a single highlight slides between the steps instead of each step changing color. */
+.steps .ind { display: none; }
+.steps.moving .ind {
+  display: block; position: absolute; top: 0; left: 0; border-radius: 10px; background: var(--acc); pointer-events: none;
+  transition: transform .55s var(--ease), width .55s var(--ease), height .55s var(--ease);
+}
+.steps.moving li.on { background: var(--bg-2); }
 .steps li.on b { color: var(--on-acc); }
 .steps code { font-family: var(--mono); font-size: .86em; }
 .lv { container-type: inline-size; display: grid; border-radius: 14px; overflow: hidden; background: #0b0c13; padding: 10px; }
-.lvf { grid-area: 1 / 1; width: 120ch; font-size: calc(100cqw / 72.2); opacity: 0; transition: opacity .35s var(--ease); }
-.lv[data-level="0"] .lvf[data-l="0"], .lv[data-level="1"] .lvf[data-l="1"], .lv[data-level="2"] .lvf[data-l="2"] { opacity: 1; }
+/* Going down a level the next frame grows in from slightly smaller; going back it settles from slightly larger. */
+.lvf {
+  grid-area: 1 / 1; width: 120ch; font-size: calc(100cqw / 72.2);
+  opacity: 0; transform: scale(var(--from, .97)); filter: blur(4px);
+  transition: opacity .45s var(--ease), transform .6s var(--ease), filter .45s var(--ease);
+}
+.lv[data-dir="up"] .lvf { --from: 1.03; }
+.lv[data-level="0"] .lvf[data-l="0"], .lv[data-level="1"] .lvf[data-l="1"], .lv[data-level="2"] .lvf[data-l="2"] {
+  opacity: 1; transform: none; filter: none; transition-delay: .08s;
+}
 
 /* ---------- bento ---------- */
-.bento { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--line); margin: 0 calc(-1 * var(--pad)); border-top: 1px solid var(--line); }
+.bento { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .card {
-  position: relative; overflow: hidden; padding: 32px var(--pad);
-  background: var(--bg);
+  position: relative; overflow: hidden; padding: 28px; border-radius: 14px;
+  background: var(--bg-2);
   display: flex; flex-direction: column; gap: 22px; min-height: 360px;
 }
 
@@ -216,16 +235,16 @@ h1 .acc { color: var(--acc); }
 .plat-list li::before { content: "▸"; color: var(--acc); }
 
 /* ---------- keys ---------- */
-.keymap { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); margin: 0 calc(-1 * var(--pad)); border-block: 1px solid var(--line); }
+.keymap { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .kt {
-  padding: 22px var(--pad); background: var(--bg);
+  padding: 22px; border-radius: 10px; background: var(--bg-2);
   transition: background .35s;
 }
 .kt .kk { display: flex; gap: 5px; margin-bottom: 14px; }
 .kt .kk kbd { transition: background .35s, color .35s; }
 .kt b { display: block; color: var(--hi); font-weight: 600; font-size: 15px; }
 .kt span { color: var(--muted); font-size: 13px; }
-.kt.hot, .kt:hover { background: var(--bg-2); }
+.kt.hot, .kt:hover { background: var(--panel); }
 .kt.hot kbd, .kt:hover kbd { background: var(--acc); color: var(--on-acc); }
 .kt.hot kbd { animation: press .5s var(--ease); }
 .mouse { margin-top: 22px; color: var(--muted); font-size: 14.5px; display: flex; gap: 10px; align-items: center; }
@@ -253,10 +272,9 @@ h1 .acc { color: var(--acc); }
 .ibody .caret { display: inline-block; width: .6em; height: 1.1em; vertical-align: -.2em; background: var(--acc); animation: blink 1s steps(1) infinite; }
 
 /* ---------- faq ---------- */
-#features.sec, #faq.sec { padding-bottom: 0; }
-.faq { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--line); align-items: start; margin: 0 calc(-1 * var(--pad)); border-top: 1px solid var(--line); }
-.faq details { background: var(--bg); padding: 0 var(--pad); align-self: stretch; transition: background .25s; }
-.faq details:hover { background: var(--bg-2); }
+.faq { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: start; }
+.faq details { background: var(--bg-2); padding: 0 22px; border-radius: 10px; align-self: stretch; transition: background .25s; }
+.faq details:hover { background: var(--panel); }
 .faq summary { cursor: pointer; list-style: none; padding: 18px 0; color: var(--hi); font-weight: 600; font-size: 16.5px; display: flex; justify-content: space-between; gap: 16px; }
 .faq summary::-webkit-details-marker { display: none; }
 .faq summary::after { content: "+"; font-family: var(--mono); color: var(--acc); transition: transform .25s var(--ease); }
@@ -285,7 +303,7 @@ h1 .acc { color: var(--acc); }
   .stage { margin-top: 48px; }
   .bento { grid-template-columns: 1fr; }
   .card.s2, .card.s3 { grid-column: auto; }
-  .card { padding: 24px var(--pad); min-height: 0; }
+  .card { padding: 22px; min-height: 0; }
   .graphs { grid-template-columns: 1fr; }
   .keymap { grid-template-columns: 1fr 1fr; }
   .sec { padding: 72px 0 80px; }

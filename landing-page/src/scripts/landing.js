@@ -124,9 +124,28 @@ $$(".card").forEach((c) => c.addEventListener("pointermove", (e) => {
 /* ================= LEVELS ================= */
 // Steps through the three recorded stills; a click on a step jumps to it.
 idle(function levels() {
-  const lv = $("#lv"), steps = $$("#steps li");
+  const lv = $("#lv"), ol = $("#steps"), ind = $(".ind", ol), steps = $$("li", ol);
   let level = 0, paused = false;
-  const show = (n) => { level = n; lv.dataset.level = n; steps.forEach((s, i) => s.classList.toggle("on", i === n)); };
+  // Moves the highlight onto the active step. Measured, so it also works when the steps stack on narrow screens.
+  const place = () => {
+    const li = steps[level];
+    ind.style.transform = `translate(${li.offsetLeft}px, ${li.offsetTop}px)`;
+    ind.style.width = li.offsetWidth + "px";
+    ind.style.height = li.offsetHeight + "px";
+  };
+  const show = (n) => {
+    if (n === level) return;
+    lv.dataset.dir = n > level ? "down" : "up";
+    level = n; lv.dataset.level = n;
+    steps.forEach((s, i) => s.classList.toggle("on", i === n));
+    place();
+  };
+  ol.classList.add("moving");
+  ind.style.transition = "none";
+  place();
+  ind.offsetWidth; // apply the start position before transitions turn back on
+  ind.style.transition = "";
+  new ResizeObserver(place).observe(ol);
   steps.forEach((s, i) => s.querySelector("button").addEventListener("click", () => { paused = true; show(i); }));
   if (RM) return;
   const wait = gate(lv, 0.3);
