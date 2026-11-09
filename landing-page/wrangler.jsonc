@@ -4,7 +4,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   // Must match the existing Worker's name in the Cloudflare dashboard,
   // otherwise wrangler creates a second Worker.
-  "name": "g-systemctl",
+  "name": "g-systemctl-landing",
   "compatibility_date": "2026-11-01",
   "assets": {
     "directory": "./dist",
