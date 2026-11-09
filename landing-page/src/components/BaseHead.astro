@@ -3,7 +3,7 @@ import geist from "@fontsource-variable/geist/files/geist-latin-wght-normal.woff
 import mono from "@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2?url";
 // Box drawing, blocks, arrows and shapes from JetBrains Mono 2.304 (OFL, see src/assets/fonts), for the terminal frames.
 import monoSymbols from "../assets/fonts/jetbrains-mono-symbols.woff2?url";
-import { SITE, url } from "../lib/site";
+import { SITE, url, ANALYTICS } from "../lib/site";
 
 export interface Props {
   title: string;
@@ -48,6 +48,12 @@ const fontFaces = `
 <link rel="preload" href={monoSymbols} as="font" type="font/woff2" crossorigin />
 <style is:inline set:html={fontFaces}></style>
 <script is:inline>document.documentElement.classList.add("js")</script>
+{ANALYTICS && (
+  <>
+    <link rel="preconnect" href={ANALYTICS.origin} />
+    <script is:inline defer src={ANALYTICS.script} data-website-id={ANALYTICS.websiteId} data-domains={ANALYTICS.domain}></script>
+  </>
+)}
 
 <meta property="og:type" content={type} />
 <meta property="og:site_name" content={SITE.name} />

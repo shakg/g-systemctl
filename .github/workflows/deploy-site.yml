@@ -39,6 +39,9 @@ jobs:
         run: npm run build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Self-hosted Umami; unset means no tracker in the build.
+          PUBLIC_UMAMI_SCRIPT: ${{ vars.UMAMI_SCRIPT }}
+          PUBLIC_UMAMI_WEBSITE_ID: ${{ vars.UMAMI_WEBSITE_ID }}
 
       - name: Deploy to Cloudflare
         uses: cloudflare/wrangler-action@v3
