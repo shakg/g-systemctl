@@ -1,0 +1,49 @@
+name: Deploy site
+
+# Builds landing-page/ and deploys it to the Cloudflare Worker in landing-page/wrangler.jsonc.
+on:
+  push:
+    branches: [main]
+    paths: ['landing-page/**', '.github/workflows/deploy-site.yml']
+  release:
+    types: [published]   # refreshes the version shown on the page
+  schedule:
+    - cron: '17 4 * * 1' # weekly: refreshes the star count
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-site
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: landing-page
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+          cache: npm
+          cache-dependency-path: landing-page/package-lock.json
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy to Cloudflare
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: landing-page
+          command: deploy

@@ -1,0 +1,69 @@
+---
+import geist from "@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url";
+import mono from "@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2?url";
+// Box drawing, blocks, arrows and shapes from JetBrains Mono 2.304 (OFL, see src/assets/fonts), for the terminal frames.
+import monoSymbols from "../assets/fonts/jetbrains-mono-symbols.woff2?url";
+import { SITE, url } from "../lib/site";
+
+export interface Props {
+  title: string;
+  description: string;
+  image?: string;
+  type?: "website" | "article";
+  published?: Date;
+  modified?: Date;
+  jsonLd?: Record<string, unknown> | Record<string, unknown>[];
+  noindex?: boolean;
+}
+
+const { title, description, image = "og.png", type = "website", published, modified, jsonLd, noindex = false } = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site);
+const ogImage = new URL(url(image), Astro.site);
+
+// Latin only: the page is English. Other glyphs fall back to the system font.
+const LATIN = "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD";
+const fontFaces = `
+@font-face{font-family:"Geist";font-style:normal;font-display:swap;font-weight:100 900;src:url(${geist}) format("woff2");unicode-range:${LATIN}}
+@font-face{font-family:"JetBrains Mono";font-style:normal;font-display:swap;font-weight:100 800;src:url(${mono}) format("woff2");unicode-range:${LATIN}}
+@font-face{font-family:"JetBrains Mono";font-style:normal;font-display:swap;font-weight:100 800;src:url(${monoSymbols}) format("woff2");unicode-range:U+2190-21FF,U+2300-23FF,U+2500-25FF}`;
+---
+
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>{title}</title>
+<meta name="description" content={description} />
+<link rel="canonical" href={canonical} />
+<meta name="theme-color" content="#111217" />
+<meta name="color-scheme" content="dark" />
+<meta name="robots" content={noindex ? "noindex" : "index, follow, max-image-preview:large"} />
+<meta name="generator" content={Astro.generator} />
+
+<link rel="icon" href={url("favicon.svg")} type="image/svg+xml" />
+<link rel="apple-touch-icon" href={url("apple-touch-icon.png")} />
+<link rel="sitemap" href={url("sitemap-index.xml")} />
+<link rel="alternate" type="application/rss+xml" title={`${SITE.name} blog`} href={url("rss.xml")} />
+
+<link rel="preload" href={geist} as="font" type="font/woff2" crossorigin />
+<link rel="preload" href={mono} as="font" type="font/woff2" crossorigin />
+<link rel="preload" href={monoSymbols} as="font" type="font/woff2" crossorigin />
+<style is:inline set:html={fontFaces}></style>
+<script is:inline>document.documentElement.classList.add("js")</script>
+
+<meta property="og:type" content={type} />
+<meta property="og:site_name" content={SITE.name} />
+<meta property="og:title" content={title} />
+<meta property="og:description" content={description} />
+<meta property="og:url" content={canonical} />
+<meta property="og:image" content={ogImage} />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="g-systemctl terminal UI showing a filtered service list and CPU, memory and IO graphs" />
+<meta property="og:locale" content="en_US" />
+{published && <meta property="article:published_time" content={published.toISOString()} />}
+{modified && <meta property="article:modified_time" content={modified.toISOString()} />}
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content={title} />
+<meta name="twitter:description" content={description} />
+<meta name="twitter:image" content={ogImage} />
+
+{jsonLd && <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />}

@@ -72,6 +72,27 @@ g-systemctl/
 - `ConfirmDialog` - Owned by `App`, handed to `ContainersView` via `set_confirm`. Stop and restart go through it (or through the sudo password prompt, which replaces it). Only `y` or a click confirms; Enter is swallowed
 - `ContainersView` - Containers tab. A poller thread refreshes `docker ps`/`docker stats` every 2s while the tab is visible; actions run on a worker thread and post results back with `ScreenInteractive::Post`. The detail page summary comes from `docker inspect` plus the live `docker stats` sample. `docker logs -f` exits when a container stops, so the log strip reattaches with `--since` once the container (or a recreated one with the same name) is running again
 
+**Website (`landing-page/`):**
+
+Astro static site: landing page + Markdown blog, served by a Cloudflare Worker with static assets (`landing-page/wrangler.jsonc`). `.github/workflows/deploy-site.yml` builds and deploys on pushes to `main` that touch `landing-page/` (needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets); `npm run deploy` deploys by hand.
+
+```bash
+cd landing-page
+npm ci
+npm run dev      # http://localhost:4321/
+npm run build    # astro check + static build into dist/
+npm run preview:worker  # build, then serve dist/ with wrangler dev like production
+```
+
+- `src/pages/index.astro` - landing page markup; `src/scripts/landing.js` drives its animations; `src/styles/landing.css` its styles
+- `src/content/blog/*.md` - blog posts (schema in `src/content.config.ts`: title ≤70 chars, description 50–160 chars, date, tags, draft)
+- `src/components/BaseHead.astro` - SEO tags (canonical, Open Graph, Twitter, JSON-LD), self-hosted font preloads
+- Hero and Navigation demos replay frames recorded from the real binary (`src/data/demo.json`, rendered by `src/lib/term.js`). After a UI change, rebuild the app and re-record: `pip install pyte && python3 -I landing-page/tools/demo-capture/capture.py` (fake `systemctl`/`journalctl`/`ps`/`docker`/`sudo` live in `tools/demo-capture/fake.py`). Record at 120 columns; narrower layouts squeeze the containers list and the filter bar
+- `src/lib/github.ts` - star count and latest release tag, fetched at build time (no client API calls)
+- Site URL and base path come from `SITE_URL` / `SITE_BASE` (default `https://g-systemctl.org` + `/`). Link with `url()` from `src/lib/site.ts`, never hard-coded `/` paths
+- Look: soft dark base with pastel accents (tokens in `src/styles/global.css`). Surfaces are filled panels with no border, shadow or glow; 1px lines are used only for the page column frame (`.frame`), one hairline between sections and grid cell dividers. No window chrome or traffic-light dots
+- Keep Lighthouse at 100: CSS is inlined, below-the-fold scripts start via `idle()`, and the hero terminal reserves its height to avoid layout shift
+
 **FTXUI Components Used:**
 - `ScreenInteractive::Fullscreen()` for terminal control
 - `Renderer` for custom rendering

@@ -1,0 +1,17 @@
+// Cloudflare Worker that serves the static site in dist/ (no Worker script).
+// Deployed by .github/workflows/deploy-site.yml; locally: npm run deploy
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Must match the existing Worker's name in the Cloudflare dashboard,
+  // otherwise wrangler creates a second Worker.
+  "name": "g-systemctl-landing",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./dist",
+    // Pages are built as /path/index.html and linked with a trailing slash.
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+  "routes": [{ "pattern": "g-systemctl.org", "custom_domain": true }],
+  "observability": { "enabled": true }
+}

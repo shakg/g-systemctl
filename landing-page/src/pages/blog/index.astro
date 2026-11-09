@@ -1,0 +1,50 @@
+---
+import Base from "../../layouts/Base.astro";
+import { SITE, url, formatDate } from "../../lib/site";
+import { posts } from "../../lib/posts";
+
+const list = await posts();
+const title = `Blog — ${SITE.name}`;
+const description = "How g-systemctl works: reading systemd and Docker counters, drawing graphs in a terminal, and following container logs across restarts.";
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "Blog",
+  name: `${SITE.name} blog`,
+  url: new URL(url("blog/"), Astro.site).href,
+  blogPost: list.map((p) => ({
+    "@type": "BlogPosting",
+    headline: p.data.title,
+    datePublished: p.data.date.toISOString(),
+    url: new URL(url(`blog/${p.id}/`), Astro.site).href,
+  })),
+};
+---
+
+<Base title={title} description={description} jsonLd={jsonLd}>
+  <main id="content" class="page frame">
+    <div class="wrap">
+      <header class="page-head">
+        <h1>Blog</h1>
+        <p class="lead">How g-systemctl works. <a class="rss" href={url("rss.xml")}>RSS feed</a>.</p>
+      </header>
+      <ul class="posts">
+        {list.map((p) => (
+          <li>
+            <a href={url(`blog/${p.id}/`)}>
+              <div class="meta">
+                <time datetime={p.data.date.toISOString()}>{formatDate(p.data.date)}</time>
+                {p.data.tags.map((t) => <span class="tagc">#{t}</span>)}
+              </div>
+              <h2>{p.data.title}</h2>
+              <p>{p.data.description}</p>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </main>
+</Base>
+
+<style>
+  .rss { color: var(--acc-2); text-decoration: underline; text-underline-offset: 3px; }
+</style>

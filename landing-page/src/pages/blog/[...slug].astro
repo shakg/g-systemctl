@@ -1,0 +1,70 @@
+---
+import { render } from "astro:content";
+import Base from "../../layouts/Base.astro";
+import { SITE, url, formatDate } from "../../lib/site";
+import { posts, type Post } from "../../lib/posts";
+
+export async function getStaticPaths() {
+  const list = await posts();
+  return list.map((post, i) => ({
+    params: { slug: post.id },
+    props: { post, newer: list[i - 1], older: list[i + 1] },
+  }));
+}
+
+interface Props { post: Post; newer?: Post; older?: Post }
+const { post, newer, older } = Astro.props;
+const { Content } = await render(post);
+const minutes = Math.max(1, Math.round((post.body ?? "").split(/\s+/).filter(Boolean).length / 220));
+const { title, description, date, updated, tags } = post.data;
+const pageUrl = new URL(url(`blog/${post.id}/`), Astro.site).href;
+
+const jsonLd = [
+  {
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    headline: title,
+    description,
+    datePublished: date.toISOString(),
+    dateModified: (updated ?? date).toISOString(),
+    author: { "@type": "Person", name: SITE.author, url: "https://github.com/shakg" },
+    publisher: { "@type": "Organization", name: SITE.name, logo: { "@type": "ImageObject", url: new URL(url("apple-touch-icon.png"), Astro.site).href } },
+    image: new URL(url("og.png"), Astro.site).href,
+    mainEntityOfPage: pageUrl,
+    keywords: tags.join(", "),
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: SITE.name, item: new URL(url(), Astro.site).href },
+      { "@type": "ListItem", position: 2, name: "Blog", item: new URL(url("blog/"), Astro.site).href },
+      { "@type": "ListItem", position: 3, name: title, item: pageUrl },
+    ],
+  },
+];
+---
+
+<Base title={`${title} — ${SITE.name}`} description={description} type="article" published={date} modified={updated ?? date} jsonLd={jsonLd}>
+  <main id="content" class="page frame">
+    <article class="wrap">
+      <header class="page-head">
+        <p class="eyebrow"><a href={url("blog/")}>← Blog</a></p>
+        <h1>{title}</h1>
+        <div class="meta">
+          <time datetime={date.toISOString()}>{formatDate(date)}</time>
+          {updated && <span>· updated <time datetime={updated.toISOString()}>{formatDate(updated)}</time></span>}
+          <span>· {minutes} min read</span>
+          {tags.map((t) => <span class="tagc">#{t}</span>)}
+        </div>
+      </header>
+      <div class="prose">
+        <Content />
+      </div>
+      <nav class="post-foot" aria-label="More posts">
+        {older ? <a class="btn" href={url(`blog/${older.id}/`)}>← {older.data.title}</a> : <span />}
+        {newer ? <a class="btn" href={url(`blog/${newer.id}/`)}>{newer.data.title} →</a> : <a class="btn primary" href={url("#install")}>Install g-systemctl</a>}
+      </nav>
+    </article>
+  </main>
+</Base>

@@ -1,0 +1,227 @@
+---
+import Base from "../layouts/Base.astro";
+import Features from "../components/Features.astro";
+import { SITE, url } from "../lib/site";
+import { repoInfo } from "../lib/github";
+import "../styles/landing.css";
+import demo from "../data/demo.json";
+import { termCss, frameHtml, findFrame } from "../lib/term.js";
+
+const { tag } = await repoInfo();
+
+// Stills from the recording of the real app (tools/demo-capture).
+const LEVELS = [
+  { n: "01", title: "List", text: "Units or containers with status, PID, CPU and memory. Type to filter.", key: "↓",
+    frame: demo.frames.findIndex((f) => f.k[0] === "↓") },
+  { n: "02", title: "Detail page", text: "Summary, graphs and the latest log lines. Start, stop and restart act on this item.", key: "Enter",
+    frame: findFrame(demo, "Detail page: summary, graphs and logs") + 6 },
+  { n: "03", title: "Full-size logs", text: "The logs fill the screen. <code>PgUp</code> and <code>PgDn</code> scroll.", key: "Enter",
+    frame: findFrame(demo, "Full-size logs") + 3 },
+];
+
+const CMDS = [
+  "systemctl list-units", "systemctl show -p", "journalctl -u nginx -f", "systemctl edit --full", "systemctl daemon-reload",
+  "launchctl list", "launchctl load", "docker ps", "docker stats", "docker inspect", "docker logs -f --tail 200", "docker update --cpus 2",
+];
+
+const KEYS: [string[], string, string][] = [
+  [["↑", "↓"], "Move", "Scrolls on the detail page"], [["a–z"], "Filter", "Type anywhere"],
+  [["Enter"], "Open / expand", "List → detail → full logs"], [["Esc"], "Back", "One level up, then clear filter"],
+  [["Alt", "o"], "Start", "Selected or open item"], [["Alt", "x"], "Stop", "Asks y/n"],
+  [["Alt", "r"], "Restart", "Asks y/n"], [["Alt", "g"], "Graphs", "Beside or instead of the summary"],
+  [["Alt", "l"], "Open logs", "Detail page, logs expanded"], [["Alt", "e"], "Edit unit", "systemctl edit --full"],
+  [["Alt", "⇧", "r"], "Reload", "daemon-reload / refresh now"], [["Alt", "u"], "Limits", "docker update"],
+  [["Alt", "s"], "Secrets", "Show masked env values"], [["Tab"], "Switch tab", "Services ⇄ Containers"],
+  [["?"], "Help", "All shortcuts"], [["Alt", "q"], "Quit", "Or Esc on the list"],
+];
+
+// Must match the "deb" entry in scripts/landing.js; this is what renders before JS runs.
+const DEB: [string, string][] = [
+  ["c", "# amd64 (use -arm64.deb on Raspberry Pi OS 64-bit, Graviton, ...)"],
+  ["$", "curl -LO https://github.com/shakg/g-systemctl/releases/latest/download/g-systemctl-linux-amd64.deb"],
+  ["$", "sudo apt install ./g-systemctl-linux-amd64.deb"],
+  ["$", "sudo g-systemctl"],
+];
+
+// Answers are trusted HTML written here.
+const FAQ: [string, string][] = [
+  ["What is g-systemctl?", "A terminal UI that runs <code>systemctl</code>, <code>launchctl</code> and <code>docker</code> for you. It lists services and containers, filters as you type, shows a detail page with status, graphs and logs, and starts, stops or restarts the selected item."],
+  ["Do I need sudo?", "Only to start, stop or restart system services. Run <code>sudo g-systemctl</code> for that. If sudo needs a password, the app asks for it. <code>--user</code> shows your user units instead."],
+  ["Does it work on macOS?", "Yes. It uses <code>launchctl</code> for services and installs with Homebrew. The Containers tab works with Docker Desktop. Service graphs need systemd, so they are Linux only; container graphs work on both."],
+  ["Does it install an agent or daemon?", "No. It is one binary. It runs commands such as <code>systemctl show</code>, <code>journalctl -f</code>, <code>docker stats</code> and <code>docker update</code>."],
+  ["Can it change a running container's limits?", "Yes. <code>Alt+u</code> edits CPUs, memory, memory + swap, PIDs limit and restart policy with <code>docker update</code>. The container keeps running. Docker cannot change env, ports or volumes without recreating the container, so g-systemctl does not offer that."],
+  ["Can I stop a service by accident?", "Unlikely. <code>Enter</code> only opens and closes views. Stop and restart ask first and run only on <code>y</code> or a click on the confirm button; <code>Enter</code> is ignored in that prompt."],
+];
+
+const jsonLd = [
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: "g-systemctl",
+    description: SITE.description,
+    url: new URL(url(), Astro.site).href,
+    applicationCategory: "DeveloperApplication",
+    applicationSubCategory: "System administration",
+    operatingSystem: "Linux, macOS",
+    license: "https://opensource.org/licenses/MIT",
+    downloadUrl: `${SITE.repo}/releases/latest`,
+    ...(tag ? { softwareVersion: tag.replace(/^v/, "") } : {}),
+    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+    sameAs: [SITE.repo],
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: SITE.name,
+    url: new URL(url(), Astro.site).href,
+  },
+];
+---
+
+<Base title={SITE.title} description={SITE.description} jsonLd={jsonLd}>
+<style is:inline slot="head" set:html={termCss(demo)}></style>
+<main id="content" class="frame">
+  <!-- ================= HERO ================= -->
+  <section class="hero">
+    <canvas id="field" aria-hidden="true"></canvas>
+    <div class="wrap hero-copy">
+      {tag && <a class="pill" href={`${SITE.repo}/releases/tag/${tag}`}><b>LATEST</b><span>{tag} release notes</span></a>}
+      <h1>
+        <span class="w" style="--i:0">Services</span> <span class="w" style="--i:1">and</span> <span class="w" style="--i:2">containers,</span><br />
+        <span class="w acc" style="--i:3">in</span> <span class="w acc" style="--i:4">one</span> <span class="w acc" style="--i:5">terminal</span> <span class="w acc" style="--i:6">UI.</span>
+      </h1>
+      <p class="lede">For <code>systemd</code>, <code>launchd</code> and <code>Docker</code>. Type to filter, press Enter to see
+        status, graphs and logs, and start, stop or restart with one key.</p>
+      <div class="ctas">
+        <a class="btn primary" href="#install">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>
+          Install
+        </a>
+        <a class="btn" href={SITE.repo} target="_blank" rel="noopener">
+          View source <span class="k">C++17 · MIT</span>
+        </a>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <div class="stage">
+        <div class="term" id="term" role="img"
+          aria-label="Recording of g-systemctl: filtering services, opening the nginx detail page with graphs and logs, confirming a restart, then changing a Docker container's limits.">
+          <div class="chrome"><span>~ — sudo g-systemctl</span></div>
+          <div class="tbody">
+            <div class="scr tf" id="scr" set:html={frameHtml(demo, 0)}></div>
+          </div>
+        </div>
+        <div class="keycast" aria-hidden="true">
+          <div class="keys" id="kc-keys"></div>
+          <div class="cap" id="kc-cap"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="marquee" aria-label="Commands g-systemctl runs for you">
+      <div class="marquee-label">It runs the same commands you would type. No agent, no daemon.</div>
+      <div class="track">{[...CMDS, ...CMDS].map((c, i) => <span aria-hidden={i >= CMDS.length ? "true" : undefined}>{c}</span>)}</div>
+    </div>
+  </section>
+
+  <!-- ================= LEVELS ================= -->
+  <section class="sec" id="navigate">
+    <div class="wrap">
+      <div class="head">
+        <h2 data-r>Navigation</h2>
+        <p class="sub" data-r style="--d:1"><code>Enter</code> opens the next level. <code>Esc</code> goes back one.</p>
+      </div>
+      <ol class="steps" id="steps">
+        {LEVELS.map((l, i) => (
+          <li data-r style={`--d:${i + 2}`} class:list={{ on: i === 0 }}>
+            <button type="button" data-l={i}>
+              <span class="n">{l.n}</span>
+              <span><b>{l.title}</b><span set:html={l.text} /></span>
+            </button>
+          </li>
+        ))}
+      </ol>
+      <div class="lv" id="lv" data-level="0" data-r style="--d:3" aria-hidden="true">
+        {LEVELS.map((l, i) => <div class="tf lvf" data-l={i} set:html={frameHtml(demo, l.frame)} />)}
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= FEATURES ================= -->
+  <Features />
+
+  <!-- ================= KEYS ================= -->
+  <section class="sec" id="keys">
+    <div class="wrap">
+      <div class="head">
+        <h2 data-r>Keyboard shortcuts</h2>
+        <p class="sub" data-r style="--d:1">Every action has a key. Press <code>?</code> in the app for the full list.</p>
+      </div>
+      <div class="keymap" id="keymap">
+        {KEYS.map(([ks, b, s], i) => (
+          <div class="kt" data-r style={`--d:${i % 4}`}>
+            <div class="kk">{ks.map((k) => <kbd>{k}</kbd>)}</div>
+            <b>{b}</b><span>{s}</span>
+          </div>
+        ))}
+      </div>
+      <div class="mouse" data-r>
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="6" /><path d="M12 7v4" /></svg>
+        The mouse works too: scroll lists and logs, click a row to select it, click it again to open it.
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= INSTALL ================= -->
+  <section class="sec" id="install">
+    <div class="wrap inst">
+      <div>
+        <h2 data-r>Install</h2>
+        <p class="sub" data-r style="--d:1">A <code>.deb</code> for Ubuntu 22.04+ and Debian 12+, a binary for other Linux
+          with glibc 2.34+ (Fedora 35+ and similar), and a Homebrew formula for macOS. amd64 and arm64.</p>
+        <div class="itabs" role="tablist" aria-label="Install method" data-r style="--d:3">
+          <button class="itab" role="tab" aria-selected="true" data-k="deb">Debian / Ubuntu <small>.deb</small></button>
+          <button class="itab" role="tab" aria-selected="false" data-k="bin">Linux binary <small>tar.gz</small></button>
+          <button class="itab" role="tab" aria-selected="false" data-k="brew">macOS <small>Homebrew</small></button>
+          <button class="itab" role="tab" aria-selected="false" data-k="src">From source <small>CMake</small></button>
+        </div>
+      </div>
+      <div class="iterm" data-r style="--d:2">
+        <div class="chrome"><span id="i-title">bash</span><button class="copy" id="copy" type="button">Copy</button></div>
+        <pre class="ibody" id="ibody" role="tabpanel" aria-live="polite">{DEB.map(([k, s]) => k === "c" ? <><span class="c">{s}</span>{"\n"}</> : <><span class="p">$</span> {s}{"\n"}</>)}<span class="p">$</span> <span class="caret"></span></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= FAQ ================= -->
+  <section class="sec" id="faq">
+    <div class="wrap">
+      <div class="head">
+        <h2 data-r>FAQ</h2>
+      </div>
+      <div class="faq">
+        {FAQ.map(([q, a], i) => (
+          <details data-r style={`--d:${i % 3}`}>
+            <summary>{q}</summary>
+            <p set:html={a} />
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= FINAL ================= -->
+  <section class="final">
+    <div class="wrap">
+      <p class="big" data-r><span class="p">$</span> sudo g-systemctl<span class="caret"></span></p>
+      <div class="ctas" style="animation:none">
+        <a class="btn primary" href="#install">Install</a>
+        <a class="btn" href={SITE.repo} target="_blank" rel="noopener">Star on GitHub</a>
+        <a class="btn" href="https://github.com/shakg/g-systemctl/blob/main/docs/CONTRIBUTING.md" target="_blank" rel="noopener">Contribute</a>
+      </div>
+    </div>
+  </section>
+</main></Base>
+
+<script src="../scripts/landing.js"></script>
