@@ -90,8 +90,8 @@ $$(".card").forEach((c) => c.addEventListener("pointermove", (e) => {
       const ring = Math.exp(-((d - wave) ** 2) / 3200) * (1 - wave / (R * 1.2));
       const tw = .5 + .5 * Math.sin(t * p.f + p.ph);
       let a = (p.on ? .10 + .16 * tw : .05) * fade + ring * .45 * fade;
-      let col = p.on ? "110,171,147" : "103,110,140";
-      if (p.fl > 0) { a += p.fl * .7 * fade; col = p.on ? "147,214,185" : "255,80,96"; p.fl = Math.max(0, p.fl - .02); }
+      let col = p.on ? "159,214,189" : "144,148,166";
+      if (p.fl > 0) { a += p.fl * .7 * fade; col = p.on ? "196,232,214" : "240,166,168"; p.fl = Math.max(0, p.fl - .02); }
       x.fillStyle = `rgba(${col},${a.toFixed(3)})`;
       const s = 2 + ring * 1.5 + p.fl;
       x.fillRect(p.x - s / 2, p.y - s / 2, s, s);

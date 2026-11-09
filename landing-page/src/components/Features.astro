@@ -1,4 +1,5 @@
 ---
+import SectionBar from "./SectionBar.astro";
 // Features section. Each card shows one still frame of the app, rendered at build time: no animation, no script.
 
 // Seeded so every build draws the same graphs.
@@ -73,6 +74,7 @@ const PLATFORMS = [
 ---
 
 <section class="sec" id="features">
+  <SectionBar label="~/features" />
   <div class="wrap">
     <div class="head">
       <h2 data-r>Features</h2>

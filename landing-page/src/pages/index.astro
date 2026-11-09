@@ -1,6 +1,7 @@
 ---
 import Base from "../layouts/Base.astro";
 import Features from "../components/Features.astro";
+import SectionBar from "../components/SectionBar.astro";
 import { SITE, url } from "../lib/site";
 import { repoInfo } from "../lib/github";
 import "../styles/landing.css";
@@ -67,7 +68,7 @@ const jsonLd = [
 ---
 
 <Base title={SITE.title} description={SITE.description} jsonLd={jsonLd}>
-<main id="content">
+<main id="content" class="frame">
   <!-- ================= HERO ================= -->
   <section class="hero">
     <canvas id="field" aria-hidden="true"></canvas>
@@ -114,6 +115,7 @@ const jsonLd = [
 
   <!-- ================= LEVELS ================= -->
   <section class="sec" id="navigate">
+    <SectionBar label="~/navigation" />
     <div class="wrap levels">
       <div>
         <h2 data-r>Navigation</h2>
@@ -175,6 +177,7 @@ const jsonLd = [
 
   <!-- ================= KEYS ================= -->
   <section class="sec" id="keys">
+    <SectionBar label="~/keys" />
     <div class="wrap">
       <div class="head">
         <h2 data-r>Keyboard shortcuts</h2>
@@ -197,6 +200,7 @@ const jsonLd = [
 
   <!-- ================= FILM ================= -->
   <section class="sec" id="demo">
+    <SectionBar label="~/recording" />
     <div class="wrap">
       <div class="head">
         <h2 data-r>Screen recording</h2>
@@ -211,6 +215,7 @@ const jsonLd = [
 
   <!-- ================= INSTALL ================= -->
   <section class="sec" id="install">
+    <SectionBar label="~/install" />
     <div class="wrap inst">
       <div>
         <h2 data-r>Install</h2>
@@ -232,6 +237,7 @@ const jsonLd = [
 
   <!-- ================= FAQ ================= -->
   <section class="sec" id="faq">
+    <SectionBar label="~/faq" />
     <div class="wrap">
       <div class="head">
         <h2 data-r>FAQ</h2>
@@ -249,6 +255,7 @@ const jsonLd = [
 
   <!-- ================= FINAL ================= -->
   <section class="final">
+    <SectionBar label="~/get-started" />
     <div class="wrap">
       <p class="big" data-r><span class="p">$</span> sudo g-systemctl<span class="caret"></span></p>
       <div class="ctas" style="animation:none">
