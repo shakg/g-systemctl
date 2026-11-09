@@ -167,13 +167,13 @@ const PROJECT: Row[] = [
       <article class="card" data-r style="--d:1">
         <div class="vg" aria-hidden="true">
           <div class="win">
-            <div class="fl-in">Filter: <span>{FILTER_Q}</span><span class="cur">▏</span></div>
+            <div class="fl-in">Filter: <span>{FILTER_Q}</span><span class="cur">█</span></div>
             <ul class="fl-list">
               {FILTER.map(([n, on]) => {
-                const i = n.indexOf(FILTER_Q);
+                // The app narrows the list; it does not highlight the match.
                 return (
                   <li>
-                    <span>{n.slice(0, i)}<mark>{FILTER_Q}</mark>{n.slice(i + FILTER_Q.length)}</span>
+                    <span>{n}</span>
                     <span class:list={["s", { o: !on }]}>{on ? "● active" : "○ inactive"}</span>
                   </li>
                 );
@@ -191,7 +191,7 @@ const PROJECT: Row[] = [
       <article class="card" data-r>
         <div class="vg" aria-hidden="true">
           <div class="safe">
-            <div class="svcrow"><span>postgresql.service</span><span class="s">● active</span></div>
+            <div class="svcrow"><span><i>▌</i>postgresql.service</span><span class="s">● active</span></div>
             <div class="cdlg">
               <div class="t">Confirm</div>
               <div class="q">Stop service postgresql.service?</div>

@@ -93,6 +93,7 @@ npm run preview:worker  # build, then serve dist/ with wrangler dev like product
 - `src/lib/github.ts` - star count and latest release tag, fetched at build time (no client API calls)
 - Site URL and base path come from `SITE_URL` / `SITE_BASE` (default `https://g-systemctl.org` + `/`). Link with `url()` from `src/lib/site.ts`, never hard-coded `/` paths
 - Look: soft dark base with pastel accents (tokens in `src/styles/global.css`). Surfaces are filled panels with no border, shadow or glow; 1px lines are used only for the page column frame (`.frame`) and one hairline between sections. Every section is heading + `.sub` line, then content inset inside the frame; grids (bento, keymap, FAQ) are filled cells with an 8px gap, not full-bleed hairline grids. No window chrome or traffic-light dots
+- Feature-card mocks of the app must match the app exactly: square elements (the selected row is a flat band with an accent `▌` glyph, not a rounded box with a left border), real labels and prompts, and no behavior the app lacks (e.g. the filter does not highlight matches). Check a mock against a screenshot of the binary before changing it
 - Keep Lighthouse at 100: CSS is inlined, below-the-fold scripts start via `idle()`, and the hero terminal reserves its height to avoid layout shift
 
 **FTXUI Components Used:**

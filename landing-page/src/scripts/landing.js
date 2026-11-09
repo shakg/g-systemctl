@@ -152,15 +152,6 @@ idle(function levels() {
   (async () => { for (;;) { await wait(2800); if (!paused) show((level + 1) % 3); } })();
 });
 
-/* ================= KEYMAP ================= */
-idle(function keymap() {
-  const root = $("#keymap");
-  const tiles = $$(".kt", root);
-  if (RM) return;
-  const wait = gate(root, .3);
-  (async () => { let i = 0; for (; ;) { tiles.forEach((t) => t.classList.remove("hot")); const t = tiles[i++ % tiles.length]; void t.offsetWidth; t.classList.add("hot"); await wait(1100); } })();
-});
-
 /* ================= INSTALL ================= */
 idle(function install() {
   const R = "https://github.com/shakg/g-systemctl/releases/latest/download";

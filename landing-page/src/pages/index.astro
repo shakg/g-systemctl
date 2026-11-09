@@ -26,19 +26,6 @@ const CMDS = [
   "launchctl list", "launchctl load",
 ];
 
-const KEYS: [string[], string, string][] = [
-  [["↑", "↓"], "Move", "Scrolls on the detail page"], [["a–z"], "Filter", "Type anywhere"],
-  [["Enter"], "Open / expand", "List → detail → full logs"], [["Esc"], "Back", "One level up, then clear filter"],
-  [["Alt", "o"], "Start", "Selected or open item"], [["Alt", "x"], "Stop", "Asks y/n"],
-  [["Alt", "r"], "Restart", "Asks y/n"], [["Alt", "g"], "Graphs", "Beside or instead of the summary"],
-  [["Alt", "l"], "Open logs", "Detail page, logs expanded"], [["Alt", "e"], "Edit unit", "systemctl edit --full"],
-  [["Alt", "⇧", "r"], "Reload", "daemon-reload / refresh now"], [["Alt", "u"], "Limits / up", "docker update, or compose up -d"],
-  [["Alt", "s"], "Secrets", "Show masked env values"], [["Tab"], "Switch tab", "Containers ⇄ Services"],
-  [["←", "→"], "Fold", "Compose project rows"], [["Alt", "d"], "Down", "compose down, asks y/n"],
-  [["Alt", "p"], "Pull", "compose pull"], [["Alt", "a"], "Add project", "By compose file or folder"],
-  [["?"], "Help", "Tabs: containers, services, general, settings"], [["Alt", "q"], "Quit", "Or Esc on the list"],
-];
-
 // Must match the "deb" entry in scripts/landing.js; this is what renders before JS runs.
 const DEB: [string, string][] = [
   ["c", "# amd64 (use -arm64.deb on Raspberry Pi OS 64-bit, Graviton, ...)"],
@@ -157,28 +144,6 @@ const jsonLd = [
 
   <!-- ================= FEATURES ================= -->
   <Features />
-
-  <!-- ================= KEYS ================= -->
-  <section class="sec" id="keys">
-    <div class="wrap">
-      <div class="head">
-        <h2 data-r>Keyboard shortcuts</h2>
-        <p class="sub" data-r style="--d:1">Every action has a key. Press <code>?</code> in the app for the full list.</p>
-      </div>
-      <div class="keymap" id="keymap">
-        {KEYS.map(([ks, b, s], i) => (
-          <div class="kt" data-r style={`--d:${i % 4}`}>
-            <div class="kk">{ks.map((k) => <kbd>{k}</kbd>)}</div>
-            <b>{b}</b><span>{s}</span>
-          </div>
-        ))}
-      </div>
-      <div class="mouse" data-r>
-        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="6" /><path d="M12 7v4" /></svg>
-        The mouse works too: scroll lists and logs, click a row to select it, click it again to open it.
-      </div>
-    </div>
-  </section>
 
   <!-- ================= INSTALL ================= -->
   <section class="sec" id="install">
