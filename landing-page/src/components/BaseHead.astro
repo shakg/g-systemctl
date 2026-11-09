@@ -50,8 +50,8 @@ const fontFaces = `
 <script is:inline>document.documentElement.classList.add("js")</script>
 {ANALYTICS && (
   <>
-    <link rel="preconnect" href={ANALYTICS.collector} crossorigin />
-    <script is:inline async src={`${ANALYTICS.collector}/oa.js`} data-key={ANALYTICS.key} data-collector={ANALYTICS.collector}></script>
+    <link rel="preconnect" href={ANALYTICS.origin} />
+    <script is:inline defer src={ANALYTICS.script} data-website-id={ANALYTICS.websiteId} data-domains={ANALYTICS.domain}></script>
   </>
 )}
 

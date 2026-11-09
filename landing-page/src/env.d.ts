@@ -1,6 +1,6 @@
 interface ImportMetaEnv {
-  /** Open Analytics collector origin, e.g. https://c.stats.g-systemctl.org */
-  readonly PUBLIC_OA_COLLECTOR?: string;
-  /** Site tracking key from the Open Analytics dashboard. */
-  readonly PUBLIC_OA_KEY?: string;
+  /** Umami tracker URL, e.g. https://umami.example.org/script.js */
+  readonly PUBLIC_UMAMI_SCRIPT?: string;
+  /** Website id from the Umami dashboard. */
+  readonly PUBLIC_UMAMI_WEBSITE_ID?: string;
 }

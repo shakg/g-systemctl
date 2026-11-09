@@ -8,13 +8,15 @@ export const SITE = {
 } as const;
 
 /**
- * Self-hosted Open Analytics (getopen.so). Both values are set at build time;
- * without them no tracker is rendered (local dev, forks, preview builds).
- * The key is write-only and ends up in the page anyway, so it is not a secret.
+ * Self-hosted Umami. Both values are set at build time; without them no tracker
+ * is rendered (local dev, forks, preview builds). The website id ends up in the
+ * page anyway, so it is not a secret.
  */
-const oaCollector = (import.meta.env.PUBLIC_OA_COLLECTOR ?? "").replace(/\/$/, "");
-const oaKey = import.meta.env.PUBLIC_OA_KEY ?? "";
-export const ANALYTICS = oaCollector && oaKey ? { collector: oaCollector, key: oaKey } : null;
+const umamiScript = import.meta.env.PUBLIC_UMAMI_SCRIPT ?? "";
+const umamiId = import.meta.env.PUBLIC_UMAMI_WEBSITE_ID ?? "";
+export const ANALYTICS = umamiScript && umamiId
+  ? { script: umamiScript, origin: new URL(umamiScript).origin, websiteId: umamiId, domain: new URL(import.meta.env.SITE).hostname }
+  : null;
 
 /** Prefix a site-relative path with the configured base. */
 export function url(path = ""): string {
