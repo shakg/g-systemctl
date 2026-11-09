@@ -5,7 +5,7 @@ date: 2026-11-05
 tags: [systemd, graphs, internals]
 ---
 
-Open a service in g-systemctl and the right half of the detail page shows four graphs: CPU, memory, tasks and IO. This post covers where the numbers come from and how they are drawn in a terminal. No agent or extra daemon is involved, just `systemctl` and some arithmetic.
+Open a service in g-systemctl and the right half of the detail page shows four graphs: CPU, memory, tasks and IO. The numbers come from `systemctl`. The rest is arithmetic and Unicode block characters.
 
 ## Where the numbers come from
 
@@ -47,7 +47,7 @@ double update(double counter, double seconds) {
 }
 ```
 
-Three details matter:
+Three cases need care:
 
 - **The time comes from a monotonic clock**, not from the 2-second schedule. If a sample is late because the machine is busy, the rate stays correct.
 - **A counter that goes down means the service restarted** and its cgroup was recreated. That interval is dropped instead of plotted as a negative spike.
@@ -57,7 +57,7 @@ CPU nanoseconds per second divided by 10⁷ gives percent of one core. A service
 
 ## Ten minutes of history
 
-Each metric keeps its last 300 samples in a `std::deque`. At one sample per 2 seconds that is 10 minutes, which is enough to see a restart, a memory leak or a cron job, and small enough that memory use never matters.
+Each metric keeps its last 300 samples in a `std::deque`. At one sample per 2 seconds that is 10 minutes, enough to see a restart, a slow leak or a cron job. 300 doubles per metric is negligible memory.
 
 ## Drawing with eighths
 
@@ -84,4 +84,4 @@ At 100 or more columns, graphs sit beside the summary and are on by default. On 
 
 The Containers tab already polls `docker stats` every 2 seconds for the list, so it keeps a history per running container from that same poll. When you open a container's detail page, its graphs already show the last few minutes. Network and block IO come from `docker stats` as totals since start, and use the same counter-to-rate step as above.
 
-Try it: install from the [latest release](https://github.com/shakg/g-systemctl/releases/latest), run `sudo g-systemctl`, pick a service and press `Enter`.
+To see it, install from the [latest release](https://github.com/shakg/g-systemctl/releases/latest), run `sudo g-systemctl`, pick a service and press `Enter`.

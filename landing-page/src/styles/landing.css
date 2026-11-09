@@ -20,7 +20,7 @@
 .pill b { font-family: var(--mono); font-size: 11px; color: var(--bg); background: var(--acc); padding: 2px 8px; border-radius: 99px; letter-spacing: .04em; }
 h1 {
   margin: 26px auto 22px; max-width: 980px;
-  font-size: clamp(44px, 8.2vw, 104px); line-height: .98; letter-spacing: -.045em;
+  font-size: clamp(38px, 6.6vw, 84px); line-height: 1.02; letter-spacing: -.04em;
   font-weight: 700; color: var(--hi);
 }
 h1 .w { display: inline-block; animation: rise-lcp 1s var(--ease) both; animation-delay: calc(var(--i) * 80ms + 120ms); }
@@ -298,14 +298,6 @@ h1 .acc {
 .plat-list li { display: flex; gap: 10px; color: var(--text); }
 .plat-list li::before { content: "▸"; color: var(--acc); }
 
-/* ---------- stats ---------- */
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2); margin-top: 140px; }
-.stat { padding: 40px 28px; border-right: 1px solid var(--line-2); }
-.stat:last-child { border-right: 0; }
-.stat .v { font-size: clamp(36px, 4.5vw, 56px); font-weight: 700; letter-spacing: -.04em; color: var(--hi); line-height: 1; font-variant-numeric: tabular-nums; }
-.stat .v small { font-size: .45em; color: var(--acc); margin-left: 4px; letter-spacing: 0; }
-.stat .l { margin-top: 10px; color: var(--muted); font-size: 14px; }
-
 /* ---------- keys ---------- */
 .keymap { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .kt {
@@ -370,9 +362,6 @@ h1 .acc {
   .bento { grid-template-columns: 1fr 1fr; }
   .card.s3 { grid-column: span 2; }
   .keymap { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .stats { grid-template-columns: 1fr 1fr; }
-  .stat:nth-child(2) { border-right: 0; }
-  .stat:nth-child(-n+2) { border-bottom: 1px solid var(--line-2); }
   .card.plat { grid-template-columns: 1fr; gap: 28px; }
   .faq { grid-template-columns: 1fr; }
 }

@@ -7,7 +7,7 @@ export async function GET(context: APIContext) {
   const list = await posts();
   return rss({
     title: `${SITE.name} blog`,
-    description: "Notes on building g-systemctl, a terminal UI for systemd, launchd and Docker.",
+    description: "How g-systemctl, a terminal UI for systemd, launchd and Docker, works.",
     site: new URL(url(), context.site).href,
     items: list.map((p) => ({
       title: p.data.title,

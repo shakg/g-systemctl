@@ -5,7 +5,7 @@ import { posts } from "../../lib/posts";
 
 const list = await posts();
 const title = `Blog — ${SITE.name}`;
-const description = "Notes on building g-systemctl: how the terminal UI samples systemd and Docker, draws graphs, follows logs and keeps actions safe.";
+const description = "How g-systemctl works: reading systemd and Docker counters, drawing graphs in a terminal, and following container logs across restarts.";
 const jsonLd = {
   "@context": "https://schema.org",
   "@type": "Blog",
@@ -24,9 +24,8 @@ const jsonLd = {
   <main id="content" class="page">
     <div class="wrap">
       <header class="page-head">
-        <p class="eyebrow">Blog</p>
-        <h1>Notes from the terminal</h1>
-        <p class="lead">How g-systemctl works under the hood. <a class="rss" href={url("rss.xml")}>Subscribe via RSS</a>.</p>
+        <h1>Blog</h1>
+        <p class="lead">How g-systemctl works. <a class="rss" href={url("rss.xml")}>RSS feed</a>.</p>
       </header>
       <ul class="posts">
         {list.map((p) => (

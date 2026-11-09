@@ -349,20 +349,20 @@ $$(".card").forEach((c) => c.addEventListener("pointermove", (e) => {
   async function loop() {
     for (; ;) {
       reset(); stopCtr(); render();
-      key([], "Every unit on the machine, with live status");
+      key([], "All units, with status, PID, CPU and memory");
       await wait(2000);
-      caption("Type to filter. No search mode.");
+      caption("Type to filter");
       for (const ch of "nginx") { S.filter += ch; S.sel = 0; key([ch]); render(); await wait(240); }
       await wait(900);
       key(["↓"]); S.sel = 1; render(); await wait(500);
       key(["↑"]); S.sel = 0; render(); await wait(600);
-      key(["Enter"], "Enter opens the detail page: summary, graphs, logs");
+      key(["Enter"], "Detail page: summary, graphs and logs");
       S.view = "detail"; render(); startLive(); await wait(4200);
-      key(["Alt", "r"], "Restart asks first");
+      key(["Alt", "r"], "Restart asks for confirmation");
       S.flash = "restart"; S.dialog = "confirm"; render(); S.flash = ""; await wait(1700);
-      key(["Enter"], "Enter does nothing here — no accidental restarts");
+      key(["Enter"], "Enter is ignored in the prompt");
       S.shake = true; render(); S.shake = false; await wait(1900);
-      key(["y"], "Only y confirms");
+      key(["y"], "y confirms");
       S.dialog = null; S.state = "deactivating";
       addLog({ src: "systemd[1]", msg: "Stopping nginx.service - A high performance web server...", sys: 1 }); render(); await wait(1100);
       S.state = "activating"; S.pid = String(4000 + ((Math.random() * 900) | 0));
@@ -370,17 +370,17 @@ $$(".card").forEach((c) => c.addEventListener("pointermove", (e) => {
       addLog({ src: "systemd[1]", msg: "Starting nginx.service - A high performance web server...", sys: 1 }); render(); await wait(1100);
       S.state = "active";
       addLog({ src: "systemd[1]", msg: "Started nginx.service - A high performance web server.", sys: 1 }); render(); await wait(2200);
-      key(["Enter"], "Enter again: full-size logs");
+      key(["Enter"], "Full-size logs");
       S.view = "logs"; render(); await wait(3000);
-      key(["Esc"], "Esc goes back one level");
+      key(["Esc"], "Back one level");
       S.view = "detail"; render(); await wait(1100);
       key(["Esc"]); S.view = "list"; stopLive(); render(); await wait(1000);
-      key(["Esc"], "…then clears the filter");
+      key(["Esc"], "On the list, Esc clears the filter");
       S.filter = ""; S.sel = 7; render(); await wait(1300);
-      key(["Tab"], "Tab: Docker containers with live CPU and memory");
+      key(["Tab"], "Containers tab");
       S.tab = "ctr"; S.sel = 0; render(); startCtr(); await wait(1600);
       key(["↓"]); S.sel = 1; render(); await wait(1600);
-      key(["Alt", "u"], "Change limits in place with docker update");
+      key(["Alt", "u"], "Edit limits with docker update");
       S.edit = { field: 0, cpus: "1.00", mem: "1g", swap: "2g", pids: "200", policy: "unless-stopped" };
       S.dialog = "limits"; render(); await wait(1100);
       S.edit.cpus = ""; render(); await wait(250);
@@ -389,7 +389,7 @@ $$(".card").forEach((c) => c.addEventListener("pointermove", (e) => {
       S.edit.mem = ""; render(); await wait(200);
       await type((c) => (S.edit.mem += c), "2g");
       await wait(500);
-      key(["Enter"], "Applied live. No recreate.");
+      key(["Enter"], "Applied while the container runs");
       S.dialog = null; CTRS[1].lim = "2GiB"; S.status = "Updated api: --cpus 2.00 --memory 2g"; render(); await wait(2800);
       key(["Tab"], ""); S.tab = "svc"; stopCtr(); S.status = "";
     }
@@ -397,7 +397,7 @@ $$(".card").forEach((c) => c.addEventListener("pointermove", (e) => {
 
   if (RM) {
     reset(); S.filter = "nginx"; S.view = "detail"; render();
-    caption("Detail page: summary, live graphs and logs");
+    caption("Detail page: summary, graphs and logs");
   } else {
     loop();
   }

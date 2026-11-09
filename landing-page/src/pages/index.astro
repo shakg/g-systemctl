@@ -13,14 +13,14 @@ const CMDS = [
 ];
 
 const KEYS: [string[], string, string][] = [
-  [["↑", "↓"], "Move", "Or scroll the detail page"], [["a–z"], "Filter", "Just start typing"],
+  [["↑", "↓"], "Move", "Scrolls on the detail page"], [["a–z"], "Filter", "Type anywhere"],
   [["Enter"], "Open / expand", "List → detail → full logs"], [["Esc"], "Back", "One level up, then clear filter"],
-  [["Alt", "o"], "Start", "Selected or shown item"], [["Alt", "x"], "Stop", "Asks y/n"],
+  [["Alt", "o"], "Start", "Selected or open item"], [["Alt", "x"], "Stop", "Asks y/n"],
   [["Alt", "r"], "Restart", "Asks y/n"], [["Alt", "g"], "Graphs", "Beside or instead of the summary"],
-  [["Alt", "l"], "Logs first", "Open the detail page expanded"], [["Alt", "e"], "Edit unit", "systemctl edit --full"],
+  [["Alt", "l"], "Open logs", "Detail page, logs expanded"], [["Alt", "e"], "Edit unit", "systemctl edit --full"],
   [["Alt", "⇧", "r"], "Reload", "daemon-reload / refresh now"], [["Alt", "u"], "Limits", "docker update"],
   [["Alt", "s"], "Secrets", "Show masked env values"], [["Tab"], "Switch tab", "Services ⇄ Containers"],
-  [["?"], "Help", "Every shortcut"], [["Alt", "q"], "Quit", "Or Esc from the list"],
+  [["?"], "Help", "All shortcuts"], [["Alt", "q"], "Quit", "Or Esc on the list"],
 ];
 
 // Must match the "deb" entry in scripts/landing.js; this is what renders before JS runs.
@@ -33,12 +33,12 @@ const DEB: [string, string][] = [
 
 // Answers are trusted HTML written here.
 const FAQ: [string, string][] = [
-  ["What is g-systemctl?", "A terminal UI for <code>systemctl</code>, <code>launchctl</code> and <code>docker</code>. It lists services and containers with live status, lets you filter by typing, opens a detail page with graphs and logs, and starts, stops or restarts the selected item."],
-  ["Does it need root?", "Listing and logs work as a normal user. Starting and stopping system services needs root, so run <code>sudo g-systemctl</code>. If sudo asks for a password, the app prompts for it. Use <code>--user</code> for your user units."],
-  ["Does it work on macOS?", "Yes. On macOS it drives <code>launchctl</code> and installs with Homebrew. The Containers tab works with Docker Desktop. Detail-page graphs are Linux only."],
-  ["Does it install an agent or daemon?", "No. It is one binary that runs the same commands you would type: <code>systemctl show</code>, <code>journalctl -f</code>, <code>docker stats</code>, <code>docker update</code>."],
-  ["Can it change a running container's limits?", "Yes. <code>Alt+u</code> edits CPUs, memory, memory + swap, PIDs limit and restart policy with <code>docker update</code>, without recreating the container. Env, ports and volumes need a recreate, so it does not touch them."],
-  ["Can I stop a service by accident?", "No. <code>Enter</code> only navigates. Stop and restart open a prompt that runs only on <code>y</code> or a click on its confirm button."],
+  ["What is g-systemctl?", "A terminal UI that runs <code>systemctl</code>, <code>launchctl</code> and <code>docker</code> for you. It lists services and containers, filters as you type, shows a detail page with status, graphs and logs, and starts, stops or restarts the selected item."],
+  ["Do I need sudo?", "Only to start, stop or restart system services. Run <code>sudo g-systemctl</code> for that. If sudo needs a password, the app asks for it. <code>--user</code> shows your user units instead."],
+  ["Does it work on macOS?", "Yes. It uses <code>launchctl</code> for services and installs with Homebrew. The Containers tab works with Docker Desktop. Service graphs need systemd, so they are Linux only; container graphs work on both."],
+  ["Does it install an agent or daemon?", "No. It is one binary. It runs commands such as <code>systemctl show</code>, <code>journalctl -f</code>, <code>docker stats</code> and <code>docker update</code>."],
+  ["Can it change a running container's limits?", "Yes. <code>Alt+u</code> edits CPUs, memory, memory + swap, PIDs limit and restart policy with <code>docker update</code>. The container keeps running. Docker cannot change env, ports or volumes without recreating the container, so g-systemctl does not offer that."],
+  ["Can I stop a service by accident?", "Unlikely. <code>Enter</code> only opens and closes views. Stop and restart ask first and run only on <code>y</code> or a click on the confirm button; <code>Enter</code> is ignored in that prompt."],
 ];
 
 const jsonLd = [
@@ -72,13 +72,13 @@ const jsonLd = [
   <section class="hero">
     <canvas id="field" aria-hidden="true"></canvas>
     <div class="wrap hero-copy">
-      <a class="pill" href="#features"><b>NEW</b><span>{tag ? `${tag} — live graphs and a Docker containers tab` : "Live graphs and a Docker containers tab"}</span></a>
+      {tag && <a class="pill" href={`${SITE.repo}/releases/tag/${tag}`}><b>LATEST</b><span>{tag} release notes</span></a>}
       <h1>
-        <span class="w" style="--i:0">Every</span> <span class="w" style="--i:1">service.</span><br />
-        <span class="w acc" style="--i:2">One</span> <span class="w acc" style="--i:3">terminal.</span>
+        <span class="w" style="--i:0">Services</span> <span class="w" style="--i:1">and</span> <span class="w" style="--i:2">containers,</span><br />
+        <span class="w acc" style="--i:3">in</span> <span class="w acc" style="--i:4">one</span> <span class="w acc" style="--i:5">terminal</span> <span class="w acc" style="--i:6">UI.</span>
       </h1>
-      <p class="lede">A keyboard-driven TUI for <code>systemd</code>, <code>launchd</code> and <code>Docker</code>. Filter,
-        inspect, graph, restart and follow logs — without typing a unit name twice.</p>
+      <p class="lede">For <code>systemd</code>, <code>launchd</code> and <code>Docker</code>. Type to filter, press Enter to see
+        status, graphs and logs, and start, stop or restart with one key.</p>
       <div class="ctas">
         <a class="btn primary" href="#install">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>
@@ -107,7 +107,7 @@ const jsonLd = [
     </div>
 
     <div class="marquee" aria-label="Commands g-systemctl runs for you">
-      <div class="marquee-label">No agent, no daemon. It runs the commands you would.</div>
+      <div class="marquee-label">It runs the same commands you would type. No agent, no daemon.</div>
       <div class="track">{[...CMDS, ...CMDS].map((c, i) => <span aria-hidden={i >= CMDS.length ? "true" : undefined}>{c}</span>)}</div>
     </div>
   </section>
@@ -116,25 +116,25 @@ const jsonLd = [
   <section class="sec" id="navigate">
     <div class="wrap levels">
       <div>
-        <p class="eyebrow" data-r>Navigation</p>
-        <h2 data-r style="--d:1">Enter goes down.<br /><span class="m">Esc comes back.</span></h2>
+        <h2 data-r>Navigation</h2>
+        <p class="sub" data-r style="--d:1"><code>Enter</code> opens the next level. <code>Esc</code> goes back one.</p>
         <ol class="steps" id="steps">
           <li data-r style="--d:2" class="on"><span class="n">01</span>
             <div>
               <h3>List</h3>
-              <p>Every unit or container with status, PID, CPU and memory. Type anywhere to filter.</p>
+              <p>Units or containers with status, PID, CPU and memory. Type to filter.</p>
             </div>
           </li>
           <li data-r style="--d:3"><span class="n">02</span>
             <div>
               <h3>Detail page</h3>
-              <p>Summary, live graphs and a short log strip. Actions target the item shown.</p>
+              <p>Summary, graphs and the latest log lines. Start, stop and restart act on this item.</p>
             </div>
           </li>
           <li data-r style="--d:4"><span class="n">03</span>
             <div>
               <h3>Full-size logs</h3>
-              <p>The strip expands to the whole screen. <code>PgUp</code> / <code>PgDn</code> to scroll.</p>
+              <p>The logs fill the screen. <code>PgUp</code> and <code>PgDn</code> scroll.</p>
             </div>
           </li>
         </ol>
@@ -177,9 +177,8 @@ const jsonLd = [
   <section class="sec" id="keys">
     <div class="wrap">
       <div class="head">
-        <p class="eyebrow" data-r>Keyboard</p>
-        <h2 data-r style="--d:1">Hands stay on the keys.</h2>
-        <p class="sub" data-r style="--d:2">Explicit shortcuts for every action. Press <code>?</code> in the app for the full list.</p>
+        <h2 data-r>Keyboard shortcuts</h2>
+        <p class="sub" data-r style="--d:1">Every action has a key. Press <code>?</code> in the app for the full list.</p>
       </div>
       <div class="keymap" id="keymap">
         {KEYS.map(([ks, b, s], i) => (
@@ -191,7 +190,7 @@ const jsonLd = [
       </div>
       <div class="mouse" data-r>
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="6" /><path d="M12 7v4" /></svg>
-        Mouse works too: scroll lists and logs, click rows, click Start / Stop / Restart / Back.
+        The mouse works too: scroll lists and logs, click a row to select it, click it again to open it.
       </div>
     </div>
   </section>
@@ -200,8 +199,7 @@ const jsonLd = [
   <section class="sec" id="demo">
     <div class="wrap">
       <div class="head">
-        <p class="eyebrow" data-r>Recording</p>
-        <h2 data-r style="--d:1">The real thing, <span class="m">unedited.</span></h2>
+        <h2 data-r>Screen recording</h2>
       </div>
       <div class="film" data-r style="--d:2">
         <video id="film" muted loop playsinline preload="none" controls aria-label="Screen recording of g-systemctl managing services and containers">
@@ -215,10 +213,9 @@ const jsonLd = [
   <section class="sec" id="install">
     <div class="wrap inst">
       <div>
-        <p class="eyebrow" data-r>Install</p>
-        <h2 data-r style="--d:1">Up in <span class="m">ten seconds.</span></h2>
-        <p class="sub" data-r style="--d:2">Prebuilt for Ubuntu 22.04+, Debian 12+, Fedora 35+ and macOS. Run with
-          <code>sudo</code> to start and stop system services.</p>
+        <h2 data-r>Install</h2>
+        <p class="sub" data-r style="--d:1">A <code>.deb</code> for Ubuntu 22.04+ and Debian 12+, a binary for other Linux
+          with glibc 2.34+ (Fedora 35+ and similar), and a Homebrew formula for macOS. amd64 and arm64.</p>
         <div class="itabs" role="tablist" aria-label="Install method" data-r style="--d:3">
           <button class="itab" role="tab" aria-selected="true" data-k="deb">Debian / Ubuntu <small>.deb</small></button>
           <button class="itab" role="tab" aria-selected="false" data-k="bin">Linux binary <small>tar.gz</small></button>
@@ -237,8 +234,7 @@ const jsonLd = [
   <section class="sec" id="faq">
     <div class="wrap">
       <div class="head">
-        <p class="eyebrow" data-r>FAQ</p>
-        <h2 data-r style="--d:1">Questions, answered.</h2>
+        <h2 data-r>FAQ</h2>
       </div>
       <div class="faq">
         {FAQ.map(([q, a], i) => (

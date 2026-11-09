@@ -7,7 +7,7 @@ tags: [docker, logs, internals]
 
 `docker logs -f` follows a container's output until the container stops. Then it exits. If you restart the container, you run the command again. If `docker compose up` recreates it, the container has a new ID and the old command would not find it anyway.
 
-g-systemctl's container detail page has a log strip that is supposed to keep following. This post covers how it does that.
+The log strip on g-systemctl's container detail page keeps following through both. Here is how.
 
 ## The naive version and why it fails
 
@@ -45,11 +45,11 @@ docker logs -f --since 1793785333.104882113 <id>
 
 `--since` starts exactly where the old stream stopped, so no line is shown twice and none is skipped.
 
-Using the existing poll instead of a retry loop solves the busy loop for free: there is at most one check every 2 seconds, and it costs nothing extra because the list was being fetched anyway.
+Using the existing poll instead of a retry loop also removes the busy loop: at most one check every 2 seconds, on a list that was being fetched anyway.
 
 ## A race with docker ps
 
-There is a subtle ordering problem. The poll and the log stream run on different threads. A `docker ps` that started *before* the log stream ended can still report the container as running. Acting on that result would start a stream for a container that is already stopping.
+There is a race. The poll and the log stream run on different threads. A `docker ps` that started *before* the log stream ended can still report the container as running. Acting on that result would start a stream for a container that is already stopping.
 
 The fix is to timestamp each poll before it runs, and ignore any poll that started before the stream ended:
 
@@ -65,7 +65,7 @@ Docker can also report a container as running for a moment after its log stream 
 
 `docker compose up` after a config change removes the container and creates a new one with the same name and a new ID. When the followed ID disappears from `docker ps`, g-systemctl looks for a container with the same name. If it finds one, it switches to the new ID, reloads the summary from `docker inspect` and attaches with the same `--since` timestamp.
 
-From the user's side, the log strip just keeps going:
+In the log strip it looks like this:
 
 ```text
 09:42:11 info GET /v1/orders 200 12ms
@@ -78,4 +78,4 @@ From the user's side, the log strip just keeps going:
 
 `journalctl -u <unit> -f` follows the journal, not the process. It keeps running across service restarts, so the service log strip needs none of the above.
 
-Try it: open the Containers tab with `Tab` or `g-systemctl --containers`, press `Enter` on a container, then restart it from another terminal.
+To see it, open the Containers tab with `Tab` or `g-systemctl --containers`, press `Enter` on a container, then restart it from another terminal.

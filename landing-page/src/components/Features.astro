@@ -70,19 +70,12 @@ const PLATFORMS = [
   { os: "Linux or Docker Desktop", w: "docker", c: "", l: ["docker ps and docker stats every 2s", "Inspect env, ports, mounts, networks", "Logs from docker logs -f --tail 200", "Limits and restart policy with docker update", "Filter by name, image or Compose project"] },
 ];
 
-const STATS: [string, string, string][] = [
-  ["2", "s", "Refresh interval for lists, stats and graphs"],
-  ["300", "", "Samples per graph — 10 minutes of history"],
-  ["3", "", "Backends: systemd, launchd, Docker"],
-  ["2", "arch", "Linux packages for amd64 and arm64"],
-];
 ---
 
 <section class="sec" id="features">
   <div class="wrap">
     <div class="head">
-      <p class="eyebrow" data-r>Features</p>
-      <h2 data-r style="--d:1">What you reach for,<br /><span class="m">one key away.</span></h2>
+      <h2 data-r>Features</h2>
     </div>
 
     <div class="bento">
@@ -101,9 +94,9 @@ const STATS: [string, string, string][] = [
           </div>
         </div>
         <div>
-          <h3>Live graphs on the detail page</h3>
-          <p>CPU, memory, tasks and IO, sampled every 2 seconds with 10 minutes of history. Beside the summary at 100+
-            columns; <code>Alt+g</code> swaps them in on narrow terminals.</p>
+          <h3>Graphs on the detail page</h3>
+          <p>CPU, memory, tasks and IO, sampled every 2 seconds, last 10 minutes kept. At 100+ columns they sit beside the
+            summary. On narrower terminals <code>Alt+g</code> switches between the two.</p>
         </div>
       </article>
 
@@ -126,8 +119,8 @@ const STATS: [string, string, string][] = [
           </div>
         </div>
         <div>
-          <h3>Filter as you type</h3>
-          <p>No search mode. Start typing; the list narrows. <code>-f nginx</code> starts filtered.</p>
+          <h3>Type to filter</h3>
+          <p>There is no search mode: typing narrows the list. <code>-f nginx</code> starts with a filter.</p>
         </div>
       </article>
 
@@ -145,8 +138,8 @@ const STATS: [string, string, string][] = [
           </div>
         </div>
         <div>
-          <h3>Safe by default</h3>
-          <p><code>Enter</code> only navigates. Stop and restart ask first, and only <code>y</code> or a click confirms.</p>
+          <h3>Stop and restart ask first</h3>
+          <p><code>Enter</code> only opens views. Stop and restart run after <code>y</code> or a click on the confirm button.</p>
         </div>
       </article>
 
@@ -168,13 +161,13 @@ const STATS: [string, string, string][] = [
               </div>
               <div class="row"><span class="lbl">Wanted by</span><span>multi-user.target</span></div>
             </div>
-            <div class="cmd-note"><span class="sw">●</span><span>one option per line instead of one long, cut-off line</span></div>
+            <div class="cmd-note"><span class="sw">●</span><span>split one option per line</span></div>
           </div>
         </div>
         <div>
-          <h3>Commands you can read</h3>
-          <p>Long <code>ExecStart</code> lines and Docker entrypoints are split one option per line. The script of
-            <code>sh -c</code> is indented one level deeper.</p>
+          <h3>Long commands, one option per line</h3>
+          <p><code>ExecStart</code> lines and Docker entrypoints are split one option per line. The script inside
+            <code>sh -c</code> is indented one more level.</p>
         </div>
       </article>
 
@@ -190,9 +183,9 @@ const STATS: [string, string, string][] = [
           </div>
         </div>
         <div>
-          <h3>Logs that keep following</h3>
-          <p><code>journalctl -f</code> for services, <code>docker logs -f</code> for containers. Reattaches after a
-            restart or a recreate with the same name.</p>
+          <h3>Logs follow restarts</h3>
+          <p><code>journalctl -f</code> for services, <code>docker logs -f</code> for containers. If a container restarts
+            or is recreated with the same name, the log continues where it stopped.</p>
         </div>
       </article>
 
@@ -210,8 +203,9 @@ const STATS: [string, string, string][] = [
           </div>
         </div>
         <div>
-          <h3>Limits, changed in place</h3>
-          <p><code>Alt+u</code> edits CPUs, memory, swap, PIDs and restart policy with <code>docker update</code>. No recreate.</p>
+          <h3>Change container limits</h3>
+          <p><code>Alt+u</code> edits CPUs, memory, swap, PIDs and restart policy with <code>docker update</code>. The
+            container keeps running.</p>
         </div>
       </article>
 
@@ -228,9 +222,9 @@ const STATS: [string, string, string][] = [
           </div>
         </div>
         <div>
-          <h3>Secrets stay masked</h3>
-          <p>Env values whose names look secret — <code>PASSWORD</code>, <code>TOKEN</code>, <code>KEY</code> — are hidden
-            until you press <code>Alt+s</code>.</p>
+          <h3>Secrets hidden</h3>
+          <p>Env values are hidden when the name contains <code>pass</code>, <code>secret</code>, <code>token</code>,
+            <code>key</code>, <code>credential</code> or <code>auth</code>. <code>Alt+s</code> shows them.</p>
         </div>
       </article>
 
@@ -246,14 +240,4 @@ const STATS: [string, string, string][] = [
     </div>
   </div>
 
-  <div class="wrap">
-    <div class="stats">
-      {STATS.map(([v, unit, label], i) => (
-        <div class="stat" data-r style={`--d:${i}`}>
-          <div class="v">{v}{unit && <small>{unit}</small>}</div>
-          <div class="l">{label}</div>
-        </div>
-      ))}
-    </div>
-  </div>
 </section>
