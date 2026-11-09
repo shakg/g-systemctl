@@ -4,8 +4,20 @@ import Features from "../components/Features.astro";
 import { SITE, url } from "../lib/site";
 import { repoInfo } from "../lib/github";
 import "../styles/landing.css";
+import demo from "../data/demo.json";
+import { termCss, frameHtml, findFrame } from "../lib/term.js";
 
 const { tag } = await repoInfo();
+
+// Stills from the recording of the real app (tools/demo-capture).
+const LEVELS = [
+  { n: "01", title: "List", text: "Units or containers with status, PID, CPU and memory. Type to filter.", key: "↓",
+    frame: demo.frames.findIndex((f) => f.k[0] === "↓") },
+  { n: "02", title: "Detail page", text: "Summary, graphs and the latest log lines. Start, stop and restart act on this item.", key: "Enter",
+    frame: findFrame(demo, "Detail page: summary, graphs and logs") + 6 },
+  { n: "03", title: "Full-size logs", text: "The logs fill the screen. <code>PgUp</code> and <code>PgDn</code> scroll.", key: "Enter",
+    frame: findFrame(demo, "Full-size logs") + 3 },
+];
 
 const CMDS = [
   "systemctl list-units", "systemctl show -p", "journalctl -u nginx -f", "systemctl edit --full", "systemctl daemon-reload",
@@ -67,6 +79,7 @@ const jsonLd = [
 ---
 
 <Base title={SITE.title} description={SITE.description} jsonLd={jsonLd}>
+<style is:inline slot="head" set:html={termCss(demo)}></style>
 <main id="content" class="frame">
   <!-- ================= HERO ================= -->
   <section class="hero">
@@ -93,10 +106,10 @@ const jsonLd = [
     <div class="wrap">
       <div class="stage">
         <div class="term" id="term" role="img"
-          aria-label="Animated g-systemctl session: filtering services, opening the nginx detail page with live graphs and logs, confirming a restart, then changing a Docker container's limits.">
+          aria-label="Recording of g-systemctl: filtering services, opening the nginx detail page with graphs and logs, confirming a restart, then changing a Docker container's limits.">
           <div class="chrome"><span>~ — sudo g-systemctl</span></div>
           <div class="tbody">
-            <div class="scr" id="scr"></div>
+            <div class="scr tf" id="scr" set:html={frameHtml(demo, 0)}></div>
           </div>
         </div>
         <div class="keycast" aria-hidden="true">
@@ -114,58 +127,23 @@ const jsonLd = [
 
   <!-- ================= LEVELS ================= -->
   <section class="sec" id="navigate">
-    <div class="wrap levels">
-      <div>
+    <div class="wrap">
+      <div class="head">
         <h2 data-r>Navigation</h2>
         <p class="sub" data-r style="--d:1"><code>Enter</code> opens the next level. <code>Esc</code> goes back one.</p>
-        <ol class="steps" id="steps">
-          <li data-r style="--d:2" class="on"><span class="n">01</span>
-            <div>
-              <h3>List</h3>
-              <p>Units or containers with status, PID, CPU and memory. Type to filter.</p>
-            </div>
-          </li>
-          <li data-r style="--d:3"><span class="n">02</span>
-            <div>
-              <h3>Detail page</h3>
-              <p>Summary, graphs and the latest log lines. Start, stop and restart act on this item.</p>
-            </div>
-          </li>
-          <li data-r style="--d:4"><span class="n">03</span>
-            <div>
-              <h3>Full-size logs</h3>
-              <p>The logs fill the screen. <code>PgUp</code> and <code>PgDn</code> scroll.</p>
-            </div>
-          </li>
-        </ol>
       </div>
-      <div class="lv-wrap" data-r style="--d:2">
-        <div class="lv" id="lv" data-level="0" aria-hidden="true">
-          <div class="lv-bar"><b>g-systemctl</b><span>Services</span><span style="margin-left:auto">Filter: _</span></div>
-          <div class="lv-list" id="lv-list"></div>
-          <div class="lv-detail">
-            <div class="lv-title">nginx.service <span class="st">● active (running)</span>
-              <div class="bts"><span>Start</span><span>Stop</span><span>Restart</span><span>Back</span></div>
-            </div>
-            <div class="lv-mid">
-              <div class="lv-sum">
-                <div><span>State</span><span>active (running)</span></div>
-                <div><span>Unit file</span><span>enabled</span></div>
-                <div><span>Main PID</span><span>1184</span></div>
-                <div><span>Tasks</span><span>5</span></div>
-                <div><span>Memory</span><span>12.4 MiB</span></div>
-                <div><span>Restart</span><span>on-failure</span></div>
-              </div>
-              <div class="lv-gr" id="lv-gr"></div>
-            </div>
-            <div></div>
-            <div class="lv-logs">
-              <div class="lv-lh">Logs <span>journalctl -u nginx -f</span><em id="lv-exp">⤢ Expand</em></div>
-              <div class="lv-ll" id="lv-ll"></div>
-            </div>
-          </div>
-        </div>
-        <div class="lv-key" id="lv-key"></div>
+      <ol class="steps" id="steps">
+        {LEVELS.map((l, i) => (
+          <li data-r style={`--d:${i + 2}`} class:list={{ on: i === 0 }}>
+            <button type="button" data-l={i}>
+              <span class="n">{l.n}</span>
+              <span><b>{l.title}</b><span set:html={l.text} /></span>
+            </button>
+          </li>
+        ))}
+      </ol>
+      <div class="lv" id="lv" data-level="0" data-r style="--d:3" aria-hidden="true">
+        {LEVELS.map((l, i) => <div class="tf lvf" data-l={i} set:html={frameHtml(demo, l.frame)} />)}
       </div>
     </div>
   </section>

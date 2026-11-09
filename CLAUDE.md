@@ -86,6 +86,7 @@ npm run build    # astro check + static build into dist/
 - `src/pages/index.astro` - landing page markup; `src/scripts/landing.js` drives its animations; `src/styles/landing.css` its styles
 - `src/content/blog/*.md` - blog posts (schema in `src/content.config.ts`: title ≤70 chars, description 50–160 chars, date, tags, draft)
 - `src/components/BaseHead.astro` - SEO tags (canonical, Open Graph, Twitter, JSON-LD), self-hosted font preloads
+- Hero and Navigation demos replay frames recorded from the real binary (`src/data/demo.json`, rendered by `src/lib/term.js`). After a UI change, rebuild the app and re-record: `pip install pyte && python3 -I landing-page/tools/demo-capture/capture.py` (fake `systemctl`/`journalctl`/`ps`/`docker`/`sudo` live in `tools/demo-capture/fake.py`). Record at 120 columns; narrower layouts squeeze the containers list and the filter bar
 - `src/lib/github.ts` - star count and latest release tag, fetched at build time (no client API calls)
 - Site URL and base path come from `SITE_URL` / `SITE_BASE` (default `https://g-systemctl.org` + `/`). Link with `url()` from `src/lib/site.ts`, never hard-coded `/` paths
 - Look: soft dark base with pastel accents (tokens in `src/styles/global.css`). Surfaces are filled panels with no border, shadow or glow; 1px lines are used only for the page column frame (`.frame`), one hairline between sections and grid cell dividers. No window chrome or traffic-light dots

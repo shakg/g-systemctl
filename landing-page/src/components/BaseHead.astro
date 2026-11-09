@@ -1,6 +1,8 @@
 ---
 import geist from "@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url";
 import mono from "@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2?url";
+// Box drawing, blocks, arrows and shapes from JetBrains Mono 2.304 (OFL, see src/assets/fonts), for the terminal frames.
+import monoSymbols from "../assets/fonts/jetbrains-mono-symbols.woff2?url";
 import { SITE, url } from "../lib/site";
 
 export interface Props {
@@ -21,7 +23,8 @@ const ogImage = new URL(url(image), Astro.site);
 const LATIN = "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD";
 const fontFaces = `
 @font-face{font-family:"Geist";font-style:normal;font-display:swap;font-weight:100 900;src:url(${geist}) format("woff2");unicode-range:${LATIN}}
-@font-face{font-family:"JetBrains Mono";font-style:normal;font-display:swap;font-weight:100 800;src:url(${mono}) format("woff2");unicode-range:${LATIN}}`;
+@font-face{font-family:"JetBrains Mono";font-style:normal;font-display:swap;font-weight:100 800;src:url(${mono}) format("woff2");unicode-range:${LATIN}}
+@font-face{font-family:"JetBrains Mono";font-style:normal;font-display:swap;font-weight:100 800;src:url(${monoSymbols}) format("woff2");unicode-range:U+2190-21FF,U+2300-23FF,U+2500-25FF}`;
 ---
 
 <meta charset="utf-8" />
@@ -41,6 +44,7 @@ const fontFaces = `
 
 <link rel="preload" href={geist} as="font" type="font/woff2" crossorigin />
 <link rel="preload" href={mono} as="font" type="font/woff2" crossorigin />
+<link rel="preload" href={monoSymbols} as="font" type="font/woff2" crossorigin />
 <style is:inline set:html={fontFaces}></style>
 <script is:inline>document.documentElement.classList.add("js")</script>
 
