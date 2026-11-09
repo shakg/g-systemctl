@@ -297,7 +297,8 @@ h1 .acc { color: var(--acc); }
   transition: background .25s, color .25s;
 }
 .itab:hover { background: var(--panel); }
-.itab[aria-selected="true"] { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--acc); color: var(--hi); }
+.itab[aria-selected="true"] { background: var(--acc); color: var(--on-acc); font-weight: 600; }
+.itab[aria-selected="true"] small { color: var(--on-acc); opacity: .7; }
 .itab small { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted); }
 .iterm { border-radius: 14px; overflow: hidden; background: var(--bg-2); }
 .iterm .chrome span { transform: none; margin: 0; }
