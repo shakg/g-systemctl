@@ -33,7 +33,8 @@ g-systemctl/
 │   │   ├── service.hpp         # ServiceUnit data structure
 │   │   ├── service_manager.hpp # Abstract service manager interface
 │   │   ├── command_executor.hpp # Shell command execution
-│   │   └── command_format.hpp  # Lays out long commands one option per line
+│   │   ├── command_format.hpp  # Lays out long commands one option per line
+│   │   └── text_wrap.hpp       # Splits a line into rows of a given column width
 │   ├── container/              # Container runtime support
 │   │   ├── container.hpp       # Container, ContainerDetails, resource-limit diffing, compose grouping/drift
 │   │   ├── compose_store.hpp   # Saved compose projects (~/.config/g-systemctl/compose-projects)
@@ -69,6 +70,7 @@ g-systemctl/
 - `ServiceManager::sample_service` - Raw counters (CPU ns, memory, tasks, IO bytes) for the service detail graphs. `App` runs a sampler thread every 2s while a detail page is open; it also refreshes the summary rows. Empty on macOS, so no graphs there
 - Container detail graphs come from the existing `docker stats` poll; `ContainersView` keeps a history per running container, so graphs are already filled when a detail page opens
 - `GraphToggle` (`Alt+g` or the log-header button, shared by both tabs) - At 100+ columns graphs sit beside the summary and are on by default; below that they replace the summary and are off by default. `GraphPanel` drops to one line per metric when there are fewer than two rows per metric
+- `LogPanel` wraps long log lines onto extra rows instead of clipping (`wrap_text`, hard break at the column limit). The width is only known after layout, so its node asks FTXUI for another layout pass (`Node::Check`). Scrolling still moves by log line
 - `format_command` - Splits long commands (service ExecStart, docker entrypoint+cmd) into one option per line; the script of `sh -c`/`bash -c` is indented one level deeper
 - `ConfirmDialog` - Owned by `App`, handed to `ContainersView` via `set_confirm`. Stop and restart go through it (or through the sudo password prompt, which replaces it). Only `y` or a click confirms; Enter is swallowed
 - Compose - `ps` reads the compose labels (project, service, replica, working dir, config files, config hash, one-off, depends_on). `group_compose_projects` (`src/container/compose.cpp`, pure, unit-tested) groups them and adds saved projects that have no containers. `ContainerManager::compose` runs `cd DIR && docker compose -p NAME -f FILE... <action>`; start/stop/restart/down fall back to `-p NAME` alone if the files are gone. The poller compares each service's `config-hash` label with `compose config --hash '*'` (all projects every ~30s, the open project every poll) to flag drift. `ComposeStore` remembers projects so they stay listed after `down`
