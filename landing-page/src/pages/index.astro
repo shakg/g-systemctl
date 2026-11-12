@@ -22,6 +22,7 @@ const LEVELS = [
 const CMDS = [
   "docker ps", "docker stats", "docker inspect", "docker logs -f --tail 200", "docker update --cpus 2",
   "docker compose up -d", "docker compose logs -f", "docker compose config --hash", "docker compose down",
+  "podman ps", "podman stats", "podman compose up -d", "podman-compose logs -f",
   "systemctl list-units", "systemctl show -p", "journalctl -u nginx -f", "systemctl edit --full", "systemctl daemon-reload",
   "launchctl list", "launchctl load",
 ];
@@ -36,13 +37,14 @@ const DEB: [string, string][] = [
 
 // Answers are trusted HTML written here.
 const FAQ: [string, string][] = [
-  ["What is g-systemctl?", "A terminal UI that runs <code>docker</code>, <code>docker compose</code>, <code>systemctl</code> and <code>launchctl</code> for you. It lists containers, compose projects and services, filters as you type, shows a detail page with status, graphs and logs, and starts, stops or restarts the selected item."],
+  ["What is g-systemctl?", "A terminal UI that runs <code>docker</code> or <code>podman</code>, their compose commands, <code>systemctl</code> and <code>launchctl</code> for you. It lists containers, compose projects and services, filters as you type, shows a detail page with status, graphs and logs, and starts, stops or restarts the selected item."],
   ["Does it work with Docker Compose?", "Yes. Containers are grouped under their compose project. A project row starts, stops or restarts the whole project, and <code>Alt+u</code>, <code>Alt+b</code>, <code>Alt+p</code> and <code>Alt+d</code> run <code>up -d</code>, <code>up --build</code>, <code>pull</code> and <code>down</code>. Commands run from the project's folder with the compose files recorded on its containers. A warning appears when a compose file changed since its containers were created."],
-  ["Do I need sudo?", "Not for containers, if your user can reach the Docker socket. Starting, stopping or restarting system services needs <code>sudo g-systemctl</code>; if sudo needs a password, the app asks for it. <code>--user</code> shows your user units instead."],
-  ["Which tab opens first?", "Containers. If Docker is not reachable, it opens Services. <code>-s</code> opens Services and <code>-c</code> opens Containers either way."],
-  ["Does it work on macOS?", "Yes. It uses <code>launchctl</code> for services and installs with Homebrew. The Containers tab works with Docker Desktop. Service graphs need systemd, so they are Linux only; container graphs work on both."],
-  ["Does it install an agent or daemon?", "No. It is one binary. It runs commands such as <code>systemctl show</code>, <code>journalctl -f</code>, <code>docker stats</code> and <code>docker update</code>."],
-  ["Can it change a running container's limits?", "Yes. <code>Alt+u</code> edits CPUs, memory, memory + swap, PIDs limit and restart policy with <code>docker update</code>. The container keeps running. Docker cannot change env, ports or volumes without recreating the container, so g-systemctl does not offer that."],
+  ["Does it work with Podman?", "Yes. It uses <code>podman</code> when Docker is not installed or its daemon is not running; <code>GSYSTEMCTL_RUNTIME=podman</code> forces it. Pod infra containers are hidden. Compose projects work through <code>podman compose</code> or <code>podman-compose</code>; podman-compose cannot print config hashes, so changed compose files are not flagged with it. Rootless and <code>sudo</code> Podman keep separate containers, so run g-systemctl the same way you run <code>podman</code>. CI tests against Podman 4.9, rootless and rootful."],
+  ["Do I need sudo?", "Not for containers, if your user can reach the Docker socket or uses rootless Podman. Starting, stopping or restarting system services needs <code>sudo g-systemctl</code>; if sudo needs a password, the app asks for it. <code>--user</code> shows your user units instead."],
+  ["Which tab opens first?", "Containers. If neither Docker nor Podman is reachable, it opens Services. <code>-s</code> opens Services and <code>-c</code> opens Containers either way."],
+  ["Does it work on macOS?", "Yes. It uses <code>launchctl</code> for services and installs with Homebrew. The Containers tab works with Docker Desktop or <code>podman machine</code>. Service graphs need systemd, so they are Linux only; container graphs work on both."],
+  ["Does it install an agent or daemon?", "No. It is one binary. It runs commands such as <code>systemctl show</code>, <code>journalctl -f</code>, <code>docker stats</code> or <code>podman stats</code>, and <code>docker update</code>."],
+  ["Can it change a running container's limits?", "Yes. <code>Alt+u</code> edits CPUs, memory, memory + swap, PIDs limit and restart policy with <code>docker update</code> or <code>podman update</code>. The container keeps running. Neither can change env, ports or volumes without recreating the container, so g-systemctl does not offer that."],
   ["Can I stop a service by accident?", "Unlikely. <code>Enter</code> only opens and closes views. Stop and restart ask first and run only on <code>y</code> or a click on the confirm button; <code>Enter</code> is ignored in that prompt."],
 ];
 
@@ -83,7 +85,7 @@ const jsonLd = [
         <span class="w" style="--i:0">Containers</span> <span class="w" style="--i:1">and</span> <span class="w" style="--i:2">services,</span><br />
         <span class="w acc" style="--i:3">in</span> <span class="w acc" style="--i:4">one</span> <span class="w acc" style="--i:5">terminal</span> <span class="w acc" style="--i:6">UI.</span>
       </h1>
-      <p class="lede">For <code>Docker</code>, <code>Docker Compose</code>, <code>systemd</code> and <code>launchd</code>. Type to
+      <p class="lede">For <code>Docker</code>, <code>Podman</code>, <code>Compose</code>, <code>systemd</code> and <code>launchd</code>. Type to
         filter, press Enter to see status, graphs and logs, and start, stop or restart with one key.</p>
       <div class="ctas">
         <a class="btn primary" href="#install">
@@ -171,7 +173,7 @@ const jsonLd = [
     <div class="wrap">
       <div class="head">
         <h2 data-r>FAQ</h2>
-        <p class="sub" data-r style="--d:1">Compose, sudo, macOS, Docker limits and safety.</p>
+        <p class="sub" data-r style="--d:1">Compose, Podman, sudo, macOS, container limits and safety.</p>
       </div>
       <div class="faq">
         {FAQ.map(([q, a], i) => (

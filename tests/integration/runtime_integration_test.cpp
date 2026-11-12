@@ -102,6 +102,7 @@ protected:
     static inline std::shared_ptr<SystemCommandExecutor> executor;
     static inline std::unique_ptr<ContainerManager> manager;
     static inline bool podman = false;
+    static inline bool rootless = false;
     static inline std::string cli;
 
     static CommandResult run(const std::string& args) { return executor->execute(shell_quote(cli) + " " + args); }
@@ -122,6 +123,7 @@ protected:
         auto* concrete = dynamic_cast<CliContainerManager*>(manager.get());
         podman = concrete && concrete->runtime() == ContainerRuntime::Podman;
         cli = env("GSYSTEMCTL_DOCKER", manager->runtime_name());
+        rootless = podman && run("info --format '{{.Host.Security.Rootless}}'").stdout_output.rfind("true", 0) == 0;
 
         remove_all();
         const std::string img = shell_quote(image());
@@ -218,7 +220,10 @@ TEST_F(RuntimeIntegration, Inspects) {
     ASSERT_FALSE(d.ports.empty());
     EXPECT_NE(d.ports[0].find("80/tcp -> "), std::string::npos) << d.ports[0];
     EXPECT_NE(d.ports[0].find("18089"), std::string::npos) << d.ports[0];
-    EXPECT_FALSE(d.networks.empty());
+    // Rootless podman 4 uses slirp4netns: no named network.
+    if (!rootless) {
+        EXPECT_FALSE(d.networks.empty());
+    }
     EXPECT_THROW(manager->inspect("gsc-it-missing"), std::runtime_error);
 }
 
@@ -359,7 +364,19 @@ TEST_F(ComposeIntegration, FullLifecycle) {
         Lines lines;
         auto stream = manager->stream_compose_logs(ref, 5, "", lines.callback(), nullptr);
         ASSERT_TRUE(stream);
-        EXPECT_TRUE(lines.wait_for("web up", std::chrono::seconds(20))) << lines.dump();
+        if (!lines.wait_for("web up", std::chrono::seconds(20))) {
+            ADD_FAILURE() << "no \"web up\" from compose logs -f. Lines:\n" << lines.dump();
+            auto compose = env("GSYSTEMCTL_COMPOSE", cli + " compose");
+            for (const auto& command :
+                 {compose + " -p " + ref.name + " -f " + ref.config_files[0] + " logs --tail 3",
+                  cli + " ps -a --format '{{.Names}} {{.State}}'",
+                  cli + " inspect --format '{{.Name}} log={{.HostConfig.LogConfig.Type}}' " + ref.name + "_web_1 " +
+                      ref.name + "-web-1",
+                  cli + " logs --tail 3 " + ref.name + "_web_1"}) {
+                auto r = executor->execute(command);
+                std::cout << "$ " << command << " (exit " << r.exit_code << ")\n" << r.stdout_output << r.stderr_output;
+            }
+        }
         EXPECT_LT(seconds_to_destroy(stream), 5.0) << "compose log stream did not stop";
         std::lock_guard<std::mutex> lock(lines.mutex);
         for (const auto& line : lines.lines) {
