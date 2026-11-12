@@ -1,0 +1,68 @@
+name: Podman
+
+# Runs the container code against a real podman: runtime integration tests
+# (tests/integration/) and a smoke test of the binary in tmux.
+on:
+  push:
+    paths: &paths
+      - 'src/**'
+      - 'include/**'
+      - 'tests/**'
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+      - '.github/workflows/podman.yml'
+  pull_request:
+    branches: [main]
+    paths: *paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: podman-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  podman:
+    name: podman ${{ matrix.mode }}, ${{ matrix.compose }}
+    # Ubuntu 24.04 ships podman 4.9, the oldest major the app supports.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # `podman compose` with the docker-compose provider the runner has.
+          - { mode: rootless, compose: podman compose, compose_cmd: '', expect_drift: '1' }
+          # podman-compose: no `config --hash`, so no drift check.
+          - { mode: rootless, compose: podman-compose, compose_cmd: podman-compose, expect_drift: '0' }
+          - { mode: rootful, compose: podman compose, compose_cmd: '', expect_drift: '1' }
+    env:
+      GSYSTEMCTL_COMPOSE: ${{ matrix.compose_cmd }}
+      GSYSTEMCTL_EXPECT_DRIFT: ${{ matrix.expect_drift }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake build-essential podman tmux
+          if [ "$GSYSTEMCTL_COMPOSE" = podman-compose ]; then
+            pipx install podman-compose
+            podman-compose version
+          fi
+
+      - name: Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON
+          cmake --build build --parallel
+
+      - name: Test against rootless podman
+        if: matrix.mode == 'rootless'
+        run: tests/integration/podman-ci.sh build
+
+      - name: Test against rootful podman
+        if: matrix.mode == 'rootful'
+        run: sudo --preserve-env=GSYSTEMCTL_COMPOSE,GSYSTEMCTL_EXPECT_DRIFT,PATH tests/integration/podman-ci.sh build

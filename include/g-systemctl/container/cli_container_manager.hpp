@@ -68,7 +68,7 @@ public:
     static std::string parse_config_project_name(const std::string& output);
     static std::vector<std::string> build_compose_logs_argv(const std::vector<std::string>& compose,
                                                             const ComposeProjectRef& project, int tail,
-                                                            const std::string& since);
+                                                            const std::string& since, bool with_files = false);
     // Rows whose 15th field is "true" (podman pod infra containers) are dropped.
     static std::vector<Container> parse_ps_output(const std::string& output);
     static std::map<std::string, ContainerStats> parse_stats_output(const std::string& output);
@@ -85,6 +85,10 @@ public:
     // `podman compose` banner ">>>> Executing external compose provider ...".
     static bool is_compose_banner(const std::string& line);
     static std::string strip_compose_banner(const std::string& text);
+    // Drops ANSI CSI sequences ("ESC[0m").
+    static std::string strip_ansi(const std::string& line);
+    // The line of a failed compose command that says why.
+    static std::string compose_error(const std::string& output);
     std::string version_command() const;
     // Compose commands tried in order when $GSYSTEMCTL_COMPOSE is unset.
     std::vector<std::vector<std::string>> compose_candidates() const;

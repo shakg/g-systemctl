@@ -163,6 +163,24 @@ std::string drop_reset_prefix(std::string line) {
 
 } // namespace
 
+std::string CliContainerManager::strip_ansi(const std::string& line) {
+    std::string out;
+    out.reserve(line.size());
+    for (size_t i = 0; i < line.size(); ++i) {
+        if (line[i] == '\x1b' && i + 1 < line.size() && line[i + 1] == '[') {
+            // CSI: parameters and intermediates, then one final byte in @..~.
+            size_t j = i + 2;
+            while (j < line.size() && !(line[j] >= '@' && line[j] <= '~')) {
+                ++j;
+            }
+            i = j;
+            continue;
+        }
+        out += line[i];
+    }
+    return out;
+}
+
 std::string CliContainerManager::strip_compose_banner(const std::string& text) {
     if (text.find(">>>> Executing external compose provider") == std::string::npos) {
         return text;
@@ -185,6 +203,24 @@ std::string CliContainerManager::strip_compose_banner(const std::string& text) {
         out += line + "\n";
     }
     return out;
+}
+
+std::string CliContainerManager::compose_error(const std::string& output) {
+    // Compose prints progress first; the error is the last line. `podman compose`
+    // then adds "Error: executing <provider> ...: exit status 1", which hides it.
+    std::vector<std::string> lines;
+    std::istringstream stream(output);
+    for (std::string line; std::getline(stream, line);) {
+        if (!trim(line).empty()) {
+            lines.push_back(trim(line));
+        }
+    }
+    for (auto it = lines.rbegin(); it != lines.rend(); ++it) {
+        if (it->rfind("Error: executing ", 0) != 0 || std::next(it) == lines.rend()) {
+            return *it;
+        }
+    }
+    return "";
 }
 
 CommandResult CliContainerManager::run_compose(const std::string& command) {
@@ -537,12 +573,7 @@ ContainerManager::Result CliContainerManager::compose(const ComposeProjectRef& p
     }
     auto result = run_compose(build_compose_command(prefix, project, compose_action_args(action), with_files));
     if (result.exit_code != 0) {
-        // Compose prints progress on stderr; the error is the last line.
-        auto output = trim(result.stderr_output.empty() ? result.stdout_output : result.stderr_output);
-        auto newline = output.find_last_of('\n');
-        if (newline != std::string::npos) {
-            output = trim(output.substr(newline + 1));
-        }
+        auto output = compose_error(result.stderr_output.empty() ? result.stdout_output : result.stderr_output);
         return {false, output.empty() ? "exit code " + std::to_string(result.exit_code) : output};
     }
     return {true, ""};
@@ -576,6 +607,16 @@ std::string CliContainerManager::compose_project_name(const ComposeProjectRef& p
     }
     auto name = parse_config_project_name(result.stdout_output);
     if (name.empty()) {
+        // podman-compose prints no `name:`; it defaults to the directory name, as docker compose does.
+        auto dir = project.working_dir;
+        if (dir.empty() && !project.config_files.empty()) {
+            const auto& file = project.config_files.front();
+            auto slash = file.find_last_of('/');
+            dir = slash == std::string::npos ? "." : file.substr(0, slash);
+        }
+        name = compose_project_name_from_dir(dir);
+    }
+    if (name.empty()) {
         throw std::runtime_error("compose config printed no project name");
     }
     return name;
@@ -601,10 +642,17 @@ std::map<std::string, std::string> CliContainerManager::compose_config_hashes(co
 
 std::vector<std::string> CliContainerManager::build_compose_logs_argv(const std::vector<std::string>& compose,
                                                                          const ComposeProjectRef& project, int tail,
-                                                                         const std::string& since) {
-    // `-p` alone is enough for logs and keeps working if the files moved.
+                                                                         const std::string& since, bool with_files) {
+    // `-p` alone is enough for docker compose and keeps working if the files
+    // moved; podman-compose always needs the files (absolute paths, so no cd).
     auto argv = compose;
-    argv.insert(argv.end(), {"-p", project.name, "logs", "-f", "--no-color", "--tail",
+    argv.insert(argv.end(), {"-p", project.name});
+    if (with_files) {
+        for (const auto& file : project.config_files) {
+            argv.insert(argv.end(), {"-f", file});
+        }
+    }
+    argv.insert(argv.end(), {"logs", "-f", "--no-color", "--tail",
                              tail < 0 ? "all" : std::to_string(tail)});
     if (!since.empty()) {
         argv.insert(argv.end(), {"--since", since});
@@ -626,26 +674,26 @@ std::unique_ptr<LogStream> CliContainerManager::stream_compose_logs(const Compos
     try {
         auto filtered = on_line;
         if (runtime_ == ContainerRuntime::Podman && on_line) {
-            // Only the first lines can carry the banner.
+            // podman-compose colours its "[service] |" prefix even with --no-color,
+            // and the banner's reset lands on the next line.
             auto after_banner = std::make_shared<bool>(false);
             filtered = [on_line, after_banner](const std::string& line) {
                 if (is_compose_banner(line)) {
                     *after_banner = true;
                     return;
                 }
-                if (*after_banner) {
-                    auto rest = drop_reset_prefix(line);
-                    if (rest.empty()) {
-                        return;
-                    }
-                    *after_banner = false;
-                    on_line(rest);
+                auto clean_line = strip_ansi(line);
+                if (*after_banner && clean_line.empty()) {
                     return;
                 }
-                on_line(line);
+                *after_banner = false;
+                on_line(clean_line);
             };
         }
-        return std::make_unique<ProcessLogStream>(build_compose_logs_argv(prefix, project, tail, since), filtered,
+        const bool with_files = runtime_ == ContainerRuntime::Podman && !project.config_files.empty() &&
+                                std::all_of(project.config_files.begin(), project.config_files.end(), file_exists);
+        return std::make_unique<ProcessLogStream>(build_compose_logs_argv(prefix, project, tail, since, with_files),
+                                                  filtered,
                                                   std::move(on_end));
     } catch (const std::exception& e) {
         if (on_line) {

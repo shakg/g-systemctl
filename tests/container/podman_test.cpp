@@ -217,6 +217,32 @@ TEST(PodmanComposeTest, DropsProviderBanner) {
     EXPECT_EQ(manager.compose(ref, ComposeAction::Stop), (ContainerManager::Result{false, "no such service: web"}));
 }
 
+TEST(PodmanComposeTest, LogsPassFilesWhenAsked) {
+    ComposeProjectRef ref;
+    ref.name = "shop";
+    ref.config_files = {"/srv/shop/compose.yaml"};
+    EXPECT_EQ(CliContainerManager::build_compose_logs_argv({"podman-compose"}, ref, 10, "", true),
+              (std::vector<std::string>{"podman-compose", "-p", "shop", "-f", "/srv/shop/compose.yaml", "logs", "-f",
+                                        "--no-color", "--tail", "10"}));
+}
+
+TEST(PodmanComposeTest, StripsAnsi) {
+    EXPECT_EQ(CliContainerManager::strip_ansi("\x1b[0m[web]    |\x1b[0m web up"), "[web]    | web up");
+    EXPECT_EQ(CliContainerManager::strip_ansi("\x1b[1;32mok\x1b[0m done"), "ok done");
+    EXPECT_EQ(CliContainerManager::strip_ansi("plain\x1b"), "plain\x1b");
+}
+
+TEST(PodmanComposeTest, ErrorSkipsPodmanWrapperLine) {
+    EXPECT_EQ(CliContainerManager::compose_error(
+                  " Container shop-web-1  Creating\nCannot connect to the Docker daemon at unix:///run/podman/podman.sock.\n"
+                  "Error: executing /usr/libexec/docker/cli-plugins/docker-compose up -d: exit status 1\n"),
+              "Cannot connect to the Docker daemon at unix:///run/podman/podman.sock.");
+    EXPECT_EQ(CliContainerManager::compose_error("Error: executing x: exit status 1\n"), "Error: executing x: exit status 1");
+    EXPECT_EQ(CliContainerManager::compose_error(" Network shop_default  Creating\nno such service: api\n"),
+              "no such service: api");
+    EXPECT_EQ(CliContainerManager::compose_error("\n"), "");
+}
+
 TEST(PodmanComposeTest, FallsBackToPodmanComposeWithoutDrift) {
     auto executor = std::make_shared<ScriptedExecutor>();
     CliContainerManager manager(executor, "podman", ContainerRuntime::Podman);
@@ -239,6 +265,19 @@ TEST(PodmanComposeTest, ReportsAllCandidatesWhenNoneWork) {
     EXPECT_FALSE(ok);
     EXPECT_EQ(message, "podman compose or podman-compose is not installed (looking up compose provider failed)");
     EXPECT_FALSE(manager.compose_drift_supported());
+}
+
+TEST(PodmanComposeTest, ProjectNameFallsBackToDirectory) {
+    auto executor = std::make_shared<ScriptedExecutor>();
+    CliContainerManager manager(executor, "podman", ContainerRuntime::Podman);
+    executor->script["'podman' 'compose' 'version'"] = {125, "", "Error: looking up compose provider failed\n"};
+    executor->script["'podman-compose' 'version'"] = {0, "1.6.0\n", ""};
+    executor->script["cd '/srv/Shop' && 'podman-compose' '-f' '/srv/Shop/compose.yaml' 'config'"] = {
+        0, "services:\n  web:\n    image: nginx\n", ""};
+    ComposeProjectRef ref;
+    ref.working_dir = "/srv/Shop";
+    ref.config_files = {"/srv/Shop/compose.yaml"};
+    EXPECT_EQ(manager.compose_project_name(ref), "shop");
 }
 
 TEST(DockerComposeTest, DetectsHashSupport) {
