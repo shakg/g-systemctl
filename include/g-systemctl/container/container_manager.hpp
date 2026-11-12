@@ -20,8 +20,10 @@ public:
 
     virtual ~ContainerManager() = default;
 
-    // Short name for the UI, e.g. "docker".
+    // Short name for the UI, e.g. "docker" or "podman".
     virtual std::string runtime_name() const = 0;
+    // What to try when check_available() fails.
+    virtual std::string setup_hint() const = 0;
     // {true, server version} or {false, reason}.
     virtual Result check_available() = 0;
 
@@ -51,8 +53,11 @@ public:
                                                    std::function<void()> on_end) = 0;
 
     // ---- compose ----
-    // Detects `docker compose` (plugin) or `docker-compose`. {true, "docker compose 2.29.1"} or {false, reason}.
+    // Detects the compose command (`docker compose`, `docker-compose`, `podman compose`,
+    // `podman-compose`). {true, "docker compose 2.29.1"} or {false, reason}.
     virtual Result compose_available() = 0;
+    // Whether compose_config_hashes() can work: podman-compose has no `config --hash`.
+    virtual bool compose_drift_supported() = 0;
     // Runs `compose -p NAME -f FILE... <action>` from the project's working directory.
     // Start/stop/restart/down fall back to `-p NAME` alone if the files are gone.
     virtual Result compose(const ComposeProjectRef& project, ComposeAction action) = 0;
@@ -68,7 +73,8 @@ public:
                                                            LoggingManager::LogCallback on_line,
                                                            std::function<void()> on_end) = 0;
 
-    // Uses $GSYSTEMCTL_DOCKER as the CLI binary if set, otherwise "docker".
+    // $GSYSTEMCTL_RUNTIME picks docker or podman (default: auto, docker first);
+    // $GSYSTEMCTL_DOCKER overrides the CLI binary.
     static std::unique_ptr<ContainerManager> create(std::shared_ptr<CommandExecutor> executor);
 };
 

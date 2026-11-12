@@ -1,4 +1,4 @@
-#include "g-systemctl/container/docker_container_manager.hpp"
+#include "g-systemctl/container/cli_container_manager.hpp"
 #include "g-systemctl/core/process_stream.hpp"
 #include "g-systemctl/core/shell.hpp"
 #include <algorithm>
@@ -12,8 +12,8 @@ namespace gsystemctl {
 
 namespace {
 
-// Field separator in our --format templates. Docker never emits tabs in the
-// fields we request, so splitting on it is unambiguous.
+// Field separator in our --format templates. Docker and podman never emit tabs
+// in the fields we request, so splitting on it is unambiguous.
 constexpr char kSep = '\t';
 
 const char* const kPsFormat =
@@ -26,9 +26,14 @@ const char* const kPsFormat =
     "{{.Label \"com.docker.compose.config-hash\"}}\t"
     "{{.Label \"com.docker.compose.oneoff\"}}\t"
     "{{.Label \"com.docker.compose.depends_on\"}}";
+// Podman lists each pod's infra (pause) container; mark it so it can be hidden.
+const char* const kPodmanPsSuffix = "\t{{.IsInfra}}";
 
-const char* const kStatsFormat =
+// Same columns; podman names the PIDs field `.PIDS`.
+const char* const kDockerStatsFormat =
     "{{.ID}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.BlockIO}}\t{{.PIDs}}";
+const char* const kPodmanStatsFormat =
+    "{{.ID}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.BlockIO}}\t{{.PIDS}}";
 
 // One "key<TAB>value..." record per line.
 const char* const kInspectFormat =
@@ -51,6 +56,7 @@ const char* const kInspectFormat =
     "compose_dir\t{{index .Config.Labels \"com.docker.compose.project.working_dir\"}}\n"
     "{{range .Config.Env}}env\t{{.}}\n{{end}}"
     "{{range .Mounts}}mount\t{{.Source}}\t{{.Destination}}\t{{.RW}}\n{{end}}"
+    // Docker falls back to the raw JSON key `HostIp`; podman 4 only has the Go field `HostIP`.
     "{{range $p, $b := .NetworkSettings.Ports}}port\t{{$p}}\t{{range $b}}{{.HostIp}}:{{.HostPort}} {{end}}\n{{end}}"
     "{{range $k, $v := .NetworkSettings.Networks}}network\t{{$k}}\t{{$v.IPAddress}}\n{{end}}";
 
@@ -112,76 +118,247 @@ std::string join_quoted(const std::vector<std::string>& argv) {
     return out;
 }
 
-std::string describe_failure(const CommandResult& result) {
-    // The first line carries the error; the CLI follows it with usage text.
-    std::string output = trim(result.stdout_output + result.stderr_output);
-    auto newline = output.find('\n');
-    if (newline != std::string::npos) {
-        output = trim(output.substr(0, newline));
+std::string basename(const std::string& path) {
+    auto slash = path.find_last_of('/');
+    return slash == std::string::npos ? path : path.substr(slash + 1);
+}
+
+std::string first_line(const std::string& text) {
+    auto trimmed = trim(text);
+    return trim(trimmed.substr(0, trimmed.find('\n')));
+}
+
+std::string env_or_empty(const char* name) {
+    const char* value = std::getenv(name);
+    return value ? value : "";
+}
+
+// "docker compose", "podman-compose": the command as the user would type it.
+std::string display_name(const std::vector<std::string>& prefix) {
+    std::string name;
+    for (const auto& word : prefix) {
+        name += (name.empty() ? "" : " ") + basename(word);
     }
-    if (output.empty()) {
-        return "exit code " + std::to_string(result.exit_code);
-    }
-    // Docker prefixes daemon errors; the rest is the useful part.
-    const std::string prefix = "Error response from daemon: ";
-    if (output.rfind(prefix, 0) == 0) {
-        output.erase(0, prefix.size());
-    }
-    return output;
+    return name;
 }
 
 } // namespace
 
+bool CliContainerManager::is_compose_banner(const std::string& line) {
+    return line.find(">>>> Executing external compose provider") != std::string::npos;
+}
+
+namespace {
+
+// The banner is "ESC[4m>>>> ... <<<<\n\nESC[0m"; the reset has no newline, so
+// with stderr merged into stdout it prefixes the provider's next line.
+constexpr const char* kAnsiReset = "\x1b[0m";
+
+std::string drop_reset_prefix(std::string line) {
+    while (line.rfind(kAnsiReset, 0) == 0) {
+        line.erase(0, 4);
+    }
+    return line;
+}
+
+} // namespace
+
+std::string CliContainerManager::strip_compose_banner(const std::string& text) {
+    if (text.find(">>>> Executing external compose provider") == std::string::npos) {
+        return text;
+    }
+    std::string out;
+    std::istringstream stream(text);
+    bool after_banner = false;
+    for (std::string line; std::getline(stream, line);) {
+        if (is_compose_banner(line)) {
+            after_banner = true;
+            continue;
+        }
+        if (after_banner) {
+            line = drop_reset_prefix(line);
+            if (line.empty()) {
+                continue; // the blank line and the reset that follow the banner
+            }
+            after_banner = false;
+        }
+        out += line + "\n";
+    }
+    return out;
+}
+
+CommandResult CliContainerManager::run_compose(const std::string& command) {
+    auto result = executor_->execute(command);
+    if (runtime_ == ContainerRuntime::Podman) {
+        result.stdout_output = strip_compose_banner(result.stdout_output);
+        result.stderr_output = strip_compose_banner(result.stderr_output);
+    }
+    return result;
+}
+
+std::string CliContainerManager::describe_failure(const CommandResult& result) {
+    // The first line carries the error; the CLI follows it with usage text.
+    std::string output = first_line(result.stdout_output + result.stderr_output);
+    if (output.empty()) {
+        return "exit code " + std::to_string(result.exit_code);
+    }
+    // Docker prefixes daemon errors, podman all errors; the rest is the useful part.
+    for (const std::string prefix : {"Error response from daemon: ", "Error: "}) {
+        if (output.rfind(prefix, 0) == 0) {
+            output.erase(0, prefix.size());
+        }
+    }
+    return output;
+}
+
 std::unique_ptr<ContainerManager> ContainerManager::create(std::shared_ptr<CommandExecutor> executor) {
-    const char* binary = std::getenv("GSYSTEMCTL_DOCKER");
-    return std::make_unique<DockerContainerManager>(std::move(executor), binary && *binary ? binary : "docker");
+    auto selection = CliContainerManager::select_runtime(*executor, env_or_empty("GSYSTEMCTL_RUNTIME"),
+                                                         env_or_empty("GSYSTEMCTL_DOCKER"));
+    return std::make_unique<CliContainerManager>(std::move(executor), selection.binary, selection.runtime);
 }
 
-DockerContainerManager::DockerContainerManager(std::shared_ptr<CommandExecutor> executor, std::string binary)
-    : executor_(std::move(executor)), binary_(std::move(binary)) {}
-
-std::string DockerContainerManager::runtime_name() const {
-    auto slash = binary_.find_last_of('/');
-    return slash == std::string::npos ? binary_ : binary_.substr(slash + 1);
+CliContainerManager::Selection CliContainerManager::select_runtime(CommandExecutor& executor,
+                                                                   const std::string& runtime_env,
+                                                                   const std::string& binary_env) {
+    const auto wanted = lower(trim(runtime_env));
+    if (wanted == "docker" || wanted == "podman") {
+        return {binary_env.empty() ? wanted : binary_env,
+                wanted == "podman" ? ContainerRuntime::Podman : ContainerRuntime::Docker};
+    }
+    // {found, is podman}. podman prints "podman version 5.2.1"; so does a
+    // podman-docker `docker` shim.
+    auto probe = [&executor](const std::string& binary) -> std::pair<bool, bool> {
+        auto result = executor.execute(shell_quote(binary) + " --version");
+        if (result.exit_code != 0) {
+            return {false, lower(basename(binary)).find("podman") != std::string::npos};
+        }
+        return {true, lower(result.stdout_output + result.stderr_output).find("podman") != std::string::npos};
+    };
+    auto runtime_of = [](bool podman) { return podman ? ContainerRuntime::Podman : ContainerRuntime::Docker; };
+    if (!binary_env.empty()) {
+        return {binary_env, runtime_of(probe(binary_env).second)};
+    }
+    auto [docker_found, docker_is_podman] = probe("docker");
+    if (docker_found && docker_is_podman) {
+        return {"docker", ContainerRuntime::Podman};
+    }
+    // Both installed: use podman when the Docker daemon is not reachable.
+    if (docker_found && probe("podman").first) {
+        auto server = executor.execute("docker version --format " + shell_quote("{{.Server.Version}}"));
+        return server.exit_code == 0 ? Selection{"docker", ContainerRuntime::Docker}
+                                     : Selection{"podman", ContainerRuntime::Podman};
+    }
+    if (docker_found) {
+        return {"docker", ContainerRuntime::Docker};
+    }
+    if (probe("podman").first) {
+        return {"podman", ContainerRuntime::Podman};
+    }
+    // Neither found; check_available() reports it.
+    return {"docker", ContainerRuntime::Docker};
 }
 
-ContainerManager::Result DockerContainerManager::check_available() {
-    auto result = executor_->execute(shell_quote(binary_) + " version --format " + shell_quote("{{.Server.Version}}"));
+CliContainerManager::CliContainerManager(std::shared_ptr<CommandExecutor> executor, std::string binary,
+                                         ContainerRuntime runtime)
+    : executor_(std::move(executor)), binary_(std::move(binary)), runtime_(runtime) {
+    if (runtime_ == ContainerRuntime::Podman) {
+        // `podman compose` prints a banner before running the provider, which
+        // would end up in error messages and the log strip. Podman 5 honours
+        // this (children inherit it; a value set by the user wins); for podman
+        // 4 the banner lines are filtered out of the output.
+        ::setenv("PODMAN_COMPOSE_WARNING_LOGS", "false", 0);
+    }
+}
+
+std::string CliContainerManager::runtime_name() const {
+    return basename(binary_);
+}
+
+std::string CliContainerManager::setup_hint() const {
+    if (runtime_ == ContainerRuntime::Podman) {
+        return "On macOS run `podman machine start`. Rootless and sudo podman list different containers.";
+    }
+    return "Start the daemon, check socket permissions (docker group), or set GSYSTEMCTL_RUNTIME=podman.";
+}
+
+std::string CliContainerManager::version_command() const {
+    // `podman version` does not contact the service (it falls back to the
+    // client version); `podman info` does, so a stopped podman machine shows up.
+    if (runtime_ == ContainerRuntime::Podman) {
+        return shell_quote(binary_) + " info --format " + shell_quote("{{.Version.Version}}");
+    }
+    return shell_quote(binary_) + " version --format " + shell_quote("{{.Server.Version}}");
+}
+
+std::string CliContainerManager::ps_command(bool labels_index) const {
+    std::string format = kPsFormat;
+    if (runtime_ == ContainerRuntime::Podman) {
+        format += kPodmanPsSuffix;
+    }
+    if (labels_index) {
+        const std::string from = "{{.Label ", to = "{{index .Labels ";
+        for (size_t pos = 0; (pos = format.find(from, pos)) != std::string::npos; pos += to.size()) {
+            format.replace(pos, from.size(), to);
+        }
+    }
+    return shell_quote(binary_) + " ps -a --format " + shell_quote(format);
+}
+
+std::string CliContainerManager::inspect_command(const std::string& id) const {
+    std::string format = kInspectFormat;
+    if (runtime_ == ContainerRuntime::Podman) {
+        auto pos = format.find("{{.HostIp}}");
+        format.replace(pos, 11, "{{.HostIP}}");
+    }
+    return shell_quote(binary_) + " inspect --type container --format " + shell_quote(format) + " " + shell_quote(id);
+}
+
+std::string CliContainerManager::stats_command() const {
+    return shell_quote(binary_) + " stats --no-stream --format " +
+           shell_quote(runtime_ == ContainerRuntime::Podman ? kPodmanStatsFormat : kDockerStatsFormat);
+}
+
+ContainerManager::Result CliContainerManager::check_available() {
+    auto result = executor_->execute(version_command());
     if (result.exit_code == 127) {
         return {false, binary_ + " not found in PATH"};
     }
     if (result.exit_code != 0) {
         return {false, describe_failure(result)};
     }
-    return {true, trim(result.stdout_output)};
+    return {true, first_line(result.stdout_output)};
 }
 
-std::vector<Container> DockerContainerManager::list_containers() {
-    auto result = executor_->execute(shell_quote(binary_) + " ps -a --format " + shell_quote(kPsFormat));
+std::vector<Container> CliContainerManager::list_containers() {
+    auto result = executor_->execute(ps_command(labels_index_));
+    if (result.exit_code != 0 && runtime_ == ContainerRuntime::Podman && !labels_index_ &&
+        (result.stdout_output + result.stderr_output).find("<.Label>") != std::string::npos) {
+        labels_index_ = true; // podman 4
+        result = executor_->execute(ps_command(true));
+    }
     if (result.exit_code != 0) {
         throw std::runtime_error(describe_failure(result));
     }
     return parse_ps_output(result.stdout_output);
 }
 
-std::map<std::string, ContainerStats> DockerContainerManager::container_stats() {
-    auto result = executor_->execute(shell_quote(binary_) + " stats --no-stream --format " + shell_quote(kStatsFormat));
+std::map<std::string, ContainerStats> CliContainerManager::container_stats() {
+    auto result = executor_->execute(stats_command());
     if (result.exit_code != 0) {
         throw std::runtime_error(describe_failure(result));
     }
     return parse_stats_output(result.stdout_output);
 }
 
-ContainerDetails DockerContainerManager::inspect(const std::string& id) {
-    auto result = executor_->execute(shell_quote(binary_) + " inspect --type container --format " +
-                                     shell_quote(kInspectFormat) + " " + shell_quote(id));
+ContainerDetails CliContainerManager::inspect(const std::string& id) {
+    auto result = executor_->execute(inspect_command(id));
     if (result.exit_code != 0) {
         throw std::runtime_error(describe_failure(result));
     }
     return parse_inspect_output(result.stdout_output);
 }
 
-ContainerManager::Result DockerContainerManager::run_simple(const std::string& args) {
+ContainerManager::Result CliContainerManager::run_simple(const std::string& args) {
     auto result = executor_->execute(shell_quote(binary_) + " " + args);
     if (result.exit_code != 0) {
         return {false, describe_failure(result)};
@@ -189,19 +366,19 @@ ContainerManager::Result DockerContainerManager::run_simple(const std::string& a
     return {true, ""};
 }
 
-ContainerManager::Result DockerContainerManager::start(const std::string& id) {
+ContainerManager::Result CliContainerManager::start(const std::string& id) {
     return run_simple("start " + shell_quote(id));
 }
 
-ContainerManager::Result DockerContainerManager::stop(const std::string& id) {
+ContainerManager::Result CliContainerManager::stop(const std::string& id) {
     return run_simple("stop " + shell_quote(id));
 }
 
-ContainerManager::Result DockerContainerManager::restart(const std::string& id) {
+ContainerManager::Result CliContainerManager::restart(const std::string& id) {
     return run_simple("restart " + shell_quote(id));
 }
 
-std::string DockerContainerManager::build_update_command(const std::string& id, const ResourceUpdate& update) const {
+std::string CliContainerManager::build_update_command(const std::string& id, const ResourceUpdate& update) const {
     std::string command = shell_quote(binary_) + " update";
     auto add = [&command](const char* flag, const std::optional<std::string>& value) {
         if (value) {
@@ -216,7 +393,7 @@ std::string DockerContainerManager::build_update_command(const std::string& id, 
     return command + " " + shell_quote(id);
 }
 
-ContainerManager::Result DockerContainerManager::update_resources(const std::string& id, const ResourceUpdate& update) {
+ContainerManager::Result CliContainerManager::update_resources(const std::string& id, const ResourceUpdate& update) {
     if (update.empty()) {
         return {true, "nothing changed"};
     }
@@ -227,9 +404,13 @@ ContainerManager::Result DockerContainerManager::update_resources(const std::str
     return {true, ""};
 }
 
-std::vector<std::string> DockerContainerManager::build_logs_argv(const std::string& id, int tail,
+std::vector<std::string> CliContainerManager::build_logs_argv(const std::string& id, int tail,
                                                                  const std::string& since) const {
-    std::vector<std::string> argv = {binary_, "logs", "-f", "--tail", tail < 0 ? "all" : std::to_string(tail)};
+    // Both CLIs print everything without --tail; docker spells it "all", podman -1.
+    std::vector<std::string> argv = {binary_, "logs", "-f"};
+    if (tail >= 0) {
+        argv.insert(argv.end(), {"--tail", std::to_string(tail)});
+    }
     if (!since.empty()) {
         argv.insert(argv.end(), {"--since", since});
     }
@@ -237,7 +418,7 @@ std::vector<std::string> DockerContainerManager::build_logs_argv(const std::stri
     return argv;
 }
 
-std::unique_ptr<LogStream> DockerContainerManager::stream_logs(const std::string& id, int tail, const std::string& since,
+std::unique_ptr<LogStream> CliContainerManager::stream_logs(const std::string& id, int tail, const std::string& since,
                                                                LoggingManager::LogCallback on_line,
                                                                std::function<void()> on_end) {
     try {
@@ -252,7 +433,7 @@ std::unique_ptr<LogStream> DockerContainerManager::stream_logs(const std::string
 
 // ---- compose ----------------------------------------------------------------
 
-const std::vector<std::string>& DockerContainerManager::compose_prefix() {
+const std::vector<std::string>& CliContainerManager::compose_prefix() {
     std::call_once(compose_once_, [this] {
         std::vector<std::vector<std::string>> candidates;
         if (const char* env = std::getenv("GSYSTEMCTL_COMPOSE"); env && *env) {
@@ -263,41 +444,57 @@ const std::vector<std::string>& DockerContainerManager::compose_prefix() {
             }
             candidates.push_back(words);
         } else {
-            candidates.push_back({binary_, "compose"});
-            candidates.push_back({"docker-compose"});
+            candidates = compose_candidates();
         }
+        std::string names;
         for (const auto& prefix : candidates) {
+            names += (names.empty() ? "" : " or ") + display_name(prefix);
             auto args = prefix;
             args.insert(args.end(), {"version", "--short"});
-            auto result = executor_->execute(join_quoted(args));
+            auto result = run_compose(join_quoted(args));
             if (result.exit_code == 0) {
                 compose_prefix_ = prefix;
-                compose_version_ = trim(result.stdout_output);
+                // podman-compose may add a "podman version" line.
+                compose_version_ = first_line(result.stdout_output);
+                // podman-compose has no `config --hash`, so no drift check.
+                auto help = prefix;
+                help.insert(help.end(), {"config", "--help"});
+                auto help_result = run_compose(join_quoted(help));
+                compose_hash_ = (help_result.stdout_output + help_result.stderr_output).find("--hash") !=
+                                std::string::npos;
                 return;
             }
             if (compose_error_.empty()) {
                 compose_error_ = result.exit_code == 127 ? prefix[0] + " not found in PATH" : describe_failure(result);
             }
         }
-        compose_error_ = "docker compose is not installed (" + compose_error_ + ")";
+        compose_error_ = names + " is not installed (" + compose_error_ + ")";
     });
     return compose_prefix_;
 }
 
-ContainerManager::Result DockerContainerManager::compose_available() {
+ContainerManager::Result CliContainerManager::compose_available() {
     const auto& prefix = compose_prefix();
     if (prefix.empty()) {
         return {false, compose_error_};
     }
-    std::string name;
-    for (const auto& word : prefix) {
-        auto slash = word.find_last_of('/');
-        name += (name.empty() ? "" : " ") + (slash == std::string::npos ? word : word.substr(slash + 1));
-    }
-    return {true, name + " " + compose_version_};
+    return {true, display_name(prefix) + " " + compose_version_};
 }
 
-std::string DockerContainerManager::build_compose_command(const std::vector<std::string>& compose,
+bool CliContainerManager::compose_drift_supported() {
+    return !compose_prefix().empty() && compose_hash_;
+}
+
+std::vector<std::vector<std::string>> CliContainerManager::compose_candidates() const {
+    // A standalone docker-compose would talk to the Docker daemon, not podman;
+    // `podman compose` runs whichever provider is installed against podman.
+    if (runtime_ == ContainerRuntime::Podman) {
+        return {{binary_, "compose"}, {"podman-compose"}};
+    }
+    return {{binary_, "compose"}, {"docker-compose"}};
+}
+
+std::string CliContainerManager::build_compose_command(const std::vector<std::string>& compose,
                                                           const ComposeProjectRef& project,
                                                           const std::vector<std::string>& args, bool with_files) {
     auto argv = compose;
@@ -317,7 +514,7 @@ std::string DockerContainerManager::build_compose_command(const std::vector<std:
     return join_quoted(argv);
 }
 
-ContainerManager::Result DockerContainerManager::compose(const ComposeProjectRef& project, ComposeAction action) {
+ContainerManager::Result CliContainerManager::compose(const ComposeProjectRef& project, ComposeAction action) {
     const auto& prefix = compose_prefix();
     if (prefix.empty()) {
         return {false, compose_error_};
@@ -338,7 +535,7 @@ ContainerManager::Result DockerContainerManager::compose(const ComposeProjectRef
                        : !dir_ok        ? "directory not found: " + project.working_dir
                                         : "no compose file known for " + project.name};
     }
-    auto result = executor_->execute(build_compose_command(prefix, project, compose_action_args(action), with_files));
+    auto result = run_compose(build_compose_command(prefix, project, compose_action_args(action), with_files));
     if (result.exit_code != 0) {
         // Compose prints progress on stderr; the error is the last line.
         auto output = trim(result.stderr_output.empty() ? result.stdout_output : result.stderr_output);
@@ -351,7 +548,7 @@ ContainerManager::Result DockerContainerManager::compose(const ComposeProjectRef
     return {true, ""};
 }
 
-std::string DockerContainerManager::parse_config_project_name(const std::string& output) {
+std::string CliContainerManager::parse_config_project_name(const std::string& output) {
     std::istringstream stream(output);
     std::string line;
     while (std::getline(stream, line)) {
@@ -366,14 +563,14 @@ std::string DockerContainerManager::parse_config_project_name(const std::string&
     return "";
 }
 
-std::string DockerContainerManager::compose_project_name(const ComposeProjectRef& project) {
+std::string CliContainerManager::compose_project_name(const ComposeProjectRef& project) {
     const auto& prefix = compose_prefix();
     if (prefix.empty()) {
         throw std::runtime_error(compose_error_);
     }
     ComposeProjectRef files = project;
     files.name.clear();
-    auto result = executor_->execute(build_compose_command(prefix, files, {"config"}, true));
+    auto result = run_compose(build_compose_command(prefix, files, {"config"}, true));
     if (result.exit_code != 0) {
         throw std::runtime_error(describe_failure(result));
     }
@@ -384,7 +581,7 @@ std::string DockerContainerManager::compose_project_name(const ComposeProjectRef
     return name;
 }
 
-std::map<std::string, std::string> DockerContainerManager::compose_config_hashes(const ComposeProjectRef& project) {
+std::map<std::string, std::string> CliContainerManager::compose_config_hashes(const ComposeProjectRef& project) {
     const auto& prefix = compose_prefix();
     if (prefix.empty()) {
         throw std::runtime_error(compose_error_);
@@ -395,14 +592,14 @@ std::map<std::string, std::string> DockerContainerManager::compose_config_hashes
     if (!project.working_dir.empty() && !file_exists(project.working_dir)) {
         throw std::runtime_error("directory not found: " + project.working_dir);
     }
-    auto result = executor_->execute(build_compose_command(prefix, project, {"config", "--hash", "*"}, true));
+    auto result = run_compose(build_compose_command(prefix, project, {"config", "--hash", "*"}, true));
     if (result.exit_code != 0) {
         throw std::runtime_error(describe_failure(result));
     }
     return parse_compose_hashes(result.stdout_output);
 }
 
-std::vector<std::string> DockerContainerManager::build_compose_logs_argv(const std::vector<std::string>& compose,
+std::vector<std::string> CliContainerManager::build_compose_logs_argv(const std::vector<std::string>& compose,
                                                                          const ComposeProjectRef& project, int tail,
                                                                          const std::string& since) {
     // `-p` alone is enough for logs and keeps working if the files moved.
@@ -415,7 +612,7 @@ std::vector<std::string> DockerContainerManager::build_compose_logs_argv(const s
     return argv;
 }
 
-std::unique_ptr<LogStream> DockerContainerManager::stream_compose_logs(const ComposeProjectRef& project, int tail,
+std::unique_ptr<LogStream> CliContainerManager::stream_compose_logs(const ComposeProjectRef& project, int tail,
                                                                        const std::string& since,
                                                                        LoggingManager::LogCallback on_line,
                                                                        std::function<void()> on_end) {
@@ -427,7 +624,28 @@ std::unique_ptr<LogStream> DockerContainerManager::stream_compose_logs(const Com
         return nullptr;
     }
     try {
-        return std::make_unique<ProcessLogStream>(build_compose_logs_argv(prefix, project, tail, since), on_line,
+        auto filtered = on_line;
+        if (runtime_ == ContainerRuntime::Podman && on_line) {
+            // Only the first lines can carry the banner.
+            auto after_banner = std::make_shared<bool>(false);
+            filtered = [on_line, after_banner](const std::string& line) {
+                if (is_compose_banner(line)) {
+                    *after_banner = true;
+                    return;
+                }
+                if (*after_banner) {
+                    auto rest = drop_reset_prefix(line);
+                    if (rest.empty()) {
+                        return;
+                    }
+                    *after_banner = false;
+                    on_line(rest);
+                    return;
+                }
+                on_line(line);
+            };
+        }
+        return std::make_unique<ProcessLogStream>(build_compose_logs_argv(prefix, project, tail, since), filtered,
                                                   std::move(on_end));
     } catch (const std::exception& e) {
         if (on_line) {
@@ -437,7 +655,7 @@ std::unique_ptr<LogStream> DockerContainerManager::stream_compose_logs(const Com
     }
 }
 
-std::vector<Container> DockerContainerManager::parse_ps_output(const std::string& output) {
+std::vector<Container> CliContainerManager::parse_ps_output(const std::string& output) {
     std::vector<Container> containers;
     std::istringstream stream(output);
     std::string line;
@@ -445,6 +663,9 @@ std::vector<Container> DockerContainerManager::parse_ps_output(const std::string
         auto fields = split_fields(line);
         if (fields.size() < 6) {
             continue; // warnings or blank lines
+        }
+        if (fields.size() > 14 && lower(trim(fields[14])) == "true") {
+            continue; // podman pod infra container
         }
         Container c;
         c.id = trim(fields[0]);
@@ -475,7 +696,7 @@ std::vector<Container> DockerContainerManager::parse_ps_output(const std::string
     return containers;
 }
 
-std::map<std::string, ContainerStats> DockerContainerManager::parse_stats_output(const std::string& output) {
+std::map<std::string, ContainerStats> CliContainerManager::parse_stats_output(const std::string& output) {
     std::map<std::string, ContainerStats> stats;
     std::istringstream stream(output);
     std::string line;
@@ -500,7 +721,7 @@ std::map<std::string, ContainerStats> DockerContainerManager::parse_stats_output
     return stats;
 }
 
-ContainerDetails DockerContainerManager::parse_inspect_output(const std::string& output) {
+ContainerDetails CliContainerManager::parse_inspect_output(const std::string& output) {
     ContainerDetails d;
     std::istringstream stream(output);
     std::string line;
@@ -540,10 +761,10 @@ ContainerDetails DockerContainerManager::parse_inspect_output(const std::string&
             d.started_at = clean(value);
         } else if (key == "restarts") {
             d.restart_count = clean(value);
-        } else if (key == "entrypoint") {
-            d.entrypoint = clean(value);
-        } else if (key == "cmd") {
-            d.command = clean(value);
+        } else if (key == "entrypoint" || key == "cmd") {
+            // Podman 4 prints the entrypoint as a JSON string, `""` when unset.
+            auto v = clean(value);
+            (key == "cmd" ? d.command : d.entrypoint) = v == "\"\"" ? "" : v;
         } else if (key == "nano_cpus") {
             d.nano_cpus = to_int(value);
         } else if (key == "memory") {

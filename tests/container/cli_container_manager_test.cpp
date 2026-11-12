@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <g-systemctl/container/docker_container_manager.hpp>
+#include <g-systemctl/container/cli_container_manager.hpp>
 #include <g-systemctl/core/process_stream.hpp>
 #include <chrono>
 #include <condition_variable>
@@ -28,14 +28,14 @@ public:
 
 } // namespace
 
-TEST(DockerContainerManagerTest, ParsesPsOutputAndSortsRunningFirst) {
+TEST(CliContainerManagerTest, ParsesPsOutputAndSortsRunningFirst) {
     const std::string output =
         "98b52fc72ef5\tstopped-demo\talpine:3.20\texited\tExited (0) 2 hours ago\t\t\n"
         "63d352ff004b\tweb\tnginx:1.27\trunning\tUp 3 minutes\t0.0.0.0:8080->80/tcp\tshop\n"
         "WARNING: some daemon warning\n"
         "4bf5e90ed31e\tapi\tapi:latest\trunning\tUp 1 hour\t\t<no value>\n";
 
-    auto containers = DockerContainerManager::parse_ps_output(output);
+    auto containers = CliContainerManager::parse_ps_output(output);
     ASSERT_EQ(containers.size(), 3u);
     EXPECT_EQ(containers[0].name, "api");
     EXPECT_EQ(containers[0].compose_project, "");
@@ -47,11 +47,11 @@ TEST(DockerContainerManagerTest, ParsesPsOutputAndSortsRunningFirst) {
     EXPECT_FALSE(containers[2].is_active());
 }
 
-TEST(DockerContainerManagerTest, ParsesStatsOutput) {
+TEST(CliContainerManagerTest, ParsesStatsOutput) {
     const std::string output =
         "63d352ff004b\t0.12%\t1.129MiB / 128MiB\t0.88%\t84B / 84B\t0B / 0B\t2\n"
         "garbage line\n";
-    auto stats = DockerContainerManager::parse_stats_output(output);
+    auto stats = CliContainerManager::parse_stats_output(output);
     ASSERT_EQ(stats.size(), 1u);
     const auto& s = stats.at("63d352ff004b");
     EXPECT_EQ(s.cpu, "0.12%");
@@ -60,7 +60,7 @@ TEST(DockerContainerManagerTest, ParsesStatsOutput) {
     EXPECT_EQ(s.pids, "2");
 }
 
-TEST(DockerContainerManagerTest, ParsesInspectOutput) {
+TEST(CliContainerManagerTest, ParsesInspectOutput) {
     const std::string output =
         "id\t63d352ff004be0429e8688904f8985ba\n"
         "name\t/web\n"
@@ -82,7 +82,7 @@ TEST(DockerContainerManagerTest, ParsesInspectOutput) {
         "port\t443/tcp\t\n"
         "network\tbridge\t172.17.0.2\n";
 
-    auto d = DockerContainerManager::parse_inspect_output(output);
+    auto d = CliContainerManager::parse_inspect_output(output);
     EXPECT_EQ(d.name, "web");
     EXPECT_EQ(d.entrypoint, "");
     EXPECT_EQ(d.command, "[\"nginx\",\"-g\",\"daemon off;\"]");
@@ -109,19 +109,19 @@ TEST(DockerContainerManagerTest, ParsesInspectOutput) {
     EXPECT_EQ(settings.restart_policy, "on-failure:3");
 }
 
-TEST(DockerContainerManagerTest, ListThrowsWithDaemonError) {
+TEST(CliContainerManagerTest, ListThrowsWithDaemonError) {
     auto executor = std::make_shared<FakeExecutor>();
     executor->next = {1, "Cannot connect to the Docker daemon\n", ""};
-    DockerContainerManager manager(executor);
+    CliContainerManager manager(executor);
     EXPECT_THROW(manager.list_containers(), std::runtime_error);
     auto [ok, message] = manager.check_available();
     EXPECT_FALSE(ok);
     EXPECT_EQ(message, "Cannot connect to the Docker daemon");
 }
 
-TEST(DockerContainerManagerTest, ActionsQuoteIdsAndStripDaemonPrefix) {
+TEST(CliContainerManagerTest, ActionsQuoteIdsAndStripDaemonPrefix) {
     auto executor = std::make_shared<FakeExecutor>();
-    DockerContainerManager manager(executor, "/usr/bin/docker");
+    CliContainerManager manager(executor, "/usr/bin/docker");
     EXPECT_EQ(manager.runtime_name(), "docker");
 
     EXPECT_TRUE(manager.stop("abc").first);
@@ -134,9 +134,9 @@ TEST(DockerContainerManagerTest, ActionsQuoteIdsAndStripDaemonPrefix) {
     EXPECT_EQ(executor->commands.back(), "'/usr/bin/docker' start 'x'\\''y'");
 }
 
-TEST(DockerContainerManagerTest, ToggleStartsOrStopsByState) {
+TEST(CliContainerManagerTest, ToggleStartsOrStopsByState) {
     auto executor = std::make_shared<FakeExecutor>();
-    DockerContainerManager manager(executor);
+    CliContainerManager manager(executor);
     Container c;
     c.id = "abc";
     c.state = "exited";
@@ -147,9 +147,9 @@ TEST(DockerContainerManagerTest, ToggleStartsOrStopsByState) {
     EXPECT_EQ(executor->commands.back(), "'docker' stop 'abc'");
 }
 
-TEST(DockerContainerManagerTest, BuildsUpdateCommandWithOnlySetFlags) {
+TEST(CliContainerManagerTest, BuildsUpdateCommandWithOnlySetFlags) {
     auto executor = std::make_shared<FakeExecutor>();
-    DockerContainerManager manager(executor);
+    CliContainerManager manager(executor);
     ResourceUpdate update;
     update.memory = "512m";
     update.restart_policy = "unless-stopped";
@@ -166,12 +166,12 @@ TEST(DockerContainerManagerTest, BuildsUpdateCommandWithOnlySetFlags) {
     EXPECT_TRUE(executor->commands.empty());
 }
 
-TEST(DockerContainerManagerTest, BuildsLogsArgv) {
-    DockerContainerManager manager(std::make_shared<FakeExecutor>());
+TEST(CliContainerManagerTest, BuildsLogsArgv) {
+    CliContainerManager manager(std::make_shared<FakeExecutor>());
     EXPECT_EQ(manager.build_logs_argv("web", 200, ""),
               (std::vector<std::string>{"docker", "logs", "-f", "--tail", "200", "web"}));
     EXPECT_EQ(manager.build_logs_argv("web", -1, "1730700000.5"),
-              (std::vector<std::string>{"docker", "logs", "-f", "--tail", "all", "--since", "1730700000.5", "web"}));
+              (std::vector<std::string>{"docker", "logs", "-f", "--since", "1730700000.5", "web"}));
 }
 
 TEST(ContainerFormatTest, FormatsFlagValues) {

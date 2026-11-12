@@ -141,7 +141,7 @@ ResourceUpdateResult build_resource_update(const ResourceSettings& original, con
     auto cpus = trim(edited.cpus);
     if (cpus != original.cpus) {
         if (cpus.empty()) {
-            result.error = "Docker cannot remove a CPU limit in place; recreate the container";
+            result.error = "A CPU limit cannot be removed in place; recreate the container";
             return result;
         }
         update.cpus = cpus;
@@ -150,7 +150,7 @@ ResourceUpdateResult build_resource_update(const ResourceSettings& original, con
     auto memory = trim(edited.memory);
     if (memory != original.memory) {
         if (memory.empty()) {
-            result.error = "Docker cannot remove a memory limit in place; recreate the container";
+            result.error = "A memory limit cannot be removed in place; recreate the container";
             return result;
         }
         update.memory = memory;

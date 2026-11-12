@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <g-systemctl/container/compose_store.hpp>
-#include <g-systemctl/container/docker_container_manager.hpp>
+#include <g-systemctl/container/cli_container_manager.hpp>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
@@ -38,7 +38,7 @@ TEST(ComposeTest, ParsesComposeLabelsFromPs) {
         "override.yaml\t0df6\tFalse\tapi:service_started:false,cache:service_healthy:true\n"
         "bb\tshop-api-run-1\talpine\texited\tExited (0)\t\tshop\tapi\t1\t/srv/shop\t/srv/shop/compose.yaml\t9894\tTrue\t\n"
         "cc\tlone\talpine\trunning\tUp\t\t\t\t\t\t\t\t\t\n";
-    auto containers = DockerContainerManager::parse_ps_output(output);
+    auto containers = CliContainerManager::parse_ps_output(output);
     ASSERT_EQ(containers.size(), 3u);
     const auto& lone = containers[0];
     EXPECT_EQ(lone.name, "lone");
@@ -59,7 +59,7 @@ TEST(ComposeTest, ParsesComposeLabelsFromPs) {
 }
 
 TEST(ComposeTest, OldPsOutputWithoutComposeLabelsStillParses) {
-    auto containers = DockerContainerManager::parse_ps_output("aa\tweb\tnginx\trunning\tUp\t\tshop\n");
+    auto containers = CliContainerManager::parse_ps_output("aa\tweb\tnginx\trunning\tUp\t\tshop\n");
     ASSERT_EQ(containers.size(), 1u);
     EXPECT_EQ(containers[0].compose_project, "shop");
     EXPECT_TRUE(containers[0].compose_service.empty());
@@ -134,25 +134,25 @@ TEST(ComposeTest, ActionArgs) {
 
 TEST(ComposeTest, BuildsComposeCommand) {
     ComposeProjectRef ref{"shop", "/srv/my shop", {"/srv/my shop/compose.yaml", "/srv/my shop/dev.yaml"}};
-    EXPECT_EQ(DockerContainerManager::build_compose_command({"docker", "compose"}, ref, {"up", "-d"}, true),
+    EXPECT_EQ(CliContainerManager::build_compose_command({"docker", "compose"}, ref, {"up", "-d"}, true),
               "cd '/srv/my shop' && 'docker' 'compose' '-p' 'shop' '-f' '/srv/my shop/compose.yaml' '-f' "
               "'/srv/my shop/dev.yaml' 'up' '-d'");
-    EXPECT_EQ(DockerContainerManager::build_compose_command({"docker-compose"}, ref, {"stop"}, false),
+    EXPECT_EQ(CliContainerManager::build_compose_command({"docker-compose"}, ref, {"stop"}, false),
               "'docker-compose' '-p' 'shop' 'stop'");
 }
 
 TEST(ComposeTest, ParsesProjectNameFromConfig) {
-    EXPECT_EQ(DockerContainerManager::parse_config_project_name("name: shop\nservices:\n  web:\n    name: x\n"), "shop");
-    EXPECT_EQ(DockerContainerManager::parse_config_project_name("name: \"my-app\"\n"), "my-app");
-    EXPECT_EQ(DockerContainerManager::parse_config_project_name("services: {}\n"), "");
+    EXPECT_EQ(CliContainerManager::parse_config_project_name("name: shop\nservices:\n  web:\n    name: x\n"), "shop");
+    EXPECT_EQ(CliContainerManager::parse_config_project_name("name: \"my-app\"\n"), "my-app");
+    EXPECT_EQ(CliContainerManager::parse_config_project_name("services: {}\n"), "");
     ComposeProjectRef files{"", "/srv/shop", {}};
-    EXPECT_EQ(DockerContainerManager::build_compose_command({"docker", "compose"}, files, {"config"}, true),
+    EXPECT_EQ(CliContainerManager::build_compose_command({"docker", "compose"}, files, {"config"}, true),
               "cd '/srv/shop' && 'docker' 'compose' 'config'");
 }
 
 TEST(ComposeTest, BuildsComposeLogsArgv) {
     ComposeProjectRef ref{"shop", "/srv/shop", {}};
-    EXPECT_EQ(DockerContainerManager::build_compose_logs_argv({"docker", "compose"}, ref, 100, "123.5"),
+    EXPECT_EQ(CliContainerManager::build_compose_logs_argv({"docker", "compose"}, ref, 100, "123.5"),
               (std::vector<std::string>{"docker", "compose", "-p", "shop", "logs", "-f", "--no-color", "--tail",
                                         "100", "--since", "123.5"}));
 }

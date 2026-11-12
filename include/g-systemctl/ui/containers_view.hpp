@@ -104,6 +104,7 @@ namespace gsystemctl::ui
         ComposeStore compose_store_;
         std::vector<ComposeProject> projects_;
         bool compose_ok_ = false;
+        bool drift_supported_ = false; // compose can print config hashes
         std::string compose_message_;
         // Project -> services whose config changed since their containers were created.
         std::map<std::string, std::vector<std::string>> drift_;
@@ -191,6 +192,7 @@ namespace gsystemctl::ui
         // Poller thread only.
         bool poller_compose_checked_ = false;
         bool poller_compose_ok_ = false;
+        bool poller_drift_ok_ = false;
         int poll_count_ = 0;
 
         void poll_loop();
