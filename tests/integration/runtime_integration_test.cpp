@@ -372,7 +372,11 @@ TEST_F(ComposeIntegration, FullLifecycle) {
                   cli + " ps -a --format '{{.Names}} {{.State}}'",
                   cli + " inspect --format '{{.Name}} log={{.HostConfig.LogConfig.Type}}' " + ref.name + "_web_1 " +
                       ref.name + "-web-1",
-                  cli + " logs --tail 3 " + ref.name + "_web_1"}) {
+                  cli + " logs --tail 3 " + ref.name + "_web_1",
+                  "timeout 6 " + cli + " logs -f --tail 2 " + ref.name + "_web_1 </dev/null | head -3",
+                  "timeout 6 " + cli + " logs -f --tail 2 " + ref.name + "_web_1 " + ref.name + "_worker_1 </dev/null | head -3",
+                  "timeout 8 env PYTHONUNBUFFERED=1 " + compose + " --verbose -p " + ref.name + " -f " +
+                      ref.config_files[0] + " logs -f --no-color --tail 2 </dev/null | head -12"}) {
                 auto r = executor->execute(command);
                 std::cout << "$ " << command << " (exit " << r.exit_code << ")\n" << r.stdout_output << r.stderr_output;
             }
