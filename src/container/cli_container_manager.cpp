@@ -163,24 +163,6 @@ std::string drop_reset_prefix(std::string line) {
 
 } // namespace
 
-std::string CliContainerManager::strip_ansi(const std::string& line) {
-    std::string out;
-    out.reserve(line.size());
-    for (size_t i = 0; i < line.size(); ++i) {
-        if (line[i] == '\x1b' && i + 1 < line.size() && line[i + 1] == '[') {
-            // CSI: parameters and intermediates, then one final byte in @..~.
-            size_t j = i + 2;
-            while (j < line.size() && !(line[j] >= '@' && line[j] <= '~')) {
-                ++j;
-            }
-            i = j;
-            continue;
-        }
-        out += line[i];
-    }
-    return out;
-}
-
 std::string CliContainerManager::strip_compose_banner(const std::string& text) {
     if (text.find(">>>> Executing external compose provider") == std::string::npos) {
         return text;
@@ -642,17 +624,10 @@ std::map<std::string, std::string> CliContainerManager::compose_config_hashes(co
 
 std::vector<std::string> CliContainerManager::build_compose_logs_argv(const std::vector<std::string>& compose,
                                                                          const ComposeProjectRef& project, int tail,
-                                                                         const std::string& since, bool with_files) {
-    // `-p` alone is enough for docker compose and keeps working if the files
-    // moved; podman-compose always needs the files (absolute paths, so no cd).
+                                                                         const std::string& since) {
+    // `-p` alone is enough for logs and keeps working if the files moved.
     auto argv = compose;
-    argv.insert(argv.end(), {"-p", project.name});
-    if (with_files) {
-        for (const auto& file : project.config_files) {
-            argv.insert(argv.end(), {"-f", file});
-        }
-    }
-    argv.insert(argv.end(), {"logs", "-f", "--no-color", "--tail",
+    argv.insert(argv.end(), {"-p", project.name, "logs", "-f", "--no-color", "--tail",
                              tail < 0 ? "all" : std::to_string(tail)});
     if (!since.empty()) {
         argv.insert(argv.end(), {"--since", since});
@@ -660,46 +635,51 @@ std::vector<std::string> CliContainerManager::build_compose_logs_argv(const std:
     return argv;
 }
 
-std::unique_ptr<LogStream> CliContainerManager::stream_compose_logs(const ComposeProjectRef& project, int tail,
-                                                                       const std::string& since,
+std::vector<std::string> CliContainerManager::build_project_logs_argv(const std::vector<std::string>& containers,
+                                                                      int tail, const std::string& since) const {
+    // -n prefixes each line with the container name.
+    std::vector<std::string> argv = {binary_, "logs", "-f", "-n"};
+    if (tail >= 0) {
+        argv.insert(argv.end(), {"--tail", std::to_string(tail)});
+    }
+    if (!since.empty()) {
+        argv.insert(argv.end(), {"--since", since});
+    }
+    argv.insert(argv.end(), containers.begin(), containers.end());
+    return argv;
+}
+
+std::string CliContainerManager::compose_logs_command(const std::string& project, int tail) const {
+    if (runtime_ == ContainerRuntime::Podman) {
+        return runtime_name() + " logs -f -n --tail " + std::to_string(tail) + " <" + project + " containers>";
+    }
+    return runtime_name() + " compose -p " + project + " logs -f --tail " + std::to_string(tail);
+}
+
+std::unique_ptr<LogStream> CliContainerManager::stream_compose_logs(const ComposeProjectRef& project,
+                                                                       const std::vector<std::string>& containers,
+                                                                       int tail, const std::string& since,
                                                                        LoggingManager::LogCallback on_line,
                                                                        std::function<void()> on_end) {
-    const auto& prefix = compose_prefix();
-    if (prefix.empty()) {
-        if (on_line) {
-            on_line(compose_error_);
+    std::vector<std::string> argv;
+    if (runtime_ == ContainerRuntime::Podman) {
+        // Follow the containers directly: podman-compose's `logs -f` (also behind
+        // `podman compose`) forwarded nothing with the journald log driver, and
+        // needs the compose files. This works with any provider, or none.
+        // Nothing to follow: a process that ends at once, as compose logs would.
+        argv = containers.empty() ? std::vector<std::string>{"true"} : build_project_logs_argv(containers, tail, since);
+    } else {
+        const auto& prefix = compose_prefix();
+        if (prefix.empty()) {
+            if (on_line) {
+                on_line(compose_error_);
+            }
+            return nullptr;
         }
-        return nullptr;
+        argv = build_compose_logs_argv(prefix, project, tail, since);
     }
     try {
-        auto filtered = on_line;
-        if (runtime_ == ContainerRuntime::Podman && on_line) {
-            // podman-compose colours its "[service] |" prefix even with --no-color,
-            // and the banner's reset lands on the next line.
-            auto after_banner = std::make_shared<bool>(false);
-            filtered = [on_line, after_banner](const std::string& line) {
-                if (is_compose_banner(line)) {
-                    *after_banner = true;
-                    return;
-                }
-                auto clean_line = strip_ansi(line);
-                if (*after_banner && clean_line.empty()) {
-                    return;
-                }
-                *after_banner = false;
-                on_line(clean_line);
-            };
-        }
-        const bool with_files = runtime_ == ContainerRuntime::Podman && !project.config_files.empty() &&
-                                std::all_of(project.config_files.begin(), project.config_files.end(), file_exists);
-        auto argv = build_compose_logs_argv(prefix, project, tail, since, with_files);
-        if (runtime_ == ContainerRuntime::Podman) {
-            // podman-compose is Python and prints log lines without flushing;
-            // into a pipe they would arrive in 8 KiB chunks.
-            argv.insert(argv.begin(), {"env", "PYTHONUNBUFFERED=1"});
-        }
-        return std::make_unique<ProcessLogStream>(std::move(argv), filtered,
-                                                  std::move(on_end));
+        return std::make_unique<ProcessLogStream>(argv, on_line, std::move(on_end));
     } catch (const std::exception& e) {
         if (on_line) {
             on_line(std::string("Unable to start compose logs: ") + e.what());

@@ -66,9 +66,13 @@ public:
     virtual std::string compose_project_name(const ComposeProjectRef& project) = 0;
     // Service -> config hash of the project's files as they are now. Throws on failure.
     virtual std::map<std::string, std::string> compose_config_hashes(const ComposeProjectRef& project) = 0;
+    // The command stream_compose_logs() runs, for the log header.
+    virtual std::string compose_logs_command(const std::string& project, int tail) const = 0;
     // Follows the merged logs of all the project's services, prefixed with the
-    // container name. Ends when every container has stopped.
-    virtual std::unique_ptr<LogStream> stream_compose_logs(const ComposeProjectRef& project, int tail,
+    // container name. Ends when every container has stopped. `containers` are
+    // the project's containers as last listed; podman follows them directly.
+    virtual std::unique_ptr<LogStream> stream_compose_logs(const ComposeProjectRef& project,
+                                                           const std::vector<std::string>& containers, int tail,
                                                            const std::string& since,
                                                            LoggingManager::LogCallback on_line,
                                                            std::function<void()> on_end) = 0;

@@ -987,8 +987,7 @@ namespace gsystemctl::ui
         set_poll_project(name, false);
         refresh_now();
         logs_.open("compose " + name,
-                   "Starting: " + manager_->runtime_name() + " compose -p " + name + " logs -f --tail " +
-                       std::to_string(kLogTail));
+                   "Starting: " + manager_->compose_logs_command(name, kLogTail));
         attach_logs(kLogTail, "", false);
     }
 
@@ -1069,7 +1068,7 @@ namespace gsystemctl::ui
         if (!detail_project_.empty())
         {
             const auto *p = find_project(detail_project_);
-            stream = p ? manager_->stream_compose_logs(p->ref, tail, since, on_line, on_end) : nullptr;
+            stream = p ? manager_->stream_compose_logs(p->ref, p->container_ids, tail, since, on_line, on_end) : nullptr;
         }
         else
         {

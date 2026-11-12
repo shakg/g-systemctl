@@ -217,19 +217,12 @@ TEST(PodmanComposeTest, DropsProviderBanner) {
     EXPECT_EQ(manager.compose(ref, ComposeAction::Stop), (ContainerManager::Result{false, "no such service: web"}));
 }
 
-TEST(PodmanComposeTest, LogsPassFilesWhenAsked) {
-    ComposeProjectRef ref;
-    ref.name = "shop";
-    ref.config_files = {"/srv/shop/compose.yaml"};
-    EXPECT_EQ(CliContainerManager::build_compose_logs_argv({"podman-compose"}, ref, 10, "", true),
-              (std::vector<std::string>{"podman-compose", "-p", "shop", "-f", "/srv/shop/compose.yaml", "logs", "-f",
-                                        "--no-color", "--tail", "10"}));
-}
-
-TEST(PodmanComposeTest, StripsAnsi) {
-    EXPECT_EQ(CliContainerManager::strip_ansi("\x1b[0m[web]    |\x1b[0m web up"), "[web]    | web up");
-    EXPECT_EQ(CliContainerManager::strip_ansi("\x1b[1;32mok\x1b[0m done"), "ok done");
-    EXPECT_EQ(CliContainerManager::strip_ansi("plain\x1b"), "plain\x1b");
+TEST(PodmanComposeTest, ProjectLogsFollowContainersDirectly) {
+    CliContainerManager manager(std::make_shared<ScriptedExecutor>(), "podman", ContainerRuntime::Podman);
+    EXPECT_EQ(manager.build_project_logs_argv({"aaa", "bbb"}, 10, "123.5"),
+              (std::vector<std::string>{"podman", "logs", "-f", "-n", "--tail", "10", "--since", "123.5", "aaa", "bbb"}));
+    EXPECT_EQ(manager.build_project_logs_argv({"aaa"}, -1, ""),
+              (std::vector<std::string>{"podman", "logs", "-f", "-n", "aaa"}));
 }
 
 TEST(PodmanComposeTest, ErrorSkipsPodmanWrapperLine) {

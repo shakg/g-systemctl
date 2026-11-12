@@ -41,8 +41,10 @@ public:
     Result compose(const ComposeProjectRef& project, ComposeAction action) override;
     std::string compose_project_name(const ComposeProjectRef& project) override;
     std::map<std::string, std::string> compose_config_hashes(const ComposeProjectRef& project) override;
-    std::unique_ptr<LogStream> stream_compose_logs(const ComposeProjectRef& project, int tail, const std::string& since,
-                                                   LoggingManager::LogCallback on_line,
+    std::string compose_logs_command(const std::string& project, int tail) const override;
+    std::unique_ptr<LogStream> stream_compose_logs(const ComposeProjectRef& project,
+                                                   const std::vector<std::string>& containers, int tail,
+                                                   const std::string& since, LoggingManager::LogCallback on_line,
                                                    std::function<void()> on_end) override;
 
     struct Selection {
@@ -68,7 +70,10 @@ public:
     static std::string parse_config_project_name(const std::string& output);
     static std::vector<std::string> build_compose_logs_argv(const std::vector<std::string>& compose,
                                                             const ComposeProjectRef& project, int tail,
-                                                            const std::string& since, bool with_files = false);
+                                                            const std::string& since);
+    // Podman: `podman logs -f -n` over the project's containers.
+    std::vector<std::string> build_project_logs_argv(const std::vector<std::string>& containers, int tail,
+                                                     const std::string& since) const;
     // Rows whose 15th field is "true" (podman pod infra containers) are dropped.
     static std::vector<Container> parse_ps_output(const std::string& output);
     static std::map<std::string, ContainerStats> parse_stats_output(const std::string& output);
@@ -85,8 +90,6 @@ public:
     // `podman compose` banner ">>>> Executing external compose provider ...".
     static bool is_compose_banner(const std::string& line);
     static std::string strip_compose_banner(const std::string& text);
-    // Drops ANSI CSI sequences ("ESC[0m").
-    static std::string strip_ansi(const std::string& line);
     // The line of a failed compose command that says why.
     static std::string compose_error(const std::string& output);
     std::string version_command() const;
