@@ -12,6 +12,8 @@ set -euo pipefail
 build=$(cd "${1:-build}" && pwd)
 image=${GSYSTEMCTL_TEST_IMAGE:-docker.io/library/alpine:3.20}
 export GSYSTEMCTL_INTEGRATION=1 GSYSTEMCTL_RUNTIME=podman GSYSTEMCTL_TEST_IMAGE=$image
+# Users rarely set it, and it hides podman-compose's buffered log output.
+unset PYTHONUNBUFFERED
 
 podman version
 podman info --format 'rootless={{.Host.Security.Rootless}} cgroups={{.Host.CgroupsVersion}} manager={{.Host.CgroupManager}}'

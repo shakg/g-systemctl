@@ -692,8 +692,13 @@ std::unique_ptr<LogStream> CliContainerManager::stream_compose_logs(const Compos
         }
         const bool with_files = runtime_ == ContainerRuntime::Podman && !project.config_files.empty() &&
                                 std::all_of(project.config_files.begin(), project.config_files.end(), file_exists);
-        return std::make_unique<ProcessLogStream>(build_compose_logs_argv(prefix, project, tail, since, with_files),
-                                                  filtered,
+        auto argv = build_compose_logs_argv(prefix, project, tail, since, with_files);
+        if (runtime_ == ContainerRuntime::Podman) {
+            // podman-compose is Python and prints log lines without flushing;
+            // into a pipe they would arrive in 8 KiB chunks.
+            argv.insert(argv.begin(), {"env", "PYTHONUNBUFFERED=1"});
+        }
+        return std::make_unique<ProcessLogStream>(std::move(argv), filtered,
                                                   std::move(on_end));
     } catch (const std::exception& e) {
         if (on_line) {
