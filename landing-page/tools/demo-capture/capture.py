@@ -45,7 +45,9 @@ stream = pyte.ByteStream(screen)
 pid, fd = pty.fork()
 if pid == 0:
     # Fresh config dir: the app saves the compose projects it sees.
+    # GSYSTEMCTL_RUNTIME=docker: never probe a real podman on the recording machine.
     env = dict(os.environ, PATH=FAKE + ":" + os.environ["PATH"], TERM="xterm-256color", COLORTERM="truecolor",
+               GSYSTEMCTL_RUNTIME="docker",
                XDG_CONFIG_HOME=tempfile.mkdtemp(prefix="g-systemctl-demo-"))
     # Start on Services so the demo shows both tabs (the app defaults to Containers).
     os.execve(BIN, [BIN, "--services"], env)

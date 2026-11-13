@@ -257,9 +257,11 @@ namespace gsystemctl::ui
             poller_compose_checked_ = true;
             auto [ok, message] = manager_->compose_available();
             poller_compose_ok_ = ok;
-            screen_.Post([this, ok = ok, message = message] {
+            poller_drift_ok_ = ok && manager_->compose_drift_supported();
+            screen_.Post([this, ok = ok, message = message, drift_ok = poller_drift_ok_] {
                 compose_ok_ = ok;
                 compose_message_ = message;
+                drift_supported_ = drift_ok;
             });
         }
 
@@ -309,7 +311,7 @@ namespace gsystemctl::ui
             poll_drift_all_ = false;
             open_project = poll_project_;
         }
-        if (!poller_compose_ok_ || (!check_all && open_project.empty()))
+        if (!poller_drift_ok_ || (!check_all && open_project.empty()))
             return;
         std::map<std::string, std::vector<std::string>> drift;
         std::map<std::string, std::string> errors;
@@ -856,7 +858,7 @@ namespace gsystemctl::ui
     {
         if (!compose_ok_)
         {
-            error_message_ = compose_message_.empty() ? "docker compose is not available" : compose_message_;
+            error_message_ = compose_message_.empty() ? "compose is not available" : compose_message_;
             return;
         }
         auto ref = project.ref;
@@ -985,8 +987,7 @@ namespace gsystemctl::ui
         set_poll_project(name, false);
         refresh_now();
         logs_.open("compose " + name,
-                   "Starting: " + manager_->runtime_name() + " compose -p " + name + " logs -f --tail " +
-                       std::to_string(kLogTail));
+                   "Starting: " + manager_->compose_logs_command(name, kLogTail));
         attach_logs(kLogTail, "", false);
     }
 
@@ -1067,7 +1068,7 @@ namespace gsystemctl::ui
         if (!detail_project_.empty())
         {
             const auto *p = find_project(detail_project_);
-            stream = p ? manager_->stream_compose_logs(p->ref, tail, since, on_line, on_end) : nullptr;
+            stream = p ? manager_->stream_compose_logs(p->ref, p->container_ids, tail, since, on_line, on_end) : nullptr;
         }
         else
         {
@@ -1215,7 +1216,7 @@ namespace gsystemctl::ui
         clear_messages();
         if (!compose_ok_)
         {
-            error_message_ = compose_message_.empty() ? "docker compose is not available" : compose_message_;
+            error_message_ = compose_message_.empty() ? "compose is not available" : compose_message_;
             return;
         }
         add_path_.clear();
@@ -1365,7 +1366,8 @@ namespace gsystemctl::ui
                 row("PIDs limit", pids, "empty = unlimited"),
                 row("Restart", restart, "no|always|unless-stopped|on-failure[:N]"),
                 separator() | color(BorderColor()),
-                text("Applied live with `docker update`. Env, ports and volumes") | color(MutedColor()),
+                text("Applied live with `" + manager_->runtime_name() + " update`. Env, ports and volumes") |
+                    color(MutedColor()),
                 text("need the container to be recreated.") | color(MutedColor()),
             };
             if (!edit_error_.empty())
@@ -1630,8 +1632,7 @@ namespace gsystemctl::ui
                        text(""),
                        paragraph(availability_message_) | color(MutedColor()) | center,
                        text(""),
-                       text("Start the daemon, check socket permissions (docker group), or set GSYSTEMCTL_DOCKER.") |
-                           color(MutedColor()) | center,
+                       paragraph(manager_->setup_hint()) | color(MutedColor()) | center,
                    }) |
                    center | flex;
         }
@@ -1955,6 +1956,9 @@ namespace gsystemctl::ui
                                       WarningColor()));
         else if (drift != drift_.end() && !p.down())
             lines.push_back(field_row("Config", "✓ containers match the compose files", AccentColor()));
+        else if (!p.down() && compose_ok_ && !drift_supported_)
+            lines.push_back(field_row("Config", "not checked: " + compose_message_ + " has no `config --hash`",
+                                      MutedColor()));
         else if (!p.down())
             lines.push_back(field_row("Config", "checking...", MutedColor()));
 

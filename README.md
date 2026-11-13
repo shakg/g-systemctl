@@ -2,16 +2,18 @@
 
 ![Test Status](https://github.com/shakg/g-systemctl/actions/workflows/test.yml/badge.svg)
 ![Build Status](https://github.com/shakg/g-systemctl/actions/workflows/release.yml/badge.svg)
+![Podman](https://github.com/shakg/g-systemctl/actions/workflows/podman.yml/badge.svg)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A terminal UI for Docker containers and system services (systemctl on Linux, launchctl on macOS).
+A terminal UI for Docker or Podman containers and system services (systemctl on Linux, launchctl on macOS).
 
 ![g-systemctl containers tab](docs/screenshot.png)
 
 ## Features
 
 - Containers: live CPU/memory/PIDs, start/stop/restart, logs, inspect, change resource limits in place
-- Docker Compose: containers grouped by project; start/stop/restart, `up -d`, build, pull, down; flags changed compose files
+- Compose: containers grouped by project; start/stop/restart, `up -d`, build, pull, down; flags changed compose files
+- Docker or Podman, picked automatically (see [Podman](#podman))
 - Services: list, filter, start/stop/restart, follow `journalctl` logs, edit unit files
 - Detail page with summary, graphs and live logs
 - Keyboard and mouse
@@ -52,7 +54,7 @@ sudo make install
 ## Usage
 
 ```bash
-g-systemctl              # Containers tab, or Services if Docker is unavailable
+g-systemctl              # Containers tab, or Services if no container runtime is available
 g-systemctl -s           # Services tab
 g-systemctl -c           # Containers tab
 g-systemctl --user       # User services
@@ -70,6 +72,24 @@ Starting and stopping services needs root; run with `sudo` or enter the password
 | `Alt+1` / `Alt+2` | Containers / Services tab |
 | `?` | All shortcuts |
 | `Alt+q` | Quit |
+
+## Podman
+
+g-systemctl uses `docker` when its daemon is reachable, otherwise `podman`. A `docker` command that is really Podman (podman-docker) is treated as Podman. To choose:
+
+```bash
+GSYSTEMCTL_RUNTIME=podman g-systemctl    # docker | podman | auto (default)
+GSYSTEMCTL_DOCKER=/opt/bin/podman g-systemctl   # CLI binary
+GSYSTEMCTL_COMPOSE=podman-compose g-systemctl   # compose command
+```
+
+- Compose uses `podman compose`, then `podman-compose`. With `podman-compose`, changed compose files are not flagged: it cannot print config hashes. `podman compose` with the docker-compose provider can.
+- Pods' infra containers are hidden.
+- Rootless and `sudo` Podman keep separate containers. Run g-systemctl the same way you run `podman`.
+- macOS: start the VM first with `podman machine start`.
+- Podman 4.x: `podman update` applies new limits, but `inspect` keeps showing the old ones, and it has no `--restart`.
+
+Tested in CI against Podman 4.9 (Ubuntu 24.04), rootless and rootful, with both compose commands.
 
 ## Contributing
 

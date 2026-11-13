@@ -67,7 +67,7 @@ const ENV: [string, string, boolean][] = [
 const LIMITS: [string, string][] = [["CPUs", "2"], ["Memory", "2g"], ["Memory+swap", "2g"], ["PIDs limit", "200"], ["Restart", "unless-stopped"]];
 
 const PLATFORMS = [
-  { os: "Linux or Docker Desktop", w: "docker", c: "", l: ["docker ps and docker stats every 2s", "Compose projects: up, down, pull, build", "Inspect env, ports, mounts, networks", "Logs from docker logs -f and compose logs -f", "Limits and restart policy with docker update"] },
+  { os: "Docker or Podman · Linux, macOS", w: "docker", c: "|podman", l: ["ps and stats every 2s", "Compose projects: up, down, pull, build", "Podman pods without their infra containers", "Inspect env, ports, mounts, networks", "Logs from logs -f and compose logs -f", "Limits and restart policy with update"] },
   { os: "Linux · systemd", w: "system", c: "ctl", l: ["System and --user units", "Details from systemctl show", "Logs from journalctl -f", "Edit unit files with Alt+e", "daemon-reload with Alt+Shift+r"] },
   { os: "macOS · launchd", w: "launch", c: "ctl", l: ["Jobs from launchctl list", "Start and stop with load / unload", "Details from launchctl list <label>", "Install with Homebrew"] },
 ];
@@ -94,7 +94,7 @@ const PROJECT: Row[] = [
   <div class="wrap">
     <div class="head">
       <h2 data-r>Features</h2>
-      <p class="sub" data-r style="--d:1">What you get on top of <code>docker</code>, <code>docker compose</code>, <code>systemctl</code> and <code>launchctl</code>.</p>
+      <p class="sub" data-r style="--d:1">What you get on top of <code>docker</code> or <code>podman</code>, compose, <code>systemctl</code> and <code>launchctl</code>.</p>
     </div>
 
     <div class="bento">

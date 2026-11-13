@@ -7,18 +7,19 @@ void print_help()
 {
     std::cout << "g-systemctl - Terminal UI for system service management\n\n";
     std::cout << "Usage: g-systemctl [options]\n\n";
-    std::cout << "Opens the Containers tab, or Services if Docker is unavailable.\n\n";
+    std::cout << "Opens the Containers tab, or Services if neither docker nor podman is available.\n\n";
     std::cout << "Options:\n";
     std::cout << "  -h, --help              Show this help message\n";
     std::cout << "  -v, --version           Show version information\n";
     std::cout << "  --system                Show system services (default)\n";
     std::cout << "  --user                  Show user services\n";
-    std::cout << "  -c, --containers        Open the Containers tab, even without Docker\n";
+    std::cout << "  -c, --containers        Open the Containers tab, even without a runtime\n";
     std::cout << "  -s, --services          Open the Services tab\n";
     std::cout << "  -f, --filter <text>     Set the initial filter text\n\n";
     std::cout << "Environment:\n";
-    std::cout << "  GSYSTEMCTL_DOCKER       Docker CLI binary (default: docker)\n";
-    std::cout << "  GSYSTEMCTL_COMPOSE      Compose command (default: docker compose)\n";
+    std::cout << "  GSYSTEMCTL_RUNTIME      docker, podman or auto (default: auto, docker first)\n";
+    std::cout << "  GSYSTEMCTL_DOCKER       Container CLI binary (default: docker or podman)\n";
+    std::cout << "  GSYSTEMCTL_COMPOSE      Compose command (default: <runtime> compose)\n";
     std::cout << "  GSYSTEMCTL_EDITOR       Editor for unit files (default: vim)\n\n";
     std::cout << "Note: Run with sudo for full functionality (start/stop services)\n";
 }
@@ -34,7 +35,7 @@ int main(int argc, char *argv[])
     bool system_mode = true;
     std::string initial_filter;
     auto initial_tab = gsystemctl::ui::App::Tab::Containers;
-    // Without an explicit tab, fall back to Services when Docker is unavailable.
+    // Without an explicit tab, fall back to Services when no container runtime is available.
     bool fallback_to_services = true;
 
     for (int i = 1; i < argc; ++i)

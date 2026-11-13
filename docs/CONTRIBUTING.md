@@ -46,6 +46,15 @@ This project uses GitHub Actions for continuous integration and release automati
 
 - **Test** (`.github/workflows/test.yml`): Runs on every push to `main` and pull requests. It builds the project and runs tests on Ubuntu.
 
+- **Podman** (`.github/workflows/podman.yml`): Runs on pushes and pull requests that change code. It runs `tests/integration/` against a real Podman 4.9 (rootless with `podman compose` and with `podman-compose`, and rootful), then starts the binary in tmux and checks the container list. To run it locally (Podman, tmux and a compose provider installed; as root for rootful):
+
+  ```bash
+  cmake -S . -B build -DBUILD_TESTING=ON && cmake --build build --parallel
+  tests/integration/podman-ci.sh build
+  ```
+
+  The integration tests are skipped unless `GSYSTEMCTL_INTEGRATION=1`, so `make test` does not need a container runtime.
+
 - **Build and Release** (`.github/workflows/release.yml`): Builds Linux and macOS packages on every push to `main`. When you push a version tag (e.g., `v1.0.0`), it also creates the GitHub Release and attaches the packages.
 
 ### Creating a Release

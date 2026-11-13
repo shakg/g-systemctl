@@ -133,6 +133,9 @@ def compose():
     sub = rest[0] if rest else ""
     if sub == "version":
         print("2.29.7")
+    elif sub == "config" and "--help" in rest:
+        # The app checks for --hash before running drift checks.
+        print("      --hash string   Print the service config hash, one per line.")
     elif sub == "config" and "--hash" in rest:
         # web's compose file changed until `up` recreates it.
         for c in CTRS:

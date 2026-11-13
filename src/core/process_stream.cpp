@@ -38,6 +38,10 @@ ProcessLogStream::ProcessLogStream(const std::vector<std::string>& argv, Logging
     }
 
     if (pid_ == 0) {
+        // Own process group, so the destructor also stops grandchildren
+        // (`podman compose` runs docker-compose as a child and does not
+        // forward SIGTERM to it; the grandchild would keep the pipe open).
+        setpgid(0, 0);
         int devnull = open("/dev/null", O_RDONLY);
         if (devnull >= 0) {
             dup2(devnull, STDIN_FILENO);
@@ -53,13 +57,14 @@ ProcessLogStream::ProcessLogStream(const std::vector<std::string>& argv, Logging
         _exit(127);
     }
 
+    setpgid(pid_, pid_); // also from the parent, so the group exists before any kill()
     read_fd_ = pipefd[0];
     close(pipefd[1]);
     reader_ = std::thread([this] { read_loop(); });
 }
 
 ProcessLogStream::~ProcessLogStream() {
-    if (pid_ > 0) {
+    if (pid_ > 0 && kill(-pid_, SIGTERM) != 0) {
         kill(pid_, SIGTERM);
     }
     if (reader_.joinable()) {

@@ -39,7 +39,7 @@ g-systemctl/
 │   │   ├── container.hpp       # Container, ContainerDetails, resource-limit diffing, compose grouping/drift
 │   │   ├── compose_store.hpp   # Saved compose projects (~/.config/g-systemctl/compose-projects)
 │   │   ├── container_manager.hpp # Abstract container runtime interface
-│   │   └── docker_container_manager.hpp # docker CLI implementation
+│   │   └── cli_container_manager.hpp # docker/podman CLI implementation
 │   ├── platform/               # Platform-specific implementations
 │   │   ├── platform.hpp        # Platform detection
 │   │   ├── linux_service_manager.hpp
@@ -63,7 +63,8 @@ g-systemctl/
 - `LinuxServiceManager` - Uses `systemctl list-units` and `systemctl start/stop`
 - `MacOSServiceManager` - Uses `launchctl list` and `launchctl load/unload`
 - `CommandExecutor` - Wraps shell command execution, handles sudo for privileged operations
-- `ContainerManager` - Abstract container runtime interface. `DockerContainerManager` drives the `docker` CLI with tab-separated Go-template `--format` output (no JSON dependency)
+- `ContainerManager` - Abstract container runtime interface. `CliContainerManager` drives the `docker` or `podman` CLI with tab-separated Go-template `--format` output (no JSON dependency)
+- Podman - `CliContainerManager::select_runtime` picks the CLI: `GSYSTEMCTL_RUNTIME=docker|podman|auto`, `GSYSTEMCTL_DOCKER` overrides the binary. Auto prefers docker, uses podman when docker is missing or its daemon is unreachable, and treats a `docker` whose `--version` says podman (podman-docker) as podman. Podman differences live in `CliContainerManager`: `info` for the availability check, `.PIDS` in stats, `.HostIP` in inspect, pod infra containers hidden via `{{.IsInfra}}`, and podman 4's `{{index .Labels ...}}` (switched to when `.Label` errors). Compose on podman is `podman compose` then `podman-compose` (never standalone docker-compose); its stderr banner is stripped from output; podman-compose prints no `name:` in `config` (the directory name is used). Project logs on podman do not use compose at all: `podman logs -f -n` over the project's container IDs (podman-compose's `logs -f` forwarded nothing with the journald log driver) Drift needs `config --hash`, which podman-compose lacks (`compose_drift_supported`). `ProcessLogStream` runs its child in its own process group and kills the group, because `podman compose` does not forward SIGTERM to its provider. `tests/integration/` runs against a real runtime when `GSYSTEMCTL_INTEGRATION=1`; `.github/workflows/podman.yml` runs it via `tests/integration/podman-ci.sh` (rootless + rootful, `podman compose` + podman-compose) plus a tmux smoke test
 - `ProcessLogStream` - Runs a command and streams its output lines from a background thread (journalctl, docker logs)
 - `App` - FTXUI-based TUI with Containers (left, default, `Alt+1`) and Services (`Alt+2`) tabs, filtering, and keyboard navigation. Without `-s`/`-c` it falls back to Services when the first Docker check fails (`ContainersView::set_on_unavailable`). The help (`?`) has its own tabs: Containers, Services, General, Settings; it opens on the one matching the active tab and takes all input while open. Navigation is three levels: list → detail page (summary + short log strip) → full-size logs. `Enter` goes down, `Esc` goes up. Start/stop/restart are `Alt+o`/`Alt+x`/`Alt+r`; on the detail page they target the item shown
 - `ServiceManager::describe_service` - Summary rows for the service detail page (`systemctl show -p ...` on Linux, `launchctl list <label>` on macOS); parsers are static and unit-tested
