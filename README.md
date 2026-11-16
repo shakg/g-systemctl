@@ -63,6 +63,12 @@ g-systemctl -f nginx     # Start with a filter
 
 Starting and stopping services needs root; run with `sudo` or enter the password when asked.
 
+### Updates
+
+Release builds check GitHub for a new version once a day and ask before installing it (`y` update, `n` not now, `s` skip this version, `d` stop checking). `g-systemctl --update` updates from the terminal. Tarball installs are replaced in place (checksum-verified, `sudo` if the directory is not writable); `.deb` installs go through `dpkg -i`; Homebrew installs are left to Homebrew.
+
+Turn checks off with `GSYSTEMCTL_NO_UPDATE=1`, `--no-update-check` (one run), or `check=off` in `~/.config/g-systemctl/update`.
+
 | Key | Action |
 |-----|--------|
 | Type | Filter |

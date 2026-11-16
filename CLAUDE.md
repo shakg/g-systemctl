@@ -34,6 +34,7 @@ g-systemctl/
 │   │   ├── service_manager.hpp # Abstract service manager interface
 │   │   ├── command_executor.hpp # Shell command execution
 │   │   ├── command_format.hpp  # Lays out long commands one option per line
+│   │   ├── updater.hpp         # Release check and self-update (GitHub releases)
 │   │   └── text_wrap.hpp       # Splits a line into rows of a given column width
 │   ├── container/              # Container runtime support
 │   │   ├── container.hpp       # Container, ContainerDetails, resource-limit diffing, compose grouping/drift
@@ -52,6 +53,7 @@ g-systemctl/
 │       ├── metric_graph.hpp    # Sample history, counter rates and bar graphs for the detail pages
 │       ├── confirm_dialog.hpp  # y/n prompt guarding stop and restart
 │       ├── row_activity.hpp    # Action progress/outcome shown in the list row it acts on
+│       ├── update_dialog.hpp   # New-release offer (update / not now / skip / stop checking) and result
 │       ├── log_panel.hpp       # Scrollable log panel shared by both tabs
 │       ├── theme.hpp           # Palette and table-cell helpers
 │       └── styles.hpp          # UI styling/colors
@@ -75,6 +77,7 @@ g-systemctl/
 - `LogPanel` wraps long log lines onto extra rows instead of clipping (`wrap_text`, hard break at the column limit). The width is only known after layout, so its node asks FTXUI for another layout pass (`Node::Check`). Scrolling still moves by log line
 - `format_command` - Splits long commands (service ExecStart, docker entrypoint+cmd) into one option per line; the script of `sh -c`/`bash -c` is indented one level deeper
 - `RowActivity` - Actions also show in their list row's STATUS cell: spinner + `stopping` while running, then `✓ stopped` (6s) or `✕ stop failed` (12s). `ContainersView::run_action` and `App::run_in_background` take a row key (container ID, `project:NAME`, unit); compose actions also show on the project's container rows
+- `Updater` - Release builds (exact `X.Y.Z`; dev builds never) ask `api.github.com/repos/shakg/g-systemctl/releases/latest` via curl (else wget) at most once a day; state (`check`, `last-check`, `latest`, `skip`) in `~/.config/g-systemctl/update`. Opt-out: `GSYSTEMCTL_NO_UPDATE=1`, `--no-update-check`, `check=off`. `plan()` picks the install kind from the running binary's path: tarball asset renamed over it (sudo if its dir is not writable), `.deb` through `dpkg -i` when `dpkg -S` owns it, Homebrew (`/Cellar/`) refused with instructions. `install()` checks the asset against the release's `SHA256SUMS-<platform>.txt` and runs the new binary's `--version` before replacing. `App` checks on a background thread at startup, offers it in `UpdateDialog` once no other dialog is open (sudo password through the auth dialog), and shows progress/notice in the top bar. `g-systemctl --update` does the same on the terminal
 - `ConfirmDialog` - Owned by `App`, handed to `ContainersView` via `set_confirm`. Stop and restart go through it (or through the sudo password prompt, which replaces it). Only `y` or a click confirms; Enter is swallowed
 - Compose - `ps` reads the compose labels (project, service, replica, working dir, config files, config hash, one-off, depends_on). `group_compose_projects` (`src/container/compose.cpp`, pure, unit-tested) groups them and adds saved projects that have no containers. `ContainerManager::compose` runs `cd DIR && docker compose -p NAME -f FILE... <action>`; start/stop/restart/down fall back to `-p NAME` alone if the files are gone. The poller compares each service's `config-hash` label with `compose config --hash '*'` (all projects every ~30s, the open project every poll) to flag drift. `ComposeStore` remembers projects so they stay listed after `down`
 - Container shell - `ContainerManager::detect_shell` tries `exec ID bash -c 'exit 0'`, then `sh`; a missing executable moves to the next shell, any other failure stops. `ContainersView` detects when a running container's page opens (shown as the Shell row and a log-header button) or on `Alt+t`, then `enter_shell` hands the terminal to `exec -it ID SHELL` through `ScreenInteractive::WithRestoredIO`

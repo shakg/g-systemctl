@@ -10,6 +10,7 @@
 #include <cctype>
 #include <chrono>
 #include <cstdlib>
+#include <ctime>
 #include <ftxui/component/animation.hpp>
 #include <ftxui/component/component_options.hpp>
 #include <iostream>
@@ -21,7 +22,8 @@ namespace gsystemctl::ui
 {
     using namespace theme;
 
-    App::App(bool system_mode, const std::string &initial_filter, Tab initial_tab, bool fallback_to_services)
+    App::App(bool system_mode, const std::string &initial_filter, Tab initial_tab, bool fallback_to_services,
+             bool update_check)
         : screen_(ScreenInteractive::Fullscreen()), system_mode_(system_mode), service_logs_(screen_)
     {
         executor_ = std::make_shared<SystemCommandExecutor>();
@@ -55,6 +57,11 @@ namespace gsystemctl::ui
         refresh_services();
         switch_tab(initial_tab);
         sampler_ = std::thread([this] { sampler_loop(); });
+        if (update_check)
+        {
+            updater_ = std::make_unique<Updater>(executor_, G_SYSTEMCTL_VERSION);
+            start_update_check();
+        }
     }
 
     App::~App()
@@ -72,6 +79,103 @@ namespace gsystemctl::ui
         {
             worker_.join();
         }
+        if (update_thread_.joinable())
+        {
+            update_thread_.join();
+        }
+    }
+
+    // ---- updates ------------------------------------------------------------------
+
+    void App::start_update_check()
+    {
+        if (!updater_->checks_enabled())
+            return;
+        if (!updater_->check_due(static_cast<long long>(std::time(nullptr))))
+        {
+            // Checked within the last day: no prompt, just a reminder.
+            if (auto cached = updater_->cached_update())
+                update_notice_ = "↑ " + cached->version + " available: g-systemctl --update";
+            return;
+        }
+        update_thread_ = std::thread([this] {
+            std::string error;
+            auto release = updater_->check(&error);
+            Updater::Plan plan;
+            if (release)
+                plan = updater_->plan(*release);
+            // A failed check stays quiet; the next one is tomorrow.
+            screen_.Post([this, release, plan] {
+                if (!release || release->tag == updater_->state().skip)
+                    return;
+                update_offer_ = release;
+                update_release_ = *release;
+                update_plan_ = plan;
+                update_notice_ = "↑ " + release->version + " available: g-systemctl --update";
+                show_update_offer();
+            });
+            screen_.PostEvent(Event::Custom);
+        });
+    }
+
+    void App::show_update_offer()
+    {
+        if (!update_offer_ || show_help_ || auth_dialog_open_ || confirm_.is_open() || update_dialog_.is_open() ||
+            containers_view_->edit_dialog_open())
+            return;
+        auto release = *update_offer_;
+        update_offer_.reset();
+        update_dialog_.offer(release.version, updater_->current_version(), update_plan_.error,
+                             [this](UpdateDialog::Choice choice) { on_update_choice(choice); });
+    }
+
+    void App::on_update_choice(UpdateDialog::Choice choice)
+    {
+        switch (choice)
+        {
+        case UpdateDialog::Choice::Update:
+            if (update_plan_.needs_root && !executor_->can_execute_privileged_without_password())
+                open_auth_dialog(AuthAction::Update);
+            else
+                install_update();
+            break;
+        case UpdateDialog::Choice::NotNow:
+            break;
+        case UpdateDialog::Choice::Skip:
+            updater_->skip(update_release_.tag);
+            update_notice_.clear();
+            break;
+        case UpdateDialog::Choice::StopChecking:
+            updater_->disable_checks();
+            update_notice_.clear();
+            break;
+        }
+    }
+
+    void App::install_update(const std::string &password)
+    {
+        if (update_busy_ || !updater_)
+            return;
+        update_busy_ = true;
+        if (update_thread_.joinable())
+            update_thread_.join();
+        update_thread_ = std::thread([this, password] {
+            auto [ok, message] = updater_->install(update_release_, update_plan_, false, password);
+            screen_.Post([this, ok = ok, message = message] {
+                update_busy_ = false;
+                if (ok)
+                {
+                    update_notice_ = "✓ " + update_release_.version + " installed: restart to use it";
+                    update_dialog_.show_result(true, message + ". Restart g-systemctl to use it.");
+                }
+                else
+                {
+                    update_dialog_.show_result(false,
+                                              message + ". You can also run g-systemctl --update in a terminal.");
+                }
+            });
+            screen_.PostEvent(Event::Custom);
+        });
     }
 
     int App::run()
@@ -336,6 +440,9 @@ namespace gsystemctl::ui
         case AuthAction::DaemonReload:
             auth_dialog_message_ = "Reload systemd daemon";
             break;
+        case AuthAction::Update:
+            auth_dialog_message_ = "Install g-systemctl " + update_release_.version + " to " + update_plan_.target;
+            break;
         case AuthAction::None:
             break;
         }
@@ -365,6 +472,10 @@ namespace gsystemctl::ui
         else if (action == AuthAction::DaemonReload)
         {
             daemon_reload(password);
+        }
+        else if (action == AuthAction::Update)
+        {
+            install_update(password);
         }
     }
 
@@ -840,6 +951,7 @@ namespace gsystemctl::ui
         main_component |= Modal(containers_view_->edit_dialog(), containers_view_->edit_dialog_open_flag());
         main_component |= Modal(containers_view_->add_project_dialog(), containers_view_->add_project_dialog_open_flag());
         main_component |= Modal(confirm_.component(), confirm_.open_flag());
+        main_component |= Modal(update_dialog_.component(), update_dialog_.open_flag());
         containers_view_->set_confirm([this](const std::string &question, const std::string &label,
                                              std::function<void()> on_confirm) {
             confirm_.ask(question, label, std::move(on_confirm));
@@ -897,7 +1009,9 @@ namespace gsystemctl::ui
         }));
 
         auto page = vbox(std::move(layout)) | borderStyled(ROUNDED, BorderColor()) | bgcolor(BackgroundColor());
-        auto dialog_open = show_help_ || auth_dialog_open_ || confirm_.is_open() || containers_view_->edit_dialog_open();
+        show_update_offer();
+        auto dialog_open = show_help_ || auth_dialog_open_ || confirm_.is_open() ||
+                           containers_view_->edit_dialog_open() || update_dialog_.is_open();
         if (dialog_open)
         {
             page = page | color(Color::RGB(55, 59, 78)) | bgcolor(Color::RGB(4, 5, 9)) | dim;
@@ -961,11 +1075,26 @@ namespace gsystemctl::ui
             reload_button = text(" Reload (n/a on macOS) ") | color(MutedColor()) | dim;
         }
 
+        Element update = text("");
+        if (update_busy_)
+        {
+            auto now = std::chrono::steady_clock::now().time_since_epoch();
+            auto frame = static_cast<size_t>(std::chrono::duration_cast<std::chrono::milliseconds>(now).count() / 80);
+            update = hbox({spinner(15, frame), text(" Updating to " + update_release_.version + "... ")}) |
+                     color(WarningColor());
+            animation::RequestAnimationFrame();
+        }
+        else if (!update_notice_.empty())
+        {
+            update = text(" " + update_notice_ + " ") | color(AccentColor());
+        }
+
         return hbox({
                    text(" g-systemctl ") | color(AccentColor()) | bold,
                    text(" "),
                    render_tabs(),
                    filler(),
+                   update,
                    reload_button | reflect(reload_button_box_),
                    text(" Shortcuts(?) ") | color(MutedColor()) | reflect(shortcuts_box_),
                }) |
@@ -1243,15 +1372,18 @@ namespace gsystemctl::ui
                 key("-c, --containers", "Open the Containers tab, even without a runtime"),
                 key("--user", "User services instead of system services"),
                 key("-f, --filter TEXT", "Initial filter"),
+                key("--update", "Install the latest release now"),
                 gap(),
                 heading("Environment"),
                 key("GSYSTEMCTL_RUNTIME", "docker, podman or auto (default: auto, docker first)"),
                 key("GSYSTEMCTL_DOCKER", "Container CLI binary (default: docker or podman)"),
                 key("GSYSTEMCTL_COMPOSE", "Compose command (default: <runtime> compose)"),
                 key("GSYSTEMCTL_EDITOR", "Editor for unit files (default: vim)"),
+                key("GSYSTEMCTL_NO_UPDATE", "1: never check for releases (also --no-update-check)"),
                 gap(),
                 heading("Files"),
                 key("compose-projects", "Saved compose projects, in"),
+                key("update", "Daily release check; check=off stops it"),
                 text("                         $XDG_CONFIG_HOME/g-systemctl or ~/.config/g-systemctl"),
             };
             break;
