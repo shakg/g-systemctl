@@ -1068,11 +1068,12 @@ namespace gsystemctl::ui
         }
         else if (service_manager_->supports_unit_files())
         {
-            reload_button = text(" Reload(Alt+R) ") | color(MutedColor());
+            reload_button = hbox({text(" ↻ systemctl daemon-reload ") | color(AccentColor()),
+                                  text("Alt+Shift+r ") | color(MutedColor())});
         }
         else
         {
-            reload_button = text(" Reload (n/a on macOS) ") | color(MutedColor()) | dim;
+            reload_button = text(" daemon-reload (n/a on macOS) ") | color(MutedColor()) | dim;
         }
 
         Element update = text("");
