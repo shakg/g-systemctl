@@ -6,6 +6,7 @@
 #include "g-systemctl/ui/detail_page.hpp"
 #include "g-systemctl/ui/log_panel.hpp"
 #include "g-systemctl/ui/metric_graph.hpp"
+#include "g-systemctl/ui/row_activity.hpp"
 #include <condition_variable>
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
@@ -142,6 +143,8 @@ namespace gsystemctl::ui
         bool busy_ = false;
         std::string busy_message_;
         std::vector<ftxui::Box> item_boxes_;
+        // Action progress in the list rows, keyed like selected_key_.
+        RowActivity row_activity_;
 
         // Detail page. It shows logs_id_ (a container) or detail_project_ (a
         // compose project); `docker logs -f` exits when the container stops,
@@ -172,6 +175,20 @@ namespace gsystemctl::ui
         // Cursor of each input, placed at the end of the prefilled value.
         int edit_cursors_[5] = {0, 0, 0, 0, 0};
         std::string edit_error_;
+
+        // Shell per container ID, found with `exec` on shell_thread_. Detection
+        // runs when a running container's page opens, or on Alt+t.
+        struct ShellInfo
+        {
+            bool checking = false;
+            bool ok = false;
+            std::string shell;  // when ok
+            std::string reason; // when not ok
+        };
+        std::map<std::string, ShellInfo> shells_;
+        // Container to open a shell in once detection finishes (Alt+t pressed meanwhile).
+        std::string shell_open_pending_;
+        std::thread shell_thread_;
 
         bool add_open_ = false;
         std::string add_path_;
@@ -213,8 +230,10 @@ namespace gsystemctl::ui
         void remember_projects();
         void clear_messages();
 
+        // `row_key`: the list row the action is shown in (container ID or project key); empty for none.
         void run_action(const std::string &busy_message, std::function<ContainerManager::Result()> action,
-                        const std::string &success_message);
+                        const std::string &success_message, const std::string &row_key = "",
+                        const RowActivity::Labels &labels = {});
         // The container on the open detail page, else the selected one.
         const Container *action_target() const;
         void start_target();
@@ -231,6 +250,12 @@ namespace gsystemctl::ui
         void compose_build_target();
         void compose_pull_target();
         void compose_down_target();
+        // Alt+t: shell in the container on the open page, else the selected one.
+        void shell_target();
+        // Starts detection for a running container unless a shell is already known.
+        void detect_shell(const std::string &id, bool open_after);
+        // Hands the terminal to `exec -it`; UI thread only.
+        void enter_shell(const std::string &id, const std::string &name, const std::string &shell);
         void fold_selected(bool collapse);
         void open_detail(bool logs_full);
         void open_project_detail(const std::string &name, bool logs_full);

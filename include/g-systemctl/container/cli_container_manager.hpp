@@ -32,6 +32,8 @@ public:
     Result stop(const std::string& id) override;
     Result restart(const std::string& id) override;
     Result update_resources(const std::string& id, const ResourceUpdate& update) override;
+    Result detect_shell(const std::string& id) override;
+    int open_shell(const std::string& id, const std::string& shell) override;
     std::unique_ptr<LogStream> stream_logs(const std::string& id, int tail, const std::string& since,
                                            LoggingManager::LogCallback on_line,
                                            std::function<void()> on_end) override;
@@ -80,6 +82,13 @@ public:
     static ContainerDetails parse_inspect_output(const std::string& output);
     // First line of a failed command, without the CLI's error prefix.
     static std::string describe_failure(const CommandResult& result);
+    // `exec ID SHELL -c 'exit 0'`: succeeds only if SHELL runs in the container.
+    std::string shell_probe_command(const std::string& id, const std::string& shell) const;
+    // `exec -it ID SHELL`.
+    std::string shell_command(const std::string& id, const std::string& shell) const;
+    // Whether a failed probe means "this shell is missing" (try the next one)
+    // rather than "exec does not work at all".
+    static bool is_missing_executable(const CommandResult& result);
     std::string build_update_command(const std::string& id, const ResourceUpdate& update) const;
     std::vector<std::string> build_logs_argv(const std::string& id, int tail, const std::string& since) const;
     // Podman 5 has `{{.Label "k"}}`; podman 4 only `{{index .Labels "k"}}`, where

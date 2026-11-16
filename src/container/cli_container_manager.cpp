@@ -396,6 +396,39 @@ ContainerManager::Result CliContainerManager::restart(const std::string& id) {
     return run_simple("restart " + shell_quote(id));
 }
 
+std::string CliContainerManager::shell_probe_command(const std::string& id, const std::string& shell) const {
+    return shell_quote(binary_) + " exec " + shell_quote(id) + " " + shell_quote(shell) + " -c 'exit 0'";
+}
+
+std::string CliContainerManager::shell_command(const std::string& id, const std::string& shell) const {
+    return shell_quote(binary_) + " exec -it " + shell_quote(id) + " " + shell_quote(shell);
+}
+
+bool CliContainerManager::is_missing_executable(const CommandResult& result) {
+    // docker: 'exec: "bash": executable file not found in $PATH' (exit 126/127);
+    // podman: 'executable file `bash` not found in $PATH: No such file or directory'.
+    const auto output = lower(result.stdout_output + result.stderr_output);
+    return output.find("not found") != std::string::npos || output.find("no such file") != std::string::npos;
+}
+
+ContainerManager::Result CliContainerManager::detect_shell(const std::string& id) {
+    for (const auto& shell : shell_candidates()) {
+        auto result = executor_->execute(shell_probe_command(id, shell));
+        if (result.exit_code == 0) {
+            return {true, shell};
+        }
+        if (!is_missing_executable(result)) {
+            // Not running, exec disabled, ...: no other shell will do better.
+            return {false, describe_failure(result)};
+        }
+    }
+    return {false, "no shell found (tried bash, sh)"};
+}
+
+int CliContainerManager::open_shell(const std::string& id, const std::string& shell) {
+    return executor_->execute_interactive(shell_command(id, shell), false);
+}
+
 std::string CliContainerManager::build_update_command(const std::string& id, const ResourceUpdate& update) const {
     std::string command = shell_quote(binary_) + " update";
     auto add = [&command](const char* flag, const std::optional<std::string>& value) {

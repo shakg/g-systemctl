@@ -279,4 +279,98 @@ TEST(DockerStatsNumbersTest, ParsesSizesPercentsAndPairs) {
     EXPECT_LT(parse_docker_size_pair("n/a").first, 0);
 }
 
+namespace {
+
+// Returns queued results in order; records commands.
+class ScriptedExecutor : public CommandExecutor {
+public:
+    std::vector<std::string> commands;
+    std::vector<CommandResult> results;
+    std::string interactive;
+
+    CommandResult execute(const std::string& command) override {
+        commands.push_back(command);
+        if (results.empty()) {
+            return {0, "", ""};
+        }
+        auto r = results.front();
+        results.erase(results.begin());
+        return r;
+    }
+    CommandResult execute_privileged(const std::string& command) override { return execute(command); }
+    CommandResult execute_privileged(const std::string& command, const std::string&) override { return execute(command); }
+    bool can_execute_privileged_without_password() override { return true; }
+    int execute_interactive(const std::string& command, bool) override {
+        interactive = command;
+        return 0;
+    }
+};
+
+} // namespace
+
+TEST(CliContainerManagerShellTest, PrefersBash) {
+    auto executor = std::make_shared<ScriptedExecutor>();
+    CliContainerManager manager(executor);
+    auto [ok, shell] = manager.detect_shell("abc");
+    EXPECT_TRUE(ok);
+    EXPECT_EQ(shell, "bash");
+    ASSERT_EQ(executor->commands.size(), 1u);
+    EXPECT_EQ(executor->commands[0], "'docker' exec 'abc' 'bash' -c 'exit 0'");
+}
+
+TEST(CliContainerManagerShellTest, FallsBackToShWhenBashIsMissing) {
+    auto executor = std::make_shared<ScriptedExecutor>();
+    executor->results = {
+        {127, "OCI runtime exec failed: exec failed: unable to start container process: exec: \"bash\": "
+              "executable file not found in $PATH\n", ""},
+        {0, "", ""},
+    };
+    CliContainerManager manager(executor);
+    auto [ok, shell] = manager.detect_shell("abc");
+    EXPECT_TRUE(ok);
+    EXPECT_EQ(shell, "sh");
+    ASSERT_EQ(executor->commands.size(), 2u);
+    EXPECT_EQ(executor->commands[1], "'docker' exec 'abc' 'sh' -c 'exit 0'");
+}
+
+TEST(CliContainerManagerShellTest, PodmanMissingExecutableAlsoFallsBack) {
+    auto executor = std::make_shared<ScriptedExecutor>();
+    executor->results = {
+        {127, "Error: crun: executable file `bash` not found in $PATH: No such file or directory: OCI runtime "
+              "attempted to invoke a command that was not found\n", ""},
+        {0, "", ""},
+    };
+    CliContainerManager manager(executor, "podman", ContainerRuntime::Podman);
+    auto [ok, shell] = manager.detect_shell("abc");
+    EXPECT_TRUE(ok);
+    EXPECT_EQ(shell, "sh");
+}
+
+TEST(CliContainerManagerShellTest, ReportsNoShell) {
+    auto executor = std::make_shared<ScriptedExecutor>();
+    const CommandResult missing{127, "exec: \"x\": executable file not found in $PATH\n", ""};
+    executor->results = {missing, missing};
+    CliContainerManager manager(executor);
+    auto [ok, reason] = manager.detect_shell("abc");
+    EXPECT_FALSE(ok);
+    EXPECT_EQ(reason, "no shell found (tried bash, sh)");
+}
+
+TEST(CliContainerManagerShellTest, StopsOnOtherExecFailures) {
+    auto executor = std::make_shared<ScriptedExecutor>();
+    executor->results = {{1, "Error response from daemon: container abc is not running\n", ""}};
+    CliContainerManager manager(executor);
+    auto [ok, reason] = manager.detect_shell("abc");
+    EXPECT_FALSE(ok);
+    EXPECT_EQ(reason, "container abc is not running");
+    EXPECT_EQ(executor->commands.size(), 1u);
+}
+
+TEST(CliContainerManagerShellTest, OpensInteractiveExec) {
+    auto executor = std::make_shared<ScriptedExecutor>();
+    CliContainerManager manager(executor, "podman", ContainerRuntime::Podman);
+    EXPECT_EQ(manager.open_shell("abc", "sh"), 0);
+    EXPECT_EQ(executor->interactive, "'podman' exec -it 'abc' 'sh'");
+}
+
 } // namespace gsystemctl
