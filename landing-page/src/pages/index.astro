@@ -20,7 +20,7 @@ const LEVELS = [
 ];
 
 const CMDS = [
-  "docker ps", "docker stats", "docker inspect", "docker logs -f --tail 200", "docker update --cpus 2",
+  "docker ps", "docker stats", "docker inspect", "docker logs -f --tail 200", "docker update --cpus 2", "docker exec -it api bash",
   "docker compose up -d", "docker compose logs -f", "docker compose config --hash", "docker compose down",
   "podman ps", "podman stats", "podman compose up -d", "podman-compose logs -f",
   "systemctl list-units", "systemctl show -p", "journalctl -u nginx -f", "systemctl edit --full", "systemctl daemon-reload",
@@ -45,6 +45,8 @@ const FAQ: [string, string][] = [
   ["Does it work on macOS?", "Yes. It uses <code>launchctl</code> for services and installs with Homebrew. The Containers tab works with Docker Desktop or <code>podman machine</code>. Service graphs need systemd, so they are Linux only; container graphs work on both."],
   ["Does it install an agent or daemon?", "No. It is one binary. It runs commands such as <code>systemctl show</code>, <code>journalctl -f</code>, <code>docker stats</code> or <code>podman stats</code>, and <code>docker update</code>."],
   ["Can it change a running container's limits?", "Yes. <code>Alt+u</code> edits CPUs, memory, memory + swap, PIDs limit and restart policy with <code>docker update</code> or <code>podman update</code>. The container keeps running. Neither can change env, ports or volumes without recreating the container, so g-systemctl does not offer that."],
+  ["Can I open a shell in a container?", "Yes. On a running container's page, <code>Alt+t</code> or the Shell button runs <code>docker exec -it</code> (or <code>podman exec -it</code>) with bash, or sh if bash is missing. <code>exit</code> returns to g-systemctl."],
+  ["How does it update?", "Release builds check GitHub for a new release at most once a day and offer it in a dialog; <code>g-systemctl --update</code> does the same from the shell. The download is checked against the release's SHA-256 sums and replaces the binary, or installs through <code>dpkg</code> for the <code>.deb</code>. Homebrew installs are not replaced; the app says how to reinstall instead. <code>GSYSTEMCTL_NO_UPDATE=1</code> or <code>--no-update-check</code> turns the check off."],
   ["Can I stop a service by accident?", "Unlikely. <code>Enter</code> only opens and closes views. Stop and restart ask first and run only on <code>y</code> or a click on the confirm button; <code>Enter</code> is ignored in that prompt."],
 ];
 
@@ -173,7 +175,7 @@ const jsonLd = [
     <div class="wrap">
       <div class="head">
         <h2 data-r>FAQ</h2>
-        <p class="sub" data-r style="--d:1">Compose, Podman, sudo, macOS, container limits and safety.</p>
+        <p class="sub" data-r style="--d:1">Compose, Podman, sudo, macOS, container limits, shells, updates and safety.</p>
       </div>
       <div class="faq">
         {FAQ.map(([q, a], i) => (
