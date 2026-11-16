@@ -5,6 +5,7 @@
 #include "g-systemctl/core/command_executor.hpp"
 #include "g-systemctl/core/logging_manager.hpp"
 #include "g-systemctl/platform/platform.hpp"
+#include <ftxui/screen/string.hpp>
 #include <ftxui/screen/terminal.hpp>
 #include <algorithm>
 #include <cctype>
@@ -1000,13 +1001,7 @@ namespace gsystemctl::ui
                          : "  ·  ↑↓ move  ·  Enter open  ·  Alt+o start  ·  Alt+x stop  ·  Alt+r restart  ·  ? help  ";
         const auto summary = containers ? containers_view_->summary()
                                         : std::to_string(filtered_services_.size()) + "/" + std::to_string(services_.size()) + " services";
-        layout.push_back(hbox({
-            text(" Filter: ") | color(MutedColor()),
-            text(filter + "█") | color(AccentColor()),
-            filler(),
-            text(summary) | color(MutedColor()),
-            text(hints) | color(MutedColor()),
-        }));
+        layout.push_back(render_filter_bar(filter, summary, hints));
 
         auto page = vbox(std::move(layout)) | borderStyled(ROUNDED, BorderColor()) | bgcolor(BackgroundColor());
         show_update_offer();
@@ -1041,6 +1036,73 @@ namespace gsystemctl::ui
             tab("Containers", Tab::Containers, containers_tab_box_),
             text("│") | color(BorderColor()),
             tab("Services", Tab::Services, services_tab_box_),
+        });
+    }
+
+    Element App::render_filter_bar(const std::string &filter, const std::string &summary, const std::string &hints)
+    {
+        // Fit to the terminal width (inside the border) instead of letting FTXUI
+        // squeeze every part: hints drop whole, from the right ("? help" last),
+        // then the summary shortens to "N/M", then the filter shows its end.
+        const std::string sep = "  ·  ";
+        std::vector<std::string> items;
+        for (size_t start = 0; start < hints.size();)
+        {
+            auto at = hints.find(sep, start);
+            auto item = hints.substr(start, at == std::string::npos ? std::string::npos : at - start);
+            while (!item.empty() && item.back() == ' ')
+                item.pop_back();
+            while (!item.empty() && item.front() == ' ')
+                item.erase(0, 1);
+            if (!item.empty())
+                items.push_back(item);
+            if (at == std::string::npos)
+                break;
+            start = at + sep.size();
+        }
+        auto join = [&](size_t keep) {
+            // The first keep-1 hints plus the last one ("? help").
+            std::string out;
+            for (size_t i = 0; i < items.size(); ++i)
+                if (i + 1 < keep || (keep > 0 && i + 1 == items.size()))
+                    out += sep + items[i];
+            return out.empty() ? out : out + "  ";
+        };
+
+        const int room = Terminal::Size().dimx - 2;
+        const std::string label = " Filter: ";
+        std::string shown_filter = filter;
+        std::string shown_summary = summary;
+        std::string shown_hints;
+        auto used = [&] {
+            // At least one space between the filter and the summary.
+            return string_width(label + shown_filter + "█") + 1 + string_width(" " + shown_summary + shown_hints);
+        };
+        size_t keep = items.size();
+        for (;; --keep)
+        {
+            shown_hints = join(keep);
+            if (used() <= room || keep == 0)
+                break;
+        }
+        if (used() > room)
+            shown_summary = summary.substr(0, summary.find(' '));
+        if (used() > room)
+        {
+            // Show the end of the filter, where the cursor is.
+            const int for_filter = std::max(1, room - (used() - string_width(shown_filter)) - 1);
+            auto glyphs = Utf8ToGlyphs(filter);
+            std::string tail;
+            for (int i = static_cast<int>(glyphs.size()) - 1, w = 0; i >= 0 && w < for_filter; --i, ++w)
+                tail = glyphs[i] + tail;
+            shown_filter = "…" + tail;
+        }
+        return hbox({
+            text(label) | color(MutedColor()),
+            text(shown_filter + "█") | color(AccentColor()),
+            filler(),
+            text(" " + shown_summary) | color(MutedColor()),
+            text(shown_hints) | color(MutedColor()),
         });
     }
 
