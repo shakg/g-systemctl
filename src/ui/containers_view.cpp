@@ -1800,6 +1800,7 @@ namespace gsystemctl::ui
         Element summary = logs_full_ ? text("") : summary_.render(render_summary());
         const bool graphs = graphs_ ? graphs_->shown() : graphs_fit();
         // The title bar is full at narrow widths; the shell button goes with the log buttons.
+        actions_.fit_log_header(c != nullptr, logs_full_, graphs, graphs_fit());
         auto log_header = actions_.render_log_header(logs_full_, graphs, graphs_fit());
         if (c)
         {
@@ -2093,7 +2094,11 @@ namespace gsystemctl::ui
             summary = summary_.render(p ? render_project_summary(*p) : Elements{text(" Project no longer listed") | dim});
         const bool graphs = graphs_ ? graphs_->shown() : graphs_fit();
         return detail_page(std::move(title), std::move(summary),
-                           logs_.render(actions_.render_log_header(logs_full_, graphs, graphs_fit())), logs_full_,
+                           logs_.render([&] {
+                               actions_.fit_log_header(false, logs_full_, graphs, graphs_fit());
+                               return actions_.render_log_header(logs_full_, graphs, graphs_fit());
+                           }()),
+                           logs_full_,
                            logs_full_ || !graphs ? nullptr : render_project_graphs());
     }
 
