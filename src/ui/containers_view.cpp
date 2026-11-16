@@ -78,6 +78,28 @@ namespace gsystemctl::ui
         }
 
         const std::string kProjectKey = "project:";
+
+        RowActivity::Labels compose_row_labels(ComposeAction action)
+        {
+            switch (action)
+            {
+            case ComposeAction::Start:
+                return {"starting", "started", "start failed"};
+            case ComposeAction::Stop:
+                return {"stopping", "stopped", "stop failed"};
+            case ComposeAction::Restart:
+                return {"restarting", "restarted", "restart failed"};
+            case ComposeAction::Up:
+                return {"bringing up", "up", "up failed"};
+            case ComposeAction::UpBuild:
+                return {"building", "built and up", "build failed"};
+            case ComposeAction::Pull:
+                return {"pulling", "pulled", "pull failed"};
+            case ComposeAction::Down:
+                return {"taking down", "down", "down failed"};
+            }
+            return {};
+        }
         // ListRow::index of a divider: which group it labels.
         constexpr int kComposeSection = 0;
         constexpr int kStandaloneSection = 1;
@@ -690,21 +712,27 @@ namespace gsystemctl::ui
     // ---- actions --------------------------------------------------------------
 
     void ContainersView::run_action(const std::string &busy_message, std::function<ContainerManager::Result()> action,
-                                    const std::string &success_message)
+                                    const std::string &success_message, const std::string &row_key,
+                                    const RowActivity::Labels &labels)
     {
         if (busy_)
             return;
         busy_ = true;
         busy_message_ = busy_message;
         clear_messages();
+        if (!row_key.empty())
+            row_activity_.start(row_key, labels.busy);
 
         if (action_thread_.joinable())
             action_thread_.join();
-        action_thread_ = std::thread([this, action = std::move(action), success_message, busy_message] {
+        action_thread_ = std::thread([this, action = std::move(action), success_message, busy_message, row_key,
+                                      labels] {
             auto [ok, message] = action();
-            screen_.Post([this, ok = ok, message = message, success_message, busy_message] {
+            screen_.Post([this, ok = ok, message = message, success_message, busy_message, row_key, labels] {
                 busy_ = false;
                 busy_message_.clear();
+                if (!row_key.empty())
+                    row_activity_.finish(row_key, ok, ok ? labels.done : labels.failed);
                 if (ok)
                 {
                     status_message_ = success_message;
@@ -763,7 +791,8 @@ namespace gsystemctl::ui
         }
         auto id = c->id;
         auto name = c->name;
-        run_action("Starting " + name + "...", [this, id] { return manager_->start(id); }, "Started " + name);
+        run_action("Starting " + name + "...", [this, id] { return manager_->start(id); }, "Started " + name, id,
+                   {"starting", "started", "start failed"});
     }
 
     void ContainersView::stop_target()
@@ -795,7 +824,8 @@ namespace gsystemctl::ui
         auto id = c->id;
         auto name = c->name;
         confirm_("Stop container " + name + "?", "Stop", [this, id, name] {
-            run_action("Stopping " + name + "...", [this, id] { return manager_->stop(id); }, "Stopped " + name);
+            run_action("Stopping " + name + "...", [this, id] { return manager_->stop(id); }, "Stopped " + name, id,
+                       {"stopping", "stopped", "stop failed"});
         });
     }
 
@@ -828,7 +858,8 @@ namespace gsystemctl::ui
         auto id = c->id;
         auto name = c->name;
         confirm_("Restart container " + name + "?", "Restart", [this, id, name] {
-            run_action("Restarting " + name + "...", [this, id] { return manager_->restart(id); }, "Restarted " + name);
+            run_action("Restarting " + name + "...", [this, id] { return manager_->restart(id); },
+                       "Restarted " + name, id, {"restarting", "restarted", "restart failed"});
         });
     }
 
@@ -864,7 +895,7 @@ namespace gsystemctl::ui
         auto ref = project.ref;
         run_action(compose_action_verb(action) + " " + ref.name + "...",
                    [this, ref, action] { return manager_->compose(ref, action); },
-                   compose_action_past(action) + " " + ref.name);
+                   compose_action_past(action) + " " + ref.name, kProjectKey + ref.name, compose_row_labels(action));
     }
 
     void ContainersView::confirm_compose(const ComposeProject &project, ComposeAction action,
@@ -1199,7 +1230,7 @@ namespace gsystemctl::ui
         }
         auto update = result.update;
         run_action("Updating " + name + "...", [this, id, update] { return manager_->update_resources(id, update); },
-                   "Updated resources of " + name);
+                   "Updated resources of " + name, id, {"updating", "updated", "update failed"});
     }
 
     void ContainersView::close_edit_dialog()
@@ -1758,6 +1789,8 @@ namespace gsystemctl::ui
             status = text("? config unreadable") | color(MutedColor());
         else if (p.down())
             status = text("Alt+o to bring up") | color(MutedColor());
+        if (auto activity = row_activity_.render(kProjectKey + name))
+            status = activity;
 
         return hbox({
             text(p.down() ? "▹ " : folded ? "▸ " : "▾ ") | color(AccentColor()),
@@ -1796,11 +1829,17 @@ namespace gsystemctl::ui
         {
             name = flex_cell(c.name, is_selected ? Color::White : TextColor(), is_selected);
         }
+        // An action on the container, else on its compose project.
+        auto status = row_activity_.render(c.id);
+        if (!status && child)
+            status = row_activity_.render(kProjectKey + c.compose_project);
+        if (!status)
+            status = text(c.status) | color(MutedColor());
         return hbox({
             name | flex,
             cell(c.image, 24, MutedColor()),
             cell(style.label, 13, style.fg, c.is_running()),
-            cell(c.status, 22, MutedColor()),
+            status | size(WIDTH, EQUAL, 22),
             right_cell(dash(c.stats.cpu), 8, MutedColor()),
             right_cell(dash(c.stats.mem_usage), 22, MutedColor()),
             right_cell(dash(c.stats.pids), 6, MutedColor()),

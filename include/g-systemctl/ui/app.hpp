@@ -10,6 +10,7 @@
 #include "g-systemctl/ui/detail_page.hpp"
 #include "g-systemctl/ui/log_panel.hpp"
 #include "g-systemctl/ui/metric_graph.hpp"
+#include "g-systemctl/ui/row_activity.hpp"
 #include <condition_variable>
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
@@ -113,6 +114,8 @@ namespace gsystemctl::ui
         AuthAction pending_auth_action_ = AuthAction::None;
         ServiceUnit pending_auth_service_;
         std::vector<ftxui::Box> item_boxes_;
+        // Action progress in the service list rows, keyed by unit.
+        RowActivity row_activity_;
         ftxui::Box reload_button_box_;
         // Set while a background operation runs; all input is ignored meanwhile.
         bool busy_ = false;
@@ -127,8 +130,10 @@ namespace gsystemctl::ui
         // `action` is Start, Stop or Restart. Stop and Restart ask for confirmation.
         void request_service_action(AuthAction action);
         void run_service_action(AuthAction action, const ServiceUnit& service, const std::string& password = "");
+        // `row_key`: unit whose list row shows the progress; empty for none.
         void run_in_background(const std::string& busy_message, std::function<std::pair<bool, std::string>()> work,
-                               const std::string& success_message, const std::string& failure_prefix);
+                               const std::string& success_message, const std::string& failure_prefix,
+                               const std::string& row_key = "", const RowActivity::Labels& labels = {});
         void request_daemon_reload();
         void daemon_reload(const std::string& password = "");
         void edit_selected_service();

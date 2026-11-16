@@ -213,26 +213,34 @@ namespace gsystemctl::ui
                     return service_manager_->stop_service(unit, password);
                 return service_manager_->restart_service(unit, password);
             },
-            done + unit, "Failed to " + std::string(start ? "start " : stop ? "stop " : "restart ") + unit);
+            done + unit, "Failed to " + std::string(start ? "start " : stop ? "stop " : "restart ") + unit, unit,
+            start  ? RowActivity::Labels{"starting", "started", "start failed"}
+            : stop ? RowActivity::Labels{"stopping", "stopped", "stop failed"}
+                   : RowActivity::Labels{"restarting", "restarted", "restart failed"});
     }
 
     void App::run_in_background(const std::string &busy_message, std::function<std::pair<bool, std::string>()> work,
-                                const std::string &success_message, const std::string &failure_prefix)
+                                const std::string &success_message, const std::string &failure_prefix,
+                                const std::string &row_key, const RowActivity::Labels &labels)
     {
         busy_ = true;
         busy_message_ = busy_message;
         status_message_.clear();
         error_message_.clear();
+        if (!row_key.empty())
+            row_activity_.start(row_key, labels.busy);
 
         if (worker_.joinable())
         {
             worker_.join();
         }
-        worker_ = std::thread([this, work = std::move(work), success_message, failure_prefix] {
+        worker_ = std::thread([this, work = std::move(work), success_message, failure_prefix, row_key, labels] {
             auto result = work();
-            screen_.Post([this, result, success_message, failure_prefix] {
+            screen_.Post([this, result, success_message, failure_prefix, row_key, labels] {
                 busy_ = false;
                 busy_message_.clear();
+                if (!row_key.empty())
+                    row_activity_.finish(row_key, result.first, result.first ? labels.done : labels.failed);
                 refresh_services();
                 load_service_details();
                 if (result.first)
@@ -978,7 +986,7 @@ namespace gsystemctl::ui
         auto header = hbox({
                           text(" "),
                           flex_cell("SERVICE", HeaderColor()),
-                          cell("STATUS", 11, HeaderColor()),
+                          cell("STATUS", 16, HeaderColor()),
                           right_cell("PID", 7, HeaderColor()),
                           right_cell("CPU", 7, HeaderColor()),
                           right_cell("MEM", 8, HeaderColor()),
@@ -998,7 +1006,10 @@ namespace gsystemctl::ui
 
             auto card = hbox({
                 flex_cell(svc.unit, selected ? Color::White : TextColor(), selected),
-                cell(status_text, 11, status_color, active),
+                [&] {
+                    auto activity = row_activity_.render(svc.unit);
+                    return activity ? activity | size(WIDTH, EQUAL, 16) : cell(status_text, 16, status_color, active);
+                }(),
                 right_cell(svc.pid.empty() ? "-" : svc.pid, 7, MutedColor()),
                 right_cell(svc.cpu.empty() ? "-" : svc.cpu, 7, MutedColor()),
                 right_cell(svc.memory.empty() ? "-" : svc.memory, 8, MutedColor()),
