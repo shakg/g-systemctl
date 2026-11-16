@@ -6,6 +6,7 @@
 #include "g-systemctl/ui/detail_page.hpp"
 #include "g-systemctl/ui/log_panel.hpp"
 #include "g-systemctl/ui/metric_graph.hpp"
+#include "g-systemctl/ui/row_activity.hpp"
 #include <condition_variable>
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
@@ -142,6 +143,8 @@ namespace gsystemctl::ui
         bool busy_ = false;
         std::string busy_message_;
         std::vector<ftxui::Box> item_boxes_;
+        // Action progress in the list rows, keyed like selected_key_.
+        RowActivity row_activity_;
 
         // Detail page. It shows logs_id_ (a container) or detail_project_ (a
         // compose project); `docker logs -f` exits when the container stops,
@@ -213,8 +216,10 @@ namespace gsystemctl::ui
         void remember_projects();
         void clear_messages();
 
+        // `row_key`: the list row the action is shown in (container ID or project key); empty for none.
         void run_action(const std::string &busy_message, std::function<ContainerManager::Result()> action,
-                        const std::string &success_message);
+                        const std::string &success_message, const std::string &row_key = "",
+                        const RowActivity::Labels &labels = {});
         // The container on the open detail page, else the selected one.
         const Container *action_target() const;
         void start_target();
