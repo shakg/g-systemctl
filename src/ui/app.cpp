@@ -1068,11 +1068,12 @@ namespace gsystemctl::ui
         }
         else if (service_manager_->supports_unit_files())
         {
-            reload_button = text(" Reload(Alt+R) ") | color(MutedColor());
+            reload_button = hbox({text(" ↻ systemctl daemon-reload ") | color(AccentColor()),
+                                  text("Alt+Shift+r ") | color(MutedColor())});
         }
         else
         {
-            reload_button = text(" Reload (n/a on macOS) ") | color(MutedColor()) | dim;
+            reload_button = text(" daemon-reload (n/a on macOS) ") | color(MutedColor()) | dim;
         }
 
         Element update = text("");
@@ -1175,7 +1176,7 @@ namespace gsystemctl::ui
         const bool active = service && service_is_active(*service);
         const std::string state = !service ? "? unknown" : active ? "● active" : "○ inactive";
         auto actions = service_actions_.render(state, active ? Colors::running_fg() : Colors::stopped_fg(), active);
-        auto title = detail_title_bar(detail_unit_, service ? service->description : "", std::move(actions));
+        auto title = detail_title_bar(service_actions_.render_back(), detail_unit_, service ? service->description : "", std::move(actions));
         Element summary = logs_full_ ? text("") : service_summary_.render(render_service_summary());
         return detail_page(std::move(title), std::move(summary),
                            service_logs_.render(service_actions_.render_log_header(logs_full_, graphs_.shown(), graphs_fit())),

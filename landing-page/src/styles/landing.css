@@ -226,6 +226,34 @@ h1 .acc { color: var(--acc); }
 .env .v.mask { color: var(--muted); letter-spacing: .1em; }
 .env-k { display: flex; align-items: center; gap: 8px; padding: 0 12px 12px; color: var(--muted); font-size: 12px; }
 
+/* shell card */
+.sh { padding: 14px 12px; display: grid; gap: 12px; font-size: 12px; }
+.sh .row { display: flex; gap: 14px; }
+.sh .lbl { color: var(--muted); width: 48px; flex: none; }
+.sh .a { color: var(--acc); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sh .lh { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--text); white-space: nowrap; }
+.sh .lh b { font-weight: 400; color: var(--muted); }
+.sh .sb { background: var(--line); color: var(--acc); padding: 0 6px; }
+.sh .sb i { font-style: normal; opacity: .6; }
+.sh .tty { background: #000; padding: 8px 10px; line-height: 1.8; color: var(--text); white-space: nowrap; overflow: hidden; }
+.sh .tty .p { color: var(--hi); }
+
+/* row activity card */
+.ra { list-style: none; margin: 0; padding: 6px 0; font-size: 12px; }
+.ra li { display: flex; justify-content: space-between; gap: 10px; padding: 0 12px 0 14px; height: 30px; line-height: 30px; color: var(--text); white-space: nowrap; }
+.ra li.sel { background: var(--sel); color: var(--hi); padding-left: 0; }
+.ra li.sel i { font-style: normal; color: var(--acc); margin-right: 6px; }
+.ra .run { color: var(--warn); }
+.ra .ok { color: var(--acc); font-weight: 700; }
+.ra .bad { color: var(--err); font-weight: 700; }
+
+/* update card */
+.win-h b { white-space: nowrap; }
+.win-h .up { min-width: 0; margin-left: auto; color: var(--acc); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cdlg.ud { margin: 14px 12px; }
+.cdlg.ud .t { color: var(--acc); }
+.cdlg .go { background: var(--acc); color: #fff; font-weight: 700; }
+
 /* compose card */
 .cp { list-style: none; margin: 0; padding: 6px 0; }
 .cp li { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.2fr) 92px minmax(0, 1fr); gap: 10px; padding: 0 12px; height: 26px; line-height: 26px; color: var(--text); white-space: nowrap; }

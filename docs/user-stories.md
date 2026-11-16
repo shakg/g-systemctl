@@ -258,7 +258,7 @@ And only nginx-related services are displayed
 ```gherkin
 Given g-systemctl runs in system mode
 And sudo requires a password
-When I press Alt+Shift+r or click "Reload(Alt+R)" in the top bar
+When I press Alt+Shift+r or click "↻ systemctl daemon-reload" in the top bar
 Then the sudo password dialog opens
 When I enter the correct password
 Then a spinner with "Reloading systemd daemon..." is shown in the top bar

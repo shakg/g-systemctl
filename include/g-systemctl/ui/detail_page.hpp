@@ -120,12 +120,13 @@ namespace gsystemctl::ui
         }
     };
 
-    inline ftxui::Element detail_title_bar(const std::string &name, const std::string &subtitle,
+    inline ftxui::Element detail_title_bar(ftxui::Element back, const std::string &name, const std::string &subtitle,
                                            ftxui::Element actions)
     {
         using namespace ftxui;
         return hbox({
                    text(" "),
+                   std::move(back),
                    std::make_shared<TitleText>(name, subtitle.empty() ? "" : "  " + subtitle),
                    filler(),
                    text(" "),

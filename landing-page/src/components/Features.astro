@@ -291,6 +291,65 @@ const PROJECT: Row[] = [
         </div>
       </article>
 
+      <article class="card" data-r>
+        <div class="vg" aria-hidden="true">
+          <div class="win">
+            <div class="win-h"><b>shop-postgres-1</b> · postgres:16</div>
+            <div class="sh">
+              <div class="row"><span class="lbl">Shell</span><span class="a">bash  (Alt+t opens a terminal)</span></div>
+              <div class="lh"><span><b>LOGS</b> shop-postgres-1</span><span class="sb">&gt;_ Shell <i>Alt+t</i></span></div>
+              <div class="tty">
+                <div><span class="p">root@c0de11aa5f42:/#</span> psql -U app</div>
+                <div><span class="p">root@c0de11aa5f42:/#</span> exit</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <h3>A shell in the container</h3>
+          <p><code>Alt+t</code> opens bash, or sh when bash is missing, with <code>docker exec -it</code>. <code>exit</code>
+            returns to the app.</p>
+        </div>
+      </article>
+
+      <article class="card" data-r style="--d:1">
+        <div class="vg" aria-hidden="true">
+          <div class="win">
+            <div class="win-h"><b>Containers</b> · STATUS column</div>
+            <ul class="ra">
+              <li><span>├ api</span><span class="run">⠹ restarting</span></li>
+              <li class="sel"><span><i>▌</i>├ postgres</span><span class="ok">✓ restarted</span></li>
+              <li><span>├ redis</span><span>Up 2 days</span></li>
+              <li><span>└ worker</span><span class="bad">✕ stop failed</span></li>
+            </ul>
+          </div>
+        </div>
+        <div>
+          <h3>Progress in the row</h3>
+          <p>Start, stop and restart show a spinner in the item's row while they run, then the result. A compose action shows
+            on each of the project's containers.</p>
+        </div>
+      </article>
+
+      <article class="card" data-r style="--d:2">
+        <div class="vg" aria-hidden="true">
+          <div class="win">
+            <div class="win-h"><b>g-systemctl</b> <span class="up">↑ 2.3.0 available: g-systemctl --update</span></div>
+            <div class="cdlg ud">
+              <div class="t">Update available</div>
+              <div class="q">g-systemctl 2.3.0 is out (you have 2.2.0).</div>
+              <div class="bb"><span class="go">y  Update</span><span class="no">n  Not now</span></div>
+              <div class="f">y update · n / Esc not now · s skip this version · d stop checking</div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <h3>Updates itself</h3>
+          <p>Release builds check GitHub once a day and offer the new version. The download is checked against its SHA-256
+            before it replaces the binary. <code>GSYSTEMCTL_NO_UPDATE=1</code> turns it off.</p>
+        </div>
+      </article>
+
       <article class="card s3 plat" data-r>
         {PLATFORMS.map((p) => (
           <div>

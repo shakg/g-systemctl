@@ -1796,7 +1796,7 @@ namespace gsystemctl::ui
         const auto *c = action_target();
         Element actions = c ? actions_.render(state_style(c->state).label, state_style(c->state).fg, c->is_active())
                             : actions_.render("✕ removed", Colors::error_fg(), false);
-        auto title = detail_title_bar(logs_name_, c ? c->image : details_.image, std::move(actions));
+        auto title = detail_title_bar(actions_.render_back(), logs_name_, c ? c->image : details_.image, std::move(actions));
         Element summary = logs_full_ ? text("") : summary_.render(render_summary());
         const bool graphs = graphs_ ? graphs_->shown() : graphs_fit();
         // The title bar is full at narrow widths; the shell button goes with the log buttons.
@@ -2087,7 +2087,7 @@ namespace gsystemctl::ui
         {
             actions = actions_.render("✕ gone", Colors::error_fg(), false, false);
         }
-        auto title = detail_title_bar(detail_project_, p ? p->ref.working_dir : "", std::move(actions));
+        auto title = detail_title_bar(actions_.render_back(), detail_project_, p ? p->ref.working_dir : "", std::move(actions));
         Element summary = text("");
         if (!logs_full_)
             summary = summary_.render(p ? render_project_summary(*p) : Elements{text(" Project no longer listed") | dim});
