@@ -236,9 +236,20 @@ namespace gsystemctl::ui
 
     namespace
     {
-        bool service_is_active(const ServiceUnit &service)
+        Color state_color(const ServiceState &state)
         {
-            return service.active == "active" || service.is_running();
+            switch (state.kind)
+            {
+            case ServiceState::Kind::Active:
+                return Colors::running_fg();
+            case ServiceState::Kind::Failed:
+                return Colors::error_fg();
+            case ServiceState::Kind::Changing:
+                return WarningColor();
+            case ServiceState::Kind::Inactive:
+                break;
+            }
+            return Colors::stopped_fg();
         }
     } // namespace
 
@@ -270,18 +281,20 @@ namespace gsystemctl::ui
             return;
         }
         const auto service = *target;
-        const bool active = service_is_active(service);
+        const auto state = service_state(service);
         status_message_.clear();
         error_message_.clear();
 
-        if (action == AuthAction::Start && active)
+        if (action == AuthAction::Start && !state.can_start)
         {
-            status_message_ = service.unit + " is already running";
+            status_message_ = state.kind == ServiceState::Kind::Active ? service.unit + " is already running"
+                                                                       : service.unit + " is " + service.active;
             return;
         }
-        if ((action == AuthAction::Stop || action == AuthAction::Restart) && !active)
+        if ((action == AuthAction::Stop || action == AuthAction::Restart) && !state.can_stop)
         {
-            status_message_ = service.unit + " is not running (Alt+o to start)";
+            status_message_ = service.unit + (state.kind == ServiceState::Kind::Failed ? " has failed" : " is not running") +
+                              " (Alt+o to start)";
             return;
         }
 
@@ -1131,15 +1144,14 @@ namespace gsystemctl::ui
         {
             const auto &svc = filtered_services_[i];
             bool selected = (static_cast<int>(i) == selected_index_);
-            bool active = service_is_active(svc);
-            auto status_color = active ? Colors::running_fg() : Colors::stopped_fg();
-            std::string status_text = active ? "● active" : "○ inactive";
+            const auto state = service_state(svc);
+            const bool emphasize = state.kind != ServiceState::Kind::Inactive;
 
             auto card = hbox({
                 flex_cell(svc.unit, selected ? Color::White : TextColor(), selected),
                 [&] {
                     auto activity = row_activity_.render(svc.unit);
-                    return activity ? activity | size(WIDTH, EQUAL, 16) : cell(status_text, 16, status_color, active);
+                    return activity ? activity | size(WIDTH, EQUAL, 16) : cell(state.label, 16, state_color(state), emphasize);
                 }(),
                 right_cell(svc.pid.empty() ? "-" : svc.pid, 7, MutedColor()),
                 right_cell(svc.cpu.empty() ? "-" : svc.cpu, 7, MutedColor()),
@@ -1173,9 +1185,8 @@ namespace gsystemctl::ui
     Element App::render_service_detail()
     {
         const auto *service = action_target();
-        const bool active = service && service_is_active(*service);
-        const std::string state = !service ? "? unknown" : active ? "● active" : "○ inactive";
-        auto actions = service_actions_.render(state, active ? Colors::running_fg() : Colors::stopped_fg(), active);
+        const auto state = service ? service_state(*service) : ServiceState{ServiceState::Kind::Inactive, "? unknown"};
+        auto actions = service_actions_.render(state.label, state_color(state), state.can_start, state.can_stop);
         auto title = detail_title_bar(service_actions_.render_back(), detail_unit_, service ? service->description : "", std::move(actions));
         Element summary = logs_full_ ? text("") : service_summary_.render(render_service_summary());
         return detail_page(std::move(title), std::move(summary),
