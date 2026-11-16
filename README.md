@@ -74,6 +74,7 @@ Turn checks off with `GSYSTEMCTL_NO_UPDATE=1`, `--no-update-check` (one run), or
 | Type | Filter |
 | `Up` / `Down` | Move |
 | `Enter` / `Esc` | Open / back |
+| `Alt+s` / `Alt+Shift+s` | Sort by the next column / reverse (or click a column header) |
 | `Alt+o` / `Alt+x` / `Alt+r` | Start / stop / restart (stop and restart ask y/n) |
 | `Alt+t` | Shell in the selected container (bash, else sh) |
 | `Alt+1` / `Alt+2` | Containers / Services tab |

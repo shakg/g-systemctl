@@ -201,8 +201,56 @@ namespace gsystemctl::ui
         }
     }
 
+    namespace
+    {
+        // Columns of the services list, in Alt+s order, with their headers.
+        const std::vector<std::pair<SortColumn, std::string>> kServiceColumns = {
+            {SortColumn::Name, "SERVICE"}, {SortColumn::State, "STATUS"}, {SortColumn::Pid, "PID"},
+            {SortColumn::Cpu, "CPU"},      {SortColumn::Memory, "MEM"},
+        };
+
+        SortValue service_sort_value(const ServiceUnit &s, SortColumn column)
+        {
+            SortValue v;
+            v.name = s.unit;
+            switch (column)
+            {
+            case SortColumn::State:
+            {
+                // Running first, then changing, failed, stopped.
+                const auto &a = s.active;
+                v.number = (a == "active" || a == "running" || s.is_running()) ? 0
+                           : a == "failed"                                     ? 2
+                           : (a == "inactive" || a == "stopped" || a.empty())  ? 3
+                                                                               : 1;
+                break;
+            }
+            case SortColumn::Pid:
+                v.number = s.pid.empty() ? 0 : std::strtod(s.pid.c_str(), nullptr);
+                v.missing = s.pid.empty();
+                break;
+            case SortColumn::Cpu:
+                v.number = parse_percent(s.cpu);
+                v.missing = v.number < 0;
+                break;
+            case SortColumn::Memory:
+                v.number = parse_size(s.memory);
+                v.missing = v.number < 0;
+                break;
+            default:
+                v.text = s.unit;
+                break;
+            }
+            return v;
+        }
+    } // namespace
+
     void App::apply_filter()
     {
+        // Keep the selected unit selected when the order changes.
+        const std::string previous = selected_index_ >= 0 && selected_index_ < static_cast<int>(filtered_services_.size())
+                                         ? filtered_services_[selected_index_].unit
+                                         : std::string();
         if (filter_text_.empty())
         {
             filtered_services_ = services_;
@@ -228,10 +276,31 @@ namespace gsystemctl::ui
             }
         }
 
+        const auto order = services_sort_;
+        std::stable_sort(filtered_services_.begin(), filtered_services_.end(),
+                         [&order](const ServiceUnit &a, const ServiceUnit &b) {
+                             return sort_before(service_sort_value(a, order.column),
+                                                service_sort_value(b, order.column), order.descending);
+                         });
+        for (size_t i = 0; i < filtered_services_.size(); ++i)
+        {
+            if (!previous.empty() && filtered_services_[i].unit == previous)
+                selected_index_ = static_cast<int>(i);
+        }
+
         if (selected_index_ >= static_cast<int>(filtered_services_.size()))
         {
             selected_index_ = std::max(0, static_cast<int>(filtered_services_.size()) - 1);
         }
+    }
+
+    void App::sort_services_by(SortColumn column)
+    {
+        if (services_sort_.column == column)
+            services_sort_.descending = !services_sort_.descending;
+        else
+            services_sort_ = {column, default_descending(column)};
+        apply_filter();
     }
 
     namespace
@@ -753,6 +822,20 @@ namespace gsystemctl::ui
                 return true;
             }
         } else {
+            if (event == Event::Special("\x1b" "s") || event == Event::Special("\x1b" "S")) {
+                // Alt+s: next column; Alt+Shift+s: reverse the order.
+                if (event == Event::Special("\x1b" "S")) {
+                    sort_services_by(services_sort_.column);
+                } else {
+                    size_t next = 0;
+                    for (size_t i = 0; i < kServiceColumns.size(); ++i)
+                        if (kServiceColumns[i].first == services_sort_.column)
+                            next = (i + 1) % kServiceColumns.size();
+                    sort_services_by(kServiceColumns[next].first);
+                }
+                clear_messages();
+                return true;
+            }
             if (up || down) {
                 selected_index_ = std::clamp(selected_index_ + (up ? -1 : 1), 0,
                                              std::max(0, static_cast<int>(filtered_services_.size()) - 1));
@@ -788,6 +871,14 @@ namespace gsystemctl::ui
                 return true;
             }
             if (mouse.button == Mouse::Left && mouse.motion == Mouse::Pressed) {
+                if (!detail_open_) {
+                    for (size_t i = 0; i < service_header_boxes_.size() && i < kServiceColumns.size(); ++i) {
+                        if (service_header_boxes_[i].Contain(mouse.x, mouse.y)) {
+                            sort_services_by(kServiceColumns[i].first);
+                            return true;
+                        }
+                    }
+                }
                 if (reload_button_box_.Contain(mouse.x, mouse.y)) {
                     request_daemon_reload();
                     return true;
@@ -1114,13 +1205,23 @@ namespace gsystemctl::ui
             return text("No services found") | center | dim;
         }
 
+        // The sorted column shows ▲ (ascending) or ▼; headers are clickable.
+        service_header_boxes_.resize(kServiceColumns.size());
+        auto label = [this](size_t i) {
+            const auto &[column, name] = kServiceColumns[i];
+            if (column != services_sort_.column)
+                return name;
+            return name + (services_sort_.descending ? " ▼" : " ▲");
+        };
+        auto sorted = [this](size_t i) { return kServiceColumns[i].first == services_sort_.column; };
+        auto header_color = [&](size_t i) { return sorted(i) ? AccentColor() : HeaderColor(); };
         auto header = hbox({
                           text(" "),
-                          flex_cell("SERVICE", HeaderColor()),
-                          cell("STATUS", 16, HeaderColor()),
-                          right_cell("PID", 7, HeaderColor()),
-                          right_cell("CPU", 7, HeaderColor()),
-                          right_cell("MEM", 8, HeaderColor()),
+                          flex_cell(label(0), header_color(0)) | reflect(service_header_boxes_[0]),
+                          cell(label(1), 16, header_color(1)) | reflect(service_header_boxes_[1]),
+                          right_cell(label(2), 7, header_color(2)) | reflect(service_header_boxes_[2]),
+                          right_cell(label(3), 7, header_color(3)) | reflect(service_header_boxes_[3]),
+                          right_cell(label(4), 8, header_color(4)) | reflect(service_header_boxes_[4]),
                       }) |
                       bgcolor(PanelColor());
 
@@ -1317,7 +1418,7 @@ namespace gsystemctl::ui
                 key("Alt+o / x / r", "Start / stop / restart (stop, restart ask y/n)"),
                 key("Alt+u", "Edit resource limits (docker/podman update)"),
                 key("Alt+t", "Shell in the container (bash, else sh)"),
-                key("Alt+s", "Show/hide secret env values"),
+                key("Alt+s", "Show/hide secret env values (detail page)"),
                 key("Alt+Shift+r", "Refresh now"),
                 gap(),
                 heading("Compose projects (on a project row or page)"),
@@ -1349,6 +1450,7 @@ namespace gsystemctl::ui
                 heading("List"),
                 key("↑↓ / Alt+k/j", "Move selection"),
                 key("type / Backspace", "Filter"),
+                key("Alt+s / Alt+Shift+s", "Sort by the next column / reverse (or click a header)"),
                 key("Enter / click", "Open detail page"),
                 gap(),
                 heading("Detail page"),
@@ -1407,7 +1509,7 @@ namespace gsystemctl::ui
                    hbox({text(" Help ") | bold | color(AccentColor()), filler(), hbox(std::move(tabs))}),
                    separator() | color(BorderColor()),
                    // Fixed size, so switching tabs does not resize the dialog.
-                   vbox(std::move(body)) | size(HEIGHT, EQUAL, 19) | size(WIDTH, EQUAL, 86),
+                   vbox(std::move(body)) | size(HEIGHT, EQUAL, 20) | size(WIDTH, EQUAL, 86),
                    separator() | color(BorderColor()),
                    text(" Tab / ←→ / 1-4 switch  ·  Esc or ? close") | color(MutedColor()),
                }) |
