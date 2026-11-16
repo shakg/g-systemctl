@@ -1175,6 +1175,7 @@ namespace gsystemctl::ui
         const auto *service = action_target();
         const bool active = service && service_is_active(*service);
         const std::string state = !service ? "? unknown" : active ? "● active" : "○ inactive";
+        service_actions_.fit_title(detail_unit_, state);
         auto actions = service_actions_.render(state, active ? Colors::running_fg() : Colors::stopped_fg(), active);
         auto title = detail_title_bar(service_actions_.render_back(), detail_unit_, service ? service->description : "", std::move(actions));
         Element summary = logs_full_ ? text("") : service_summary_.render(render_service_summary());
