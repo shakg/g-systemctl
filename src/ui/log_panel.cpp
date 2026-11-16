@@ -14,14 +14,15 @@ namespace gsystemctl::ui
     namespace
     {
         // Log lines wrapped to the width this node is given. The width is only
-        // known after layout, so the first pass lays out unwrapped and Check()
-        // asks FTXUI for another pass once the width is known or changes.
+        // known after layout, so the node starts from the width of the previous
+        // frame (`width`, kept by LogPanel) and Check() asks FTXUI for another
+        // pass only when the real width differs.
         // Selects the last row of `focus_line` so a surrounding frame scrolls to it.
         class WrappedLines : public Node
         {
         public:
-            WrappedLines(std::vector<std::string> lines, int focus_line)
-                : lines_(std::move(lines)), focus_line_(focus_line) {}
+            WrappedLines(std::vector<std::string> lines, int focus_line, int &width)
+                : lines_(std::move(lines)), focus_line_(focus_line), width_(width) {}
 
             void ComputeRequirement() override
             {
@@ -58,6 +59,9 @@ namespace gsystemctl::ui
             void Check(Status *status) override
             {
                 Node::Check(status);
+                // Iteration 0 runs before any layout: box_ is still empty, not a width.
+                if (status->iteration == 0)
+                    return;
                 const int width = box_.x_max - box_.x_min + 1;
                 if (width > 0 && width != width_)
                 {
@@ -69,7 +73,7 @@ namespace gsystemctl::ui
         private:
             std::vector<std::string> lines_;
             int focus_line_;
-            int width_ = 0;
+            int &width_;
         };
     } // namespace
 
@@ -181,7 +185,7 @@ namespace gsystemctl::ui
         }
 
         Element body = lines.empty() ? text("Waiting for log output...") | dim
-                                     : std::make_shared<WrappedLines>(std::move(lines), scroll_position);
+                                     : std::make_shared<WrappedLines>(std::move(lines), scroll_position, wrap_width_);
 
         return vbox({
                    hbox({
