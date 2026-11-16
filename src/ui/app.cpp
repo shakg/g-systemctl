@@ -228,10 +228,41 @@ namespace gsystemctl::ui
             }
         }
 
-        if (selected_index_ >= static_cast<int>(filtered_services_.size()))
+        // Keep the selected unit. If the filter hides it, select the nearest
+        // listed unit (in list order) but remember it for when it shows again.
+        if (filtered_services_.empty())
         {
-            selected_index_ = std::max(0, static_cast<int>(filtered_services_.size()) - 1);
+            selected_index_ = 0;
+            return;
         }
+        auto position = [this](const std::string &unit) {
+            auto it = std::find_if(services_.begin(), services_.end(),
+                                   [&unit](const ServiceUnit &s) { return s.unit == unit; });
+            return static_cast<int>(it - services_.begin());
+        };
+        if (selected_unit_.empty())
+        {
+            selected_index_ = std::clamp(selected_index_, 0, static_cast<int>(filtered_services_.size()) - 1);
+            return;
+        }
+        const int wanted = position(selected_unit_);
+        selected_index_ = static_cast<int>(filtered_services_.size()) - 1;
+        for (size_t i = 0; i < filtered_services_.size(); ++i)
+        {
+            if (position(filtered_services_[i].unit) >= wanted)
+            {
+                selected_index_ = static_cast<int>(i);
+                break;
+            }
+        }
+    }
+
+    void App::select_service(int index)
+    {
+        if (filtered_services_.empty())
+            return;
+        selected_index_ = std::clamp(index, 0, static_cast<int>(filtered_services_.size()) - 1);
+        selected_unit_ = filtered_services_[selected_index_].unit;
     }
 
     namespace
@@ -754,8 +785,23 @@ namespace gsystemctl::ui
             }
         } else {
             if (up || down) {
-                selected_index_ = std::clamp(selected_index_ + (up ? -1 : 1), 0,
-                                             std::max(0, static_cast<int>(filtered_services_.size()) - 1));
+                select_service(selected_index_ + (up ? -1 : 1));
+                clear_messages();
+                return true;
+            }
+            if (event == Event::PageUp || event == Event::PageDown) {
+                // One screen of rows, from the list's height in the last frame.
+                const int page = std::max(1, service_list_box_.y_max - service_list_box_.y_min);
+                select_service(selected_index_ + (event == Event::PageUp ? -page : page));
+                clear_messages();
+                return true;
+            }
+            // FTXUI 5 knows only ESC[H / ESC[F; tmux, screen and rxvt send the others.
+            const auto &in = event.input();
+            const bool home = event == Event::Home || in == "\x1b[1~" || in == "\x1b[7~" || in == "\x1bOH";
+            const bool end = event == Event::End || in == "\x1b[4~" || in == "\x1b[8~" || in == "\x1bOF";
+            if (home || end) {
+                select_service(home ? 0 : static_cast<int>(filtered_services_.size()) - 1);
                 clear_messages();
                 return true;
             }
@@ -777,8 +823,7 @@ namespace gsystemctl::ui
             if (mouse.button == Mouse::WheelUp || mouse.button == Mouse::WheelDown) {
                 const int delta = mouse.button == Mouse::WheelUp ? -1 : 1;
                 if (!detail_open_) {
-                    selected_index_ = std::clamp(selected_index_ + delta, 0,
-                                                 std::max(0, static_cast<int>(filtered_services_.size()) - 1));
+                    select_service(selected_index_ + delta);
                     clear_messages();
                 } else if (service_logs_.contains(mouse.x, mouse.y)) {
                     service_logs_.scroll(delta * 3);
@@ -825,7 +870,7 @@ namespace gsystemctl::ui
                         if (static_cast<int>(i) == selected_index_) {
                             open_service_detail(false);
                         } else {
-                            selected_index_ = static_cast<int>(i);
+                            select_service(static_cast<int>(i));
                         }
                         clear_messages();
                         return true;
@@ -1166,7 +1211,7 @@ namespace gsystemctl::ui
 
         return vbox({
             header,
-            vbox(items) | vscroll_indicator | yframe | flex,
+            vbox(items) | vscroll_indicator | yframe | flex | reflect(service_list_box_),
         }) | flex;
     }
 
@@ -1336,6 +1381,7 @@ namespace gsystemctl::ui
             body = {
                 heading("Services"),
                 key("Enter", "Open detail page (summary + logs)"),
+                key("PgUp/PgDn  Home/End", "Move a page / to the first or last unit"),
                 key("Alt+l", "Open with full-size logs"),
                 key("Alt+o / x / r", "Start / stop / restart (stop, restart ask y/n)"),
                 key("Alt+e", "Edit unit file ($GSYSTEMCTL_EDITOR, default vim)"),

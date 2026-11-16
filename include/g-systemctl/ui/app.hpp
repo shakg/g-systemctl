@@ -119,6 +119,10 @@ namespace gsystemctl::ui
         AuthAction pending_auth_action_ = AuthAction::None;
         ServiceUnit pending_auth_service_;
         std::vector<ftxui::Box> item_boxes_;
+        // Unit the user selected. Kept while the filter hides it, so clearing
+        // the filter returns to it; selected_index_ follows it.
+        std::string selected_unit_;
+        ftxui::Box service_list_box_;
         // Action progress in the service list rows, keyed by unit.
         RowActivity row_activity_;
         ftxui::Box reload_button_box_;
@@ -172,6 +176,8 @@ namespace gsystemctl::ui
         // Goes up one level (full logs -> detail -> list). False if already at the list.
         bool services_back();
         void switch_tab(Tab tab);
+        // Selects row `index` of the filtered list (clamped) and remembers its unit.
+        void select_service(int index);
         bool handle_services_event(ftxui::Event event);
         ftxui::Component create_main_component();
         ftxui::Element render();
