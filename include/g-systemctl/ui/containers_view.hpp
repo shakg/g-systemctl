@@ -173,6 +173,20 @@ namespace gsystemctl::ui
         int edit_cursors_[5] = {0, 0, 0, 0, 0};
         std::string edit_error_;
 
+        // Shell per container ID, found with `exec` on shell_thread_. Detection
+        // runs when a running container's page opens, or on Alt+t.
+        struct ShellInfo
+        {
+            bool checking = false;
+            bool ok = false;
+            std::string shell;  // when ok
+            std::string reason; // when not ok
+        };
+        std::map<std::string, ShellInfo> shells_;
+        // Container to open a shell in once detection finishes (Alt+t pressed meanwhile).
+        std::string shell_open_pending_;
+        std::thread shell_thread_;
+
         bool add_open_ = false;
         std::string add_path_;
         int add_cursor_ = 0;
@@ -231,6 +245,12 @@ namespace gsystemctl::ui
         void compose_build_target();
         void compose_pull_target();
         void compose_down_target();
+        // Alt+t: shell in the container on the open page, else the selected one.
+        void shell_target();
+        // Starts detection for a running container unless a shell is already known.
+        void detect_shell(const std::string &id, bool open_after);
+        // Hands the terminal to `exec -it`; UI thread only.
+        void enter_shell(const std::string &id, const std::string &name, const std::string &shell);
         void fold_selected(bool collapse);
         void open_detail(bool logs_full);
         void open_project_detail(const std::string &name, bool logs_full);

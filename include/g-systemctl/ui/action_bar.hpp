@@ -10,7 +10,8 @@ namespace gsystemctl::ui
 {
 
     // Clickable buttons on the detail page: Start / Stop / Restart / Back in the
-    // title bar and Expand / Shrink in the log header. Each has a keyboard shortcut.
+    // title bar; Shell (containers), Graphs and Expand / Shrink in the log
+    // header. Each has a keyboard shortcut.
     class ActionBar
     {
     public:
@@ -23,6 +24,7 @@ namespace gsystemctl::ui
             Back,
             ToggleLogs,
             ToggleGraphs,
+            Shell,
         };
 
         // `running`: the item is up, so Start is disabled; otherwise Stop and Restart are.
@@ -44,6 +46,14 @@ namespace gsystemctl::ui
                 button("↻ Restart", "Alt+r", WarningColor(), can_stop, restart_),
                 button("← Back", "Esc", TextColor(), true, back_),
             });
+        }
+
+        // Opens a shell in the container; enabled once one was found.
+        ftxui::Element render_shell(bool enabled)
+        {
+            visible_ = true;
+            shell_visible_ = true;
+            return button("⌨ Shell", "Alt+t", theme::AccentColor(), enabled, shell_);
         }
 
         // `full`: logs fill the page, so the button shrinks them back.
@@ -71,7 +81,11 @@ namespace gsystemctl::ui
         }
 
         // Call at the start of every frame; render() marks the bar visible again.
-        void hide() { visible_ = false; }
+        void hide()
+        {
+            visible_ = false;
+            shell_visible_ = false; // only the container page draws it
+        }
 
         Action hit(int x, int y) const
         {
@@ -89,17 +103,21 @@ namespace gsystemctl::ui
                 return Action::ToggleLogs;
             if (graphs_toggle_.Contain(x, y))
                 return Action::ToggleGraphs;
+            if (shell_visible_ && shell_.Contain(x, y))
+                return Action::Shell;
             return Action::None;
         }
 
     private:
         bool visible_ = false;
+        bool shell_visible_ = false;
         ftxui::Box start_;
         ftxui::Box stop_;
         ftxui::Box restart_;
         ftxui::Box back_;
         ftxui::Box logs_toggle_;
         ftxui::Box graphs_toggle_;
+        ftxui::Box shell_;
 
         static ftxui::Element button(const std::string &label, const std::string &key, ftxui::Color fg, bool enabled,
                                      ftxui::Box &box)
