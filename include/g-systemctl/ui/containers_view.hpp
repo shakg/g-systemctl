@@ -275,6 +275,19 @@ namespace gsystemctl::ui
         void close_add_dialog();
 
         ftxui::Element render_list();
+        // Column widths of the list, fitted to the terminal width in render_list.
+        // 0 = column hidden. Lower-priority columns give way first, so the name
+        // column keeps at least kMinNameWidth.
+        struct ListColumns
+        {
+            int image = 24, state = 13, status = 22, cpu = 8, mem = 22, pids = 6;
+            int total() const { return image + state + status + cpu + mem + pids; }
+        };
+        static constexpr int kMinNameWidth = 16;
+        static ListColumns fit_columns(int name_room);
+        ListColumns cols_;
+        // The fixed columns of one row; `cells` in the order image, state, status, cpu, mem, pids.
+        ftxui::Elements fixed_columns(std::vector<ftxui::Element> cells) const;
         ftxui::Element render_project_row(const ComposeProject &project, bool is_selected);
         ftxui::Element render_container_row(const Container &c, bool is_selected, bool child, bool last_child);
         ftxui::Element render_detail();
