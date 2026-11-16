@@ -97,40 +97,52 @@ int main(int argc, char *argv[])
             print_help();
             return 0;
         }
-        if (std::strcmp(argv[i], "-v") == 0 || std::strcmp(argv[i], "--version") == 0)
+        else if (std::strcmp(argv[i], "-v") == 0 || std::strcmp(argv[i], "--version") == 0)
         {
             print_version();
             return 0;
         }
-        if (std::strcmp(argv[i], "--update") == 0)
+        else if (std::strcmp(argv[i], "--update") == 0)
         {
             return run_update();
         }
-        if (std::strcmp(argv[i], "--no-update-check") == 0)
+        else if (std::strcmp(argv[i], "--no-update-check") == 0)
         {
             update_check = false;
         }
-        if (std::strcmp(argv[i], "--system") == 0)
+        else if (std::strcmp(argv[i], "--system") == 0)
         {
             system_mode = true;
         }
-        if (std::strcmp(argv[i], "--user") == 0)
+        else if (std::strcmp(argv[i], "--user") == 0)
         {
             system_mode = false;
         }
-        if (std::strcmp(argv[i], "-c") == 0 || std::strcmp(argv[i], "--containers") == 0)
+        else if (std::strcmp(argv[i], "-c") == 0 || std::strcmp(argv[i], "--containers") == 0)
         {
             initial_tab = gsystemctl::ui::App::Tab::Containers;
             fallback_to_services = false;
         }
-        if (std::strcmp(argv[i], "-s") == 0 || std::strcmp(argv[i], "--services") == 0)
+        else if (std::strcmp(argv[i], "-s") == 0 || std::strcmp(argv[i], "--services") == 0)
         {
             initial_tab = gsystemctl::ui::App::Tab::Services;
             fallback_to_services = false;
         }
-        if ((std::strcmp(argv[i], "-f") == 0 || std::strcmp(argv[i], "--filter") == 0) && i + 1 < argc)
+        else if (std::strcmp(argv[i], "-f") == 0 || std::strcmp(argv[i], "--filter") == 0)
         {
+            if (i + 1 >= argc)
+            {
+                std::cerr << "option requires a value: " << argv[i] << "\n";
+                std::cerr << "Usage: g-systemctl [options]\n";
+                return 2;
+            }
             initial_filter = argv[++i];
+        }
+        else
+        {
+            std::cerr << "unknown option: " << argv[i] << "\n";
+            std::cerr << "Usage: g-systemctl [options]\n";
+            return 2;
         }
     }
 

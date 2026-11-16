@@ -32,3 +32,10 @@ target_link_libraries(g-systemctl-tests PRIVATE
 )
 
 gtest_discover_tests(g-systemctl-tests)
+
+add_test(
+    NAME cli-argument-errors
+    COMMAND ${CMAKE_COMMAND}
+        -DGSYSTEMCTL_BINARY=$<TARGET_FILE:g-systemctl>
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cli_argument_errors_test.cmake
+)
