@@ -956,7 +956,14 @@ namespace gsystemctl::ui
                                              std::function<void()> on_confirm) {
             confirm_.ask(question, label, std::move(on_confirm));
         });
-        return main_component;
+        // Dialogs take every key while open; Alt+q still quits from any of them.
+        return CatchEvent(main_component, [this](Event event) {
+            if (event == Event::Special("\x1b" "q")) {
+                screen_.Exit();
+                return true;
+            }
+            return false;
+        });
     }
 
     Element App::render()
