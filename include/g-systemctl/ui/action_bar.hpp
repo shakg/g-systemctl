@@ -9,8 +9,8 @@
 namespace gsystemctl::ui
 {
 
-    // Clickable buttons on the detail page: Start / Stop / Restart / Back in the
-    // title bar; Shell (containers), Graphs and Expand / Shrink in the log
+    // Clickable buttons on the detail page: Back (left) and Start / Stop / Restart
+    // (right) in the title bar; Shell (containers), Graphs and Expand / Shrink in the log
     // header. Each has a keyboard shortcut.
     class ActionBar
     {
@@ -44,8 +44,13 @@ namespace gsystemctl::ui
                 button("▶ Start", "Alt+o", Colors::running_fg(), can_start, start_),
                 button("■ Stop", "Alt+x", Colors::error_fg(), can_stop, stop_),
                 button("↻ Restart", "Alt+r", WarningColor(), can_stop, restart_),
-                button("← Back", "Esc", TextColor(), true, back_),
             });
+        }
+
+        // Back sits apart, at the left end of the title bar.
+        ftxui::Element render_back()
+        {
+            return button("← Back", "Esc", theme::TextColor(), true, back_);
         }
 
         // Opens a shell in the container; enabled once one was found.
