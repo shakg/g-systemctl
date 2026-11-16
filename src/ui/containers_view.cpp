@@ -1456,7 +1456,7 @@ namespace gsystemctl::ui
             lines.push_back(separator() | color(BorderColor()));
             lines.push_back(text("Enter add  Esc cancel") | color(MutedColor()));
             return vbox(std::move(lines)) | size(WIDTH, GREATER_THAN, 66) | size(WIDTH, LESS_THAN, 90) |
-                   borderStyled(ROUNDED, BorderColor()) | bgcolor(PanelColor());
+                   borderStyled(ROUNDED, BorderColor()) | bgcolor(PanelColor()) | isolated_borders;
         });
         return CatchEvent(renderer, [this](Event event) {
             if (event == Event::Return)
@@ -1519,7 +1519,7 @@ namespace gsystemctl::ui
             lines.push_back(separator() | color(BorderColor()));
             lines.push_back(text("Tab/↑↓ field  Enter apply  Esc cancel") | color(MutedColor()));
             return vbox(std::move(lines)) | size(WIDTH, LESS_THAN, 80) | borderStyled(ROUNDED, BorderColor()) |
-                   bgcolor(PanelColor());
+                   bgcolor(PanelColor()) | isolated_borders;
         });
 
         return CatchEvent(renderer, [this](Event event) {

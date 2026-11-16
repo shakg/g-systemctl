@@ -54,7 +54,7 @@ namespace gsystemctl::ui
                        text(" y confirm · n / Esc cancel") | color(MutedColor()),
                    }) |
                    size(WIDTH, GREATER_THAN, 44) | size(WIDTH, LESS_THAN, 80) | borderStyled(ROUNDED, BorderColor()) |
-                   bgcolor(PanelColor());
+                   bgcolor(PanelColor()) | isolated_borders;
         });
 
         return CatchEvent(renderer, [this](Event event) {
