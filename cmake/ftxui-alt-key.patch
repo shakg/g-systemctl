@@ -1,0 +1,31 @@
+diff --git a/src/ftxui/component/terminal_input_parser.cpp b/src/ftxui/component/terminal_input_parser.cpp
+index 3ba0e69d..42c2f3e0 100644
+--- a/src/ftxui/component/terminal_input_parser.cpp
++++ b/src/ftxui/component/terminal_input_parser.cpp
+@@ -277,12 +277,23 @@ TerminalInputParser::Output TerminalInputParser::ParseESC() {
+       return ParseCSI();
+     case ']':
+       return ParseOSC();
+-    default:
++    // Expecting 2 characters (e.g. SS3: ESC O A).
++    case ' ':
++    case '#':
++    case '%':
++    case '(':
++    case ')':
++    case '*':
++    case '+':
++    case 'O':
++    case 'N':
+       if (!Eat()) {
+         return UNCOMPLETED;
+-      } else {
+-        return SPECIAL;
+       }
++      return SPECIAL;
++    // Expecting 1 character (Alt+key).
++    default:
++      return SPECIAL;
+   }
+ }
+ 

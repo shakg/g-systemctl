@@ -688,7 +688,8 @@ namespace gsystemctl::ui
 
     std::string ContainersView::summary() const
     {
-        auto text = std::to_string(filtered_.size()) + "/" + std::to_string(containers_.size()) + " containers";
+        auto text = std::to_string(filtered_.size()) + "/" + std::to_string(containers_.size()) +
+                    (containers_.size() == 1 ? " container" : " containers");
         if (!projects_.empty())
             text += " · " + std::to_string(projects_.size()) + (projects_.size() == 1 ? " project" : " projects");
         return text;
@@ -1444,17 +1445,17 @@ namespace gsystemctl::ui
         auto input = Input(&add_path_, "/path/to/compose.yaml or its directory", option);
         auto renderer = Renderer(input, [this, input] {
             Elements lines = {
-                text("Add compose project") | bold | color(AccentColor()),
+                text(" Add compose project") | bold | color(AccentColor()),
                 separator() | color(BorderColor()),
-                hbox({text("Path ") | color(HeaderColor()), text("[") | color(BorderColor()),
+                hbox({text(" Path ") | color(HeaderColor()), text("[") | color(BorderColor()),
                       input->Render() | color(TextColor()) | flex, text("]") | color(BorderColor())}),
-                text("Projects with containers show up by themselves. Add one here to") | color(MutedColor()),
-                text("bring it up from g-systemctl, or keep it listed while it is down.") | color(MutedColor()),
+                text(" Projects with containers show up by themselves. Add one here to") | color(MutedColor()),
+                text(" bring it up from g-systemctl, or keep it listed while it is down.") | color(MutedColor()),
             };
             if (!add_error_.empty())
-                lines.push_back(paragraph(add_error_) | color(Colors::error_fg()));
+                lines.push_back(paragraph(" " + add_error_ + " ") | color(Colors::error_fg()));
             lines.push_back(separator() | color(BorderColor()));
-            lines.push_back(text("Enter add  Esc cancel") | color(MutedColor()));
+            lines.push_back(text(" Enter add  Esc cancel") | color(MutedColor()));
             return vbox(std::move(lines)) | size(WIDTH, GREATER_THAN, 66) | size(WIDTH, LESS_THAN, 90) |
                    borderStyled(ROUNDED, BorderColor()) | bgcolor(PanelColor());
         });
@@ -1490,7 +1491,7 @@ namespace gsystemctl::ui
 
         auto row = [](const std::string &label, Component input, const std::string &hint) {
             return hbox({
-                text(label) | color(HeaderColor()) | size(WIDTH, EQUAL, 15),
+                text(" " + label) | color(HeaderColor()) | size(WIDTH, EQUAL, 16),
                 text("[") | color(BorderColor()),
                 input->Render() | color(TextColor()) | size(WIDTH, EQUAL, 16),
                 text("]") | color(BorderColor()),
@@ -1500,7 +1501,7 @@ namespace gsystemctl::ui
 
         auto renderer = Renderer(inputs, [this, cpus, memory, swap, pids, restart, row] {
             Elements lines = {
-                hbox({text("Resources  ") | bold | color(AccentColor()), text(edit_target_name_) | color(WarningColor())}),
+                hbox({text(" Resources  ") | bold | color(AccentColor()), text(edit_target_name_) | color(WarningColor())}),
                 separator() | color(BorderColor()),
                 row("CPUs", cpus, "e.g. 0.5, 2"),
                 row("Memory", memory, "e.g. 256m, 2g"),
@@ -1508,16 +1509,16 @@ namespace gsystemctl::ui
                 row("PIDs limit", pids, "empty = unlimited"),
                 row("Restart", restart, "no|always|unless-stopped|on-failure[:N]"),
                 separator() | color(BorderColor()),
-                text("Applied live with `" + manager_->runtime_name() + " update`. Env, ports and volumes") |
+                text(" Applied live with `" + manager_->runtime_name() + " update`. Env, ports and volumes") |
                     color(MutedColor()),
-                text("need the container to be recreated.") | color(MutedColor()),
+                text(" need the container to be recreated.") | color(MutedColor()),
             };
             if (!edit_error_.empty())
             {
-                lines.push_back(paragraph(edit_error_) | color(Colors::error_fg()));
+                lines.push_back(paragraph(" " + edit_error_ + " ") | color(Colors::error_fg()));
             }
             lines.push_back(separator() | color(BorderColor()));
-            lines.push_back(text("Tab/↑↓ field  Enter apply  Esc cancel") | color(MutedColor()));
+            lines.push_back(text(" Tab/↑↓ field  Enter apply  Esc cancel") | color(MutedColor()));
             return vbox(std::move(lines)) | size(WIDTH, LESS_THAN, 80) | borderStyled(ROUNDED, BorderColor()) |
                    bgcolor(PanelColor());
         });
@@ -2107,7 +2108,7 @@ namespace gsystemctl::ui
         auto style = project_style(p);
         lines.push_back(field_row("State", p.down() ? "down · no containers" : style.label + " (" +
                                                                                   std::to_string(p.services.size()) +
-                                                                                  " services)",
+                                                                                  (p.services.size() == 1 ? " service)" : " services)"),
                                   style.fg));
         lines.push_back(field_row("Directory", p.ref.working_dir));
         if (p.ref.config_files.empty())

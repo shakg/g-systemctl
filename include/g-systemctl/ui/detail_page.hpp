@@ -143,12 +143,27 @@ namespace gsystemctl::ui
         {
             using namespace ftxui;
             count_ = static_cast<int>(lines.size());
-            offset_ = std::clamp(offset_, 0, std::max(0, count_ - 1));
+            // Height from the previous frame (1 before the first layout).
+            const int visible = box_.y_max - box_.y_min + 1;
+            // Stop scrolling once the last row is at the bottom: the furthest
+            // offset is the first row from which everything below still fits.
+            max_offset_ = std::max(0, count_ - 1);
+            if (visible > 1)
+            {
+                int below = 0;
+                for (int i = count_ - 1; i >= 0; --i)
+                {
+                    lines[i]->ComputeRequirement();
+                    below += lines[i]->requirement().min_y;
+                    if (below > visible)
+                        break;
+                    max_offset_ = i;
+                }
+            }
+            offset_ = std::clamp(offset_, 0, max_offset_);
             auto content = vbox(Elements(lines.begin() + offset_, lines.end()));
             content->ComputeRequirement();
             const int needed = content->requirement().min_y;
-            // Height from the previous frame; good enough to say whether more is hidden below.
-            const int visible = box_.y_max - box_.y_min + 1;
             if (visible > 1 && needed > visible)
             {
                 const int hidden = needed - (visible - 1);
@@ -161,13 +176,14 @@ namespace gsystemctl::ui
             }
             return content | yframe | flex | reflect(box_);
         }
-        void scroll(int delta) { offset_ = std::clamp(offset_ + delta, 0, std::max(0, count_ - 1)); }
+        void scroll(int delta) { offset_ = std::clamp(offset_ + delta, 0, max_offset_); }
         void reset() { offset_ = 0; }
         bool contains(int x, int y) const { return box_.Contain(x, y); }
 
     private:
         int offset_ = 0;
         int count_ = 0;
+        int max_offset_ = 0;
         ftxui::Box box_;
     };
 
