@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ftxui/component/component_options.hpp>
+#include <iostream>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -208,6 +209,8 @@ namespace gsystemctl::ui
             poller_.join();
         if (action_thread_.joinable())
             action_thread_.join();
+        if (shell_thread_.joinable())
+            shell_thread_.join();
     }
 
     // ---- polling ------------------------------------------------------------
@@ -700,9 +703,15 @@ namespace gsystemctl::ui
         if (detail_open_)
         {
             const auto *c = action_target();
-            return c && !c->compose_project.empty()
-                       ? "  ·  ↑↓ scroll info  ·  Alt+v project  ·  Enter expand logs  ·  Esc back  ·  ? help  "
-                       : "";
+            if (!c)
+                return "";
+            auto it = shells_.find(c->id);
+            const bool shell = c->is_running() && it != shells_.end() && it->second.ok;
+            if (c->compose_project.empty() && !shell)
+                return "";
+            return std::string("  ·  ↑↓ scroll info") + (shell ? "  ·  Alt+t shell" : "") +
+                   (c->compose_project.empty() ? "" : "  ·  Alt+v project") +
+                   "  ·  Enter expand logs  ·  Esc back  ·  ? help  ";
         }
         if (selected_project())
             return "  ·  ←→ fold  ·  Enter open  ·  Alt+o start  ·  Alt+x stop  ·  Alt+d down  ·  Alt+a add  ·  ? help  ";
@@ -975,6 +984,105 @@ namespace gsystemctl::ui
                         "Take down " + name + "? Its containers and networks are removed; volumes are kept.", "Down");
     }
 
+    // ---- shell ---------------------------------------------------------------------
+
+    void ContainersView::shell_target()
+    {
+        clear_messages();
+        if (project_target())
+        {
+            status_message_ = "A shell opens in a container: select one of the project's containers";
+            return;
+        }
+        const auto *c = action_target();
+        if (!c)
+            return;
+        if (!c->is_running())
+        {
+            status_message_ = c->name + " is not running (Alt+o to start)";
+            return;
+        }
+        auto it = shells_.find(c->id);
+        if (it != shells_.end() && it->second.ok)
+        {
+            enter_shell(c->id, c->name, it->second.shell);
+            return;
+        }
+        status_message_ = "Looking for a shell in " + c->name + "...";
+        detect_shell(c->id, true);
+    }
+
+    void ContainersView::detect_shell(const std::string &id, bool open_after)
+    {
+        auto &info = shells_[id];
+        if (open_after)
+            shell_open_pending_ = id;
+        if (info.ok || info.checking)
+            return;
+        info.checking = true;
+        info.reason.clear();
+        if (shell_thread_.joinable())
+            shell_thread_.join();
+        shell_thread_ = std::thread([this, id] {
+            auto [ok, value] = manager_->detect_shell(id);
+            screen_.Post([this, id, ok = ok, value = value] {
+                auto &info = shells_[id];
+                info.checking = false;
+                info.ok = ok;
+                info.shell = ok ? value : "";
+                info.reason = ok ? "" : value;
+                if (shell_open_pending_ != id)
+                    return;
+                shell_open_pending_.clear();
+                const auto *c = find_container(id);
+                const std::string name = c ? c->name : id;
+                if (ok)
+                {
+                    status_message_.clear();
+                    enter_shell(id, name, value);
+                }
+                else
+                {
+                    status_message_.clear();
+                    error_message_ = "No shell in " + name + ": " + value;
+                }
+            });
+            screen_.PostEvent(Event::Custom);
+        });
+    }
+
+    void ContainersView::enter_shell(const std::string &id, const std::string &name, const std::string &shell)
+    {
+        int exit_code = 0;
+        bool quick = false;
+        screen_.WithRestoredIO([&] {
+            std::cout << "\n── " << shell << " in " << name << " · exit or Ctrl+D returns to g-systemctl ──\n"
+                      << std::flush;
+            auto started = std::chrono::steady_clock::now();
+            exit_code = manager_->open_shell(id, shell);
+            quick = std::chrono::steady_clock::now() - started < std::chrono::seconds(1);
+            if (exit_code != 0 && quick)
+            {
+                // exec itself failed (e.g. the container just stopped); keep its error readable.
+                std::cout << "\nThe shell exited with code " << exit_code
+                          << ". Press Enter to return to g-systemctl..." << std::flush;
+                std::string line;
+                std::getline(std::cin, line);
+            }
+        })();
+        clear_messages();
+        if (exit_code != 0 && quick)
+        {
+            error_message_ = "Shell in " + name + " failed (exit code " + std::to_string(exit_code) + ")";
+            shells_.erase(id); // detect again next time
+        }
+        else
+        {
+            status_message_ = "Left " + shell + " in " + name;
+        }
+        refresh_now();
+    }
+
     void ContainersView::fold_selected(bool collapse)
     {
         if (selected_index_ < 0 || selected_index_ >= static_cast<int>(rows_.size()))
@@ -1043,6 +1151,8 @@ namespace gsystemctl::ui
         logs_name_ = c->name;
         details_ = ContainerDetails{};
         reload_details();
+        if (c->is_running())
+            detect_shell(c->id, false);
         logs_.open(c->name + " (" + c->id + ")",
                    "Starting: " + manager_->runtime_name() + " logs -f --tail " + std::to_string(kLogTail) + " " + c->name);
         attach_logs(kLogTail, "", false);
@@ -1163,6 +1273,7 @@ namespace gsystemctl::ui
         }
         if (!it->is_running())
             return;
+        detect_shell(it->id, false);
         attach_logs(-1, logs_ended_at_, true);
     }
 
@@ -1555,6 +1666,11 @@ namespace gsystemctl::ui
             compose_down_target();
             return true;
         }
+        if (event == Event::Special("\x1b" "t"))
+        {
+            shell_target();
+            return true;
+        }
         if (event == Event::Special("\x1b" "a"))
         {
             if (!detail_open_)
@@ -1623,6 +1739,9 @@ namespace gsystemctl::ui
                     if (graphs_)
                         graphs_->toggle();
                     return true;
+                case ActionBar::Action::Shell:
+                    shell_target();
+                    return true;
                 case ActionBar::Action::None:
                     break;
                 }
@@ -1680,8 +1799,15 @@ namespace gsystemctl::ui
         auto title = detail_title_bar(logs_name_, c ? c->image : details_.image, std::move(actions));
         Element summary = logs_full_ ? text("") : summary_.render(render_summary());
         const bool graphs = graphs_ ? graphs_->shown() : graphs_fit();
-        return detail_page(std::move(title), std::move(summary),
-                           logs_.render(actions_.render_log_header(logs_full_, graphs, graphs_fit())), logs_full_,
+        // The title bar is full at narrow widths; the shell button goes with the log buttons.
+        auto log_header = actions_.render_log_header(logs_full_, graphs, graphs_fit());
+        if (c)
+        {
+            auto it = shells_.find(c->id);
+            log_header = hbox({actions_.render_shell(c->is_running() && it != shells_.end() && it->second.ok),
+                               std::move(log_header)});
+        }
+        return detail_page(std::move(title), std::move(summary), logs_.render(std::move(log_header)), logs_full_,
                            logs_full_ || !graphs ? nullptr : render_graphs());
     }
 
@@ -1870,6 +1996,16 @@ namespace gsystemctl::ui
                 lines.push_back(field_row("PIDs", c->stats.pids));
                 lines.push_back(field_row("Net I/O", c->stats.net_io));
                 lines.push_back(field_row("Block I/O", c->stats.block_io));
+            }
+            if (c->is_running())
+            {
+                auto it = shells_.find(c->id);
+                if (it == shells_.end() || it->second.checking)
+                    lines.push_back(field_row("Shell", "checking...", MutedColor()));
+                else if (it->second.ok)
+                    lines.push_back(field_row("Shell", it->second.shell + "  (Alt+t opens a terminal)", AccentColor()));
+                else
+                    lines.push_back(field_row("Shell", "unavailable: " + it->second.reason, MutedColor()));
             }
         }
         lines.push_back(field_row("ID", d.id));

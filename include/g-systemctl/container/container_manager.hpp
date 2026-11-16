@@ -44,6 +44,19 @@ public:
     // Applies limits to a running or stopped container without recreating it.
     virtual Result update_resources(const std::string& id, const ResourceUpdate& update) = 0;
 
+    // ---- shell ----
+    // Finds a shell in a running container by trying each of shell_candidates()
+    // with `exec`. {true, "bash"} or {false, reason}, e.g. the container has
+    // no shell or the runtime cannot exec into it.
+    virtual Result detect_shell(const std::string& id) = 0;
+    // Runs `exec -it ID SHELL` attached to the current terminal and returns its
+    // exit code. The caller must hand the terminal over first.
+    virtual int open_shell(const std::string& id, const std::string& shell) = 0;
+    static const std::vector<std::string>& shell_candidates() {
+        static const std::vector<std::string> shells{"bash", "sh"};
+        return shells;
+    }
+
     // Follows the container's logs, starting with the last `tail` lines
     // (tail < 0: all). A non-empty `since` (unix timestamp) skips older lines.
     // The runtime stops following when the container stops; `on_end` runs on

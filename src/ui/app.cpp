@@ -701,6 +701,7 @@ namespace gsystemctl::ui
                 case ActionBar::Action::ToggleGraphs:
                     graphs_.toggle();
                     return true;
+                case ActionBar::Action::Shell: // containers only
                 case ActionBar::Action::None:
                     break;
                 }
@@ -1185,6 +1186,7 @@ namespace gsystemctl::ui
                 key("Alt+l", "Open with full-size logs"),
                 key("Alt+o / x / r", "Start / stop / restart (stop, restart ask y/n)"),
                 key("Alt+u", "Edit resource limits (docker/podman update)"),
+                key("Alt+t", "Shell in the container (bash, else sh)"),
                 key("Alt+s", "Show/hide secret env values"),
                 key("Alt+Shift+r", "Refresh now"),
                 gap(),

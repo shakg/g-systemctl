@@ -11,7 +11,7 @@ A terminal UI for Docker or Podman containers and system services (systemctl on 
 
 ## Features
 
-- Containers: live CPU/memory/PIDs, start/stop/restart, logs, inspect, change resource limits in place
+- Containers: live CPU/memory/PIDs, start/stop/restart, logs, inspect, change resource limits in place, open a shell (bash or sh)
 - Compose: containers grouped by project; start/stop/restart, `up -d`, build, pull, down; flags changed compose files
 - Docker or Podman, picked automatically (see [Podman](#podman))
 - Services: list, filter, start/stop/restart, follow `journalctl` logs, edit unit files
@@ -69,6 +69,7 @@ Starting and stopping services needs root; run with `sudo` or enter the password
 | `Up` / `Down` | Move |
 | `Enter` / `Esc` | Open / back |
 | `Alt+o` / `Alt+x` / `Alt+r` | Start / stop / restart (stop and restart ask y/n) |
+| `Alt+t` | Shell in the selected container (bash, else sh) |
 | `Alt+1` / `Alt+2` | Containers / Services tab |
 | `?` | All shortcuts |
 | `Alt+q` | Quit |
