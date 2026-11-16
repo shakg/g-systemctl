@@ -1584,6 +1584,27 @@ namespace gsystemctl::ui
             clear_messages();
             return true;
         }
+        else if (event == Event::PageUp || event == Event::PageDown)
+        {
+            // One screen of rows, from the list's height in the last frame.
+            const int page = std::max(1, list_box_.y_max - list_box_.y_min);
+            const bool page_up = event == Event::PageUp;
+            select(selected_index_ + (page_up ? -page : page), page_up ? -1 : 1);
+            clear_messages();
+            return true;
+        }
+        else if (event == Event::Home || event == Event::End || event.input() == "\x1b[1~" ||
+                 event.input() == "\x1b[4~" || event.input() == "\x1b[7~" || event.input() == "\x1b[8~" ||
+                 event.input() == "\x1bOH" || event.input() == "\x1bOF")
+        {
+            // FTXUI 5 knows only ESC[H / ESC[F; tmux, screen and rxvt send the others.
+            const auto &in = event.input();
+            const bool home = event == Event::Home || in == "\x1b[1~" || in == "\x1b[7~" || in == "\x1bOH";
+            // A label row at either end is stepped past by select().
+            select(home ? 0 : static_cast<int>(rows_.size()) - 1, home ? 1 : -1);
+            clear_messages();
+            return true;
+        }
         else if (event == Event::ArrowLeft || event == Event::ArrowRight)
         {
             fold_selected(event == Event::ArrowLeft);
@@ -1892,7 +1913,7 @@ namespace gsystemctl::ui
 
         return vbox({
                    header,
-                   vbox(std::move(rows)) | vscroll_indicator | yframe | flex,
+                   vbox(std::move(rows)) | vscroll_indicator | yframe | flex | reflect(list_box_),
                }) |
                flex;
     }

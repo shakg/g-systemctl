@@ -143,6 +143,7 @@ namespace gsystemctl::ui
         bool busy_ = false;
         std::string busy_message_;
         std::vector<ftxui::Box> item_boxes_;
+        ftxui::Box list_box_; // the list's area, for PgUp/PgDn
         // Action progress in the list rows, keyed like selected_key_.
         RowActivity row_activity_;
 

@@ -1313,6 +1313,7 @@ namespace gsystemctl::ui
             body = {
                 heading("Containers"),
                 key("Enter / Alt+i", "Open detail page (summary + logs)"),
+                key("PgUp/PgDn  Home/End", "Move a page / to the first or last row"),
                 key("Alt+l", "Open with full-size logs"),
                 key("Alt+o / x / r", "Start / stop / restart (stop, restart ask y/n)"),
                 key("Alt+u", "Edit resource limits (docker/podman update)"),
@@ -1407,7 +1408,7 @@ namespace gsystemctl::ui
                    hbox({text(" Help ") | bold | color(AccentColor()), filler(), hbox(std::move(tabs))}),
                    separator() | color(BorderColor()),
                    // Fixed size, so switching tabs does not resize the dialog.
-                   vbox(std::move(body)) | size(HEIGHT, EQUAL, 19) | size(WIDTH, EQUAL, 86),
+                   vbox(std::move(body)) | size(HEIGHT, EQUAL, 21) | size(WIDTH, EQUAL, 86),
                    separator() | color(BorderColor()),
                    text(" Tab / ←→ / 1-4 switch  ·  Esc or ? close") | color(MutedColor()),
                }) |
