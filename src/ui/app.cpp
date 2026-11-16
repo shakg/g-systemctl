@@ -1121,6 +1121,7 @@ namespace gsystemctl::ui
                           right_cell("PID", 7, HeaderColor()),
                           right_cell("CPU", 7, HeaderColor()),
                           right_cell("MEM", 8, HeaderColor()),
+                          text(" "), // the rows lose this column to vscroll_indicator
                       }) |
                       bgcolor(PanelColor());
 

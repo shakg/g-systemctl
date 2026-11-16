@@ -1829,7 +1829,7 @@ namespace gsystemctl::ui
                           right_cell("CPU", 8, HeaderColor()),
                           right_cell("MEM", 22, HeaderColor()),
                           right_cell("PIDS", 6, HeaderColor()),
-                          text(" "),
+                          text("  "), // trailing space + the column rows lose to vscroll_indicator
                       }) |
                       bgcolor(PanelColor());
 
