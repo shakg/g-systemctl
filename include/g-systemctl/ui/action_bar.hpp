@@ -53,7 +53,7 @@ namespace gsystemctl::ui
         {
             visible_ = true;
             shell_visible_ = true;
-            return button("⌨ Shell", "Alt+t", theme::AccentColor(), enabled, shell_);
+            return button(">_ Shell", "Alt+t", theme::AccentColor(), enabled, shell_);
         }
 
         // `full`: logs fill the page, so the button shrinks them back.
