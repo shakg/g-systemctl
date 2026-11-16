@@ -4,12 +4,14 @@
 #include "g-systemctl/core/logging_manager.hpp"
 #include "g-systemctl/core/service.hpp"
 #include "g-systemctl/core/command_executor.hpp"
+#include "g-systemctl/core/updater.hpp"
 #include "g-systemctl/ui/action_bar.hpp"
 #include "g-systemctl/ui/confirm_dialog.hpp"
 #include "g-systemctl/ui/containers_view.hpp"
 #include "g-systemctl/ui/detail_page.hpp"
 #include "g-systemctl/ui/log_panel.hpp"
 #include "g-systemctl/ui/metric_graph.hpp"
+#include "g-systemctl/ui/update_dialog.hpp"
 #include <condition_variable>
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
@@ -17,6 +19,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -35,8 +38,9 @@ namespace gsystemctl::ui
         };
 
         // `fallback_to_services`: switch to Services if the container runtime turns out to be unavailable.
+        // `update_check`: look for a new release (at most daily) unless the user opted out.
         App(bool system_mode = false, const std::string &initial_filter = "", Tab initial_tab = Tab::Containers,
-            bool fallback_to_services = true);
+            bool fallback_to_services = true, bool update_check = true);
         ~App();
         int run();
 
@@ -109,6 +113,7 @@ namespace gsystemctl::ui
             Stop,
             Restart,
             DaemonReload,
+            Update,
         };
         AuthAction pending_auth_action_ = AuthAction::None;
         ServiceUnit pending_auth_service_;
@@ -118,6 +123,18 @@ namespace gsystemctl::ui
         bool busy_ = false;
         std::string busy_message_;
         std::thread worker_;
+
+        // Update check and install, on update_thread_. The offer waits until no
+        // other dialog is open.
+        std::unique_ptr<Updater> updater_;
+        std::thread update_thread_;
+        std::optional<Updater::Release> update_offer_;
+        Updater::Release update_release_;
+        Updater::Plan update_plan_;
+        UpdateDialog update_dialog_;
+        bool update_busy_ = false;
+        // Top bar, e.g. "↑ 2.3.0 available: g-systemctl --update".
+        std::string update_notice_;
 
         void refresh_services();
         void apply_filter();
@@ -138,6 +155,11 @@ namespace gsystemctl::ui
         void open_service_detail(bool logs_full);
         void close_service_detail();
         void load_service_details();
+        void start_update_check();
+        // Opens the pending offer once no other dialog is open.
+        void show_update_offer();
+        void on_update_choice(UpdateDialog::Choice choice);
+        void install_update(const std::string &password = "");
         void sampler_loop();
         // Points the sampler at `unit`, or idles it if empty.
         void set_sampler_unit(const std::string &unit);
