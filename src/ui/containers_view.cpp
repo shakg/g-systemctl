@@ -1960,7 +1960,7 @@ namespace gsystemctl::ui
         if (!status && child)
             status = row_activity_.render(kProjectKey + c.compose_project);
         if (!status)
-            status = text(c.status) | color(MutedColor());
+            status = text(ellipsize(c.status, 22)) | color(MutedColor());
         return hbox({
             name | flex,
             cell(c.image, 24, MutedColor()),
@@ -2053,7 +2053,7 @@ namespace gsystemctl::ui
 
         section("Mounts");
         for (const auto &m : d.mounts)
-            lines.push_back(text(" " + m) | color(TextColor()));
+            lines.push_back(hbox({text(" "), wrap_text_element(m) | flex}) | color(TextColor()));
         if (d.mounts.empty())
             lines.push_back(text(" none") | color(MutedColor()));
 
@@ -2065,7 +2065,7 @@ namespace gsystemctl::ui
             {
                 shown = e.substr(0, e.find('=')) + "=••••••";
             }
-            lines.push_back(text(" " + shown) | color(TextColor()));
+            lines.push_back(hbox({text(" "), wrap_text_element(shown) | flex}) | color(TextColor()));
         }
         if (d.env.empty())
             lines.push_back(text(" none") | color(MutedColor()));
