@@ -209,14 +209,17 @@ namespace gsystemctl::ui
             poller_.join();
         if (action_thread_.joinable())
             action_thread_.join();
-        if (shell_thread_.joinable())
-            shell_thread_.join();
+        for (auto &job : shell_jobs_)
+            job.thread.join();
     }
 
     // ---- polling ------------------------------------------------------------
 
     void ContainersView::set_active(bool active)
     {
+        active_ = active;
+        if (!active)
+            shell_open_pending_.clear();
         {
             std::lock_guard<std::mutex> lock(poll_mutex_);
             poll_active_ = active;
@@ -290,6 +293,18 @@ namespace gsystemctl::ui
             });
         }
 
+        // Which drift checks this poll does. Read before listing: a request made
+        // after the list was taken (e.g. by a finished `up -d`) must wait for the
+        // next poll, or it would be answered with the old containers' labels.
+        bool check_all = false;
+        std::string open_project;
+        {
+            std::lock_guard<std::mutex> lock(poll_mutex_);
+            check_all = poll_drift_all_ || ++poll_count_ % kDriftEvery == 0;
+            poll_drift_all_ = false;
+            open_project = poll_project_;
+        }
+
         std::vector<Container> listed;
         try
         {
@@ -305,6 +320,11 @@ namespace gsystemctl::ui
         catch (const std::exception &e)
         {
             runtime_ok = false;
+            if (check_all)
+            {
+                std::lock_guard<std::mutex> lock(poll_mutex_);
+                poll_drift_all_ = true;
+            }
             std::string message = e.what();
             screen_.Post([this, message] {
                 available_ = false;
@@ -328,14 +348,6 @@ namespace gsystemctl::ui
         }
 
         // Compare each compose service's config hash with its files as they are now.
-        bool check_all = false;
-        std::string open_project;
-        {
-            std::lock_guard<std::mutex> lock(poll_mutex_);
-            check_all = poll_drift_all_ || ++poll_count_ % kDriftEvery == 0;
-            poll_drift_all_ = false;
-            open_project = poll_project_;
-        }
         if (!poller_drift_ok_ || (!check_all && open_project.empty()))
             return;
         std::map<std::string, std::vector<std::string>> drift;
@@ -1021,9 +1033,16 @@ namespace gsystemctl::ui
             return;
         info.checking = true;
         info.reason.clear();
-        if (shell_thread_.joinable())
-            shell_thread_.join();
-        shell_thread_ = std::thread([this, id] {
+        shell_jobs_.erase(std::remove_if(shell_jobs_.begin(), shell_jobs_.end(),
+                                         [](ShellJob &job) {
+                                             if (!*job.done)
+                                                 return false;
+                                             job.thread.join(); // already returned
+                                             return true;
+                                         }),
+                          shell_jobs_.end());
+        auto done = std::make_shared<std::atomic<bool>>(false);
+        shell_jobs_.push_back({std::thread([this, id, done] {
             auto [ok, value] = manager_->detect_shell(id);
             screen_.Post([this, id, ok = ok, value = value] {
                 auto &info = shells_[id];
@@ -1034,6 +1053,13 @@ namespace gsystemctl::ui
                 if (shell_open_pending_ != id)
                     return;
                 shell_open_pending_.clear();
+                // Only if that container is still the one the user is on.
+                const auto *target = active_ ? action_target() : nullptr;
+                if (!target || target->id != id)
+                {
+                    status_message_.clear();
+                    return;
+                }
                 const auto *c = find_container(id);
                 const std::string name = c ? c->name : id;
                 if (ok)
@@ -1048,7 +1074,8 @@ namespace gsystemctl::ui
                 }
             });
             screen_.PostEvent(Event::Custom);
-        });
+            *done = true;
+        }), done});
     }
 
     void ContainersView::enter_shell(const std::string &id, const std::string &name, const std::string &shell)
@@ -1160,6 +1187,7 @@ namespace gsystemctl::ui
 
     void ContainersView::close_detail()
     {
+        shell_open_pending_.clear();
         stop_logs();
         detail_open_ = false;
         logs_full_ = false;
