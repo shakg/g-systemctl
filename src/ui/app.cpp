@@ -976,15 +976,15 @@ namespace gsystemctl::ui
         auto password_input = Input(&auth_password_, "sudo password", password_option);
         auto auth_renderer = Renderer(password_input, [this, password_input] {
             return vbox({
-                       text("Authentication required") | bold | color(AccentColor()),
+                       text(" Authentication required") | bold | color(AccentColor()),
                        separator() | color(BorderColor()),
-                       text(auth_dialog_message_) | color(TextColor()),
+                       text(" " + auth_dialog_message_ + " ") | color(TextColor()),
                        hbox({
-                           text("Password: ") | color(MutedColor()),
+                           text(" Password: ") | color(MutedColor()),
                            password_input->Render() | flex,
                        }),
                        separator() | color(BorderColor()),
-                       text("Enter submit  Esc cancel") | color(MutedColor()),
+                       text(" Enter submit  Esc cancel") | color(MutedColor()),
                    }) |
                    size(WIDTH, GREATER_THAN, 44) |
                    borderStyled(ROUNDED, BorderColor()) |
@@ -1054,7 +1054,8 @@ namespace gsystemctl::ui
             : on_detail  ? "  ·  ↑↓ scroll info  ·  PgUp/PgDn scroll logs  ·  Enter expand logs  ·  Esc back  ·  ? help  "
                          : "  ·  ↑↓ move  ·  Enter open  ·  Alt+o start  ·  Alt+x stop  ·  Alt+r restart  ·  ? help  ";
         const auto summary = containers ? containers_view_->summary()
-                                        : std::to_string(filtered_services_.size()) + "/" + std::to_string(services_.size()) + " services";
+                                        : std::to_string(filtered_services_.size()) + "/" + std::to_string(services_.size()) +
+                                              (services_.size() == 1 ? " service" : " services");
         layout.push_back(hbox({
             text(" Filter: ") | color(MutedColor()),
             text(filter + "█") | color(AccentColor()),
@@ -1461,7 +1462,7 @@ namespace gsystemctl::ui
                    hbox({text(" Help ") | bold | color(AccentColor()), filler(), hbox(std::move(tabs))}),
                    separator() | color(BorderColor()),
                    // Fixed size, so switching tabs does not resize the dialog.
-                   vbox(std::move(body)) | size(HEIGHT, EQUAL, 19) | size(WIDTH, EQUAL, 86),
+                   hbox({text(" "), vbox(std::move(body))}) | size(HEIGHT, EQUAL, 19) | size(WIDTH, EQUAL, 87),
                    separator() | color(BorderColor()),
                    text(" Tab / ←→ / 1-4 switch  ·  Esc or ? close") | color(MutedColor()),
                }) |
