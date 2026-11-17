@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <string>
 #include <unistd.h>
 
 void print_help()
@@ -92,47 +93,59 @@ int main(int argc, char *argv[])
     bool fallback_to_services = true;
     bool update_check = true;
 
+    auto usage_error = [](const std::string &message) {
+        std::cerr << "g-systemctl: " << message << "\n"
+                  << "Usage: g-systemctl [options]  (g-systemctl --help lists them)\n";
+        return 2;
+    };
     for (int i = 1; i < argc; ++i)
     {
-        if (std::strcmp(argv[i], "-h") == 0 || std::strcmp(argv[i], "--help") == 0)
+        const std::string arg = argv[i];
+        if (arg == "-h" || arg == "--help")
         {
             print_help();
             return 0;
         }
-        if (std::strcmp(argv[i], "-v") == 0 || std::strcmp(argv[i], "--version") == 0)
+        else if (arg == "-v" || arg == "--version")
         {
             print_version();
             return 0;
         }
-        if (std::strcmp(argv[i], "--update") == 0)
+        else if (arg == "--update")
         {
             return run_update();
         }
-        if (std::strcmp(argv[i], "--no-update-check") == 0)
+        else if (arg == "--no-update-check")
         {
             update_check = false;
         }
-        if (std::strcmp(argv[i], "--system") == 0)
+        else if (arg == "--system")
         {
             system_mode = true;
         }
-        if (std::strcmp(argv[i], "--user") == 0)
+        else if (arg == "--user")
         {
             system_mode = false;
         }
-        if (std::strcmp(argv[i], "-c") == 0 || std::strcmp(argv[i], "--containers") == 0)
+        else if (arg == "-c" || arg == "--containers")
         {
             initial_tab = gsystemctl::ui::App::Tab::Containers;
             fallback_to_services = false;
         }
-        if (std::strcmp(argv[i], "-s") == 0 || std::strcmp(argv[i], "--services") == 0)
+        else if (arg == "-s" || arg == "--services")
         {
             initial_tab = gsystemctl::ui::App::Tab::Services;
             fallback_to_services = false;
         }
-        if ((std::strcmp(argv[i], "-f") == 0 || std::strcmp(argv[i], "--filter") == 0) && i + 1 < argc)
+        else if (arg == "-f" || arg == "--filter")
         {
+            if (i + 1 >= argc)
+                return usage_error("option " + arg + " needs a value");
             initial_filter = argv[++i];
+        }
+        else
+        {
+            return usage_error((arg.rfind("-", 0) == 0 ? "unknown option: " : "unexpected argument: ") + arg);
         }
     }
 
