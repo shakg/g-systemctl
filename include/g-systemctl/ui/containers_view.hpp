@@ -150,6 +150,7 @@ namespace gsystemctl::ui
         SortOrder sort_;
         std::vector<ftxui::Box> header_boxes_;
         void sort_by(SortColumn column); // same column again: reverse
+        ftxui::Box list_box_; // the list's area, for PgUp/PgDn
         // Action progress in the list rows, keyed like selected_key_.
         RowActivity row_activity_;
 
