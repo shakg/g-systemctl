@@ -79,14 +79,15 @@ namespace gsystemctl::ui
         {
             visible_ = true;
             shell_visible_ = true;
-            return button(">_ Shell", "Alt+t", theme::AccentColor(), enabled, shell_);
+            return log_button(">_", "Shell", "Alt+t", theme::AccentColor(), enabled, shell_);
         }
 
         // `full`: logs fill the page, so the button shrinks them back.
         ftxui::Element render_logs_toggle(bool full)
         {
             visible_ = true;
-            return button(full ? "⤡ Shrink" : "⤢ Expand", "Enter", theme::AccentColor(), true, logs_toggle_);
+            return log_button(full ? "⤡" : "⤢", full ? "Shrink" : "Expand", "Enter", theme::AccentColor(), true,
+                              logs_toggle_);
         }
 
         // `shown`: graphs are on. `side_by_side`: they sit beside the summary;
@@ -94,8 +95,27 @@ namespace gsystemctl::ui
         ftxui::Element render_graphs_toggle(bool shown, bool side_by_side)
         {
             visible_ = true;
-            const char *label = side_by_side ? (shown ? "▦ Hide graphs" : "▦ Show graphs") : (shown ? "▤ Info" : "▦ Graphs");
-            return button(label, "Alt+g", theme::AccentColor(), true, graphs_toggle_);
+            return log_button(graphs_glyph(shown, side_by_side), graphs_word(shown, side_by_side), "Alt+g",
+                              theme::AccentColor(), true, graphs_toggle_);
+        }
+
+        // Call before the log-header buttons are drawn each frame: drops their key
+        // hints, then their words, when the full set would leave the log title
+        // less than kLogTitleRoom cells.
+        void fit_log_header(bool with_shell, bool logs_full, bool graphs_shown, bool side_by_side)
+        {
+            const int room = ftxui::Terminal::Size().dimx - 2;
+            for (log_level_ = 0; log_level_ < 2; ++log_level_)
+            {
+                int need = kLogTitleRoom + log_button_width("⤢", logs_full ? "Shrink" : "Expand", "Enter");
+                if (!logs_full)
+                    need += log_button_width(graphs_glyph(graphs_shown, side_by_side),
+                                             graphs_word(graphs_shown, side_by_side), "Alt+g");
+                if (with_shell)
+                    need += log_button_width(">_", "Shell", "Alt+t");
+                if (need <= room)
+                    return;
+            }
         }
 
         // The buttons of the log header: graphs toggle (not on full-size logs) and expand/shrink.
@@ -163,6 +183,29 @@ namespace gsystemctl::ui
         ftxui::Element button(const TitleButton &b, ftxui::Color fg, bool enabled, ftxui::Box &box) const
         {
             return button(label(b), key(b), fg, enabled, box);
+        }
+
+        // " LOGS " + a name + "following  ", before the log buttons shorten.
+        static constexpr int kLogTitleRoom = 40;
+        int log_level_ = 0; // 0 full, 1 no key, 2 glyph only
+
+        static const char *graphs_glyph(bool shown, bool side_by_side)
+        {
+            return !side_by_side && shown ? "▤" : "▦";
+        }
+        static const char *graphs_word(bool shown, bool side_by_side)
+        {
+            return side_by_side ? (shown ? "Hide graphs" : "Show graphs") : (shown ? "Info" : "Graphs");
+        }
+        int log_button_width(const std::string &glyph, const std::string &word, const std::string &key) const
+        {
+            const std::string label = log_level_ >= 2 ? glyph : glyph + " " + word;
+            return ftxui::string_width(" " + label + " ") + (log_level_ >= 1 ? 0 : ftxui::string_width(key + " ")) + 1;
+        }
+        ftxui::Element log_button(const std::string &glyph, const std::string &word, const std::string &key,
+                                  ftxui::Color fg, bool enabled, ftxui::Box &box) const
+        {
+            return button(log_level_ >= 2 ? glyph : glyph + " " + word, log_level_ >= 1 ? "" : key, fg, enabled, box);
         }
 
         bool visible_ = false;

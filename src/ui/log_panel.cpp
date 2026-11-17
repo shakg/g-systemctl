@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <ftxui/dom/node.hpp>
 #include <ftxui/dom/requirement.hpp>
+#include <ftxui/screen/string.hpp>
+#include <ftxui/screen/terminal.hpp>
 
 using namespace ftxui;
 
@@ -187,12 +189,32 @@ namespace gsystemctl::ui
         Element body = lines.empty() ? text("Waiting for log output...") | dim
                                      : std::make_shared<WrappedLines>(std::move(lines), scroll_position, wrap_width_);
 
+        // Fit the header: the buttons were already shortened by their owner; the
+        // state shortens to "paused", then the title ends in "…". Always a gap
+        // between title and state.
+        actions->ComputeRequirement();
+        const int width = box_.x_max - box_.x_min + 1 > 1 ? box_.x_max - box_.x_min + 1 : Terminal::Size().dimx - 2;
+        const int fixed = string_width(" LOGS ") + 2 + actions->requirement().min_x;
+        std::string state = following ? "following  " : "paused (scroll to end to follow)  ";
+        if (!following && fixed + string_width(title) + string_width(state) > width)
+            state = "paused  ";
+        const int title_room = width - fixed - string_width(state);
+        auto glyphs = Utf8ToGlyphs(title);
+        if (static_cast<int>(glyphs.size()) > title_room)
+        {
+            title.clear();
+            for (int i = 0; i < title_room - 1; ++i)
+                title += glyphs[i];
+            title += title_room > 0 ? "…" : "";
+        }
+
         return vbox({
                    hbox({
                        text(" LOGS ") | color(HeaderColor()),
                        text(title) | color(WarningColor()),
+                       text("  "),
                        filler(),
-                       text(following ? "following  " : "paused (scroll to end to follow)  ") | color(MutedColor()),
+                       text(state) | color(MutedColor()),
                        std::move(actions),
                    }),
                    separator() | color(BorderColor()),
