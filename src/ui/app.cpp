@@ -59,13 +59,18 @@ namespace gsystemctl::ui
         sampler_ = std::thread([this] { sampler_loop(); });
         if (update_check)
         {
-            updater_ = std::make_unique<Updater>(executor_, G_SYSTEMCTL_VERSION);
+            updater_ = std::make_shared<Updater>(executor_, G_SYSTEMCTL_VERSION);
             start_update_check();
         }
     }
 
     App::~App()
     {
+        // From here on the update check thread must not post to screen_.
+        {
+            std::lock_guard<std::mutex> lock(update_link_->mutex);
+            update_link_->alive = false;
+        }
         {
             std::lock_guard<std::mutex> lock(sampler_mutex_);
             sampler_stop_ = true;
@@ -81,8 +86,31 @@ namespace gsystemctl::ui
         }
         if (update_thread_.joinable())
         {
-            update_thread_.join();
+            // An install must finish (quit() refuses meanwhile); a check is abandoned.
+            if (update_busy_ || !update_check_running())
+                update_thread_.join();
+            else
+                update_thread_.detach();
         }
+    }
+
+    bool App::update_check_running() const
+    {
+        if (update_busy_ || !update_thread_.joinable())
+            return false;
+        std::lock_guard<std::mutex> lock(update_link_->mutex);
+        return !update_link_->done;
+    }
+
+    void App::quit()
+    {
+        // Leaving mid-install could stop between download and replace; wait for it.
+        if (update_busy_)
+        {
+            status_message_ = "Installing the update: quit when it finishes";
+            return;
+        }
+        screen_.Exit();
     }
 
     // ---- updates ------------------------------------------------------------------
@@ -98,12 +126,17 @@ namespace gsystemctl::ui
                 update_notice_ = "↑ " + cached->version + " available: g-systemctl --update";
             return;
         }
-        update_thread_ = std::thread([this] {
+        // Touches only what it holds a reference to, so it can outlive App.
+        update_thread_ = std::thread([this, updater = updater_, link = update_link_] {
             std::string error;
-            auto release = updater_->check(&error);
+            auto release = updater->check(&error);
             Updater::Plan plan;
             if (release)
-                plan = updater_->plan(*release);
+                plan = updater->plan(*release);
+            std::lock_guard<std::mutex> lock(link->mutex);
+            link->done = true;
+            if (!link->alive)
+                return;
             // A failed check stays quiet; the next one is tomorrow.
             screen_.Post([this, release, plan] {
                 if (!release || release->tag == updater_->state().skip)
@@ -123,6 +156,12 @@ namespace gsystemctl::ui
         if (!update_offer_ || show_help_ || auth_dialog_open_ || confirm_.is_open() || update_dialog_.is_open() ||
             containers_view_->edit_dialog_open())
             return;
+        // Never pop up under someone typing: their next keys would answer it.
+        if (std::chrono::steady_clock::now() - last_key_time_ < kUpdateOfferQuiet)
+        {
+            animation::RequestAnimationFrame(); // render again until the quiet period is over
+            return;
+        }
         auto release = *update_offer_;
         update_offer_.reset();
         update_dialog_.offer(release.version, updater_->current_version(), update_plan_.error,
@@ -845,6 +884,9 @@ namespace gsystemctl::ui
 
         auto main_component = CatchEvent(renderer, [this](Event event)
                           {
+        if (!event.is_mouse() && !event.is_cursor_reporting() && event != Event::Custom) {
+            last_key_time_ = std::chrono::steady_clock::now();
+        }
         if (busy_) {
             return true;
         }
@@ -864,12 +906,12 @@ namespace gsystemctl::ui
                 filter_text_.clear();
                 apply_filter();
             } else {
-                screen_.Exit();
+                quit();
             }
             return true;
         }
         if (event == Event::Special("\x1b" "q")) {
-            screen_.Exit();
+            quit();
             return true;
         }
         if (event == Event::Special("\x1b" "g")) {
@@ -1268,7 +1310,7 @@ namespace gsystemctl::ui
         };
         if (event == Event::Special("\x1b" "q"))
         {
-            screen_.Exit();
+            quit();
         }
         else if (event == Event::Escape || event == Event::Character('?'))
         {

@@ -3,6 +3,8 @@
 #include "g-systemctl/core/updater.hpp"
 #include "g-systemctl/platform/platform.hpp"
 #include <iostream>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <unistd.h>
@@ -136,8 +138,23 @@ int main(int argc, char *argv[])
 
     try
     {
-        gsystemctl::ui::App app(system_mode, initial_filter, initial_tab, fallback_to_services, update_check);
-        return app.run();
+        int code = 0;
+        bool abandoned = false;
+        {
+            gsystemctl::ui::App app(system_mode, initial_filter, initial_tab, fallback_to_services, update_check);
+            code = app.run();
+            abandoned = app.update_check_running();
+        }
+        if (abandoned)
+        {
+            // See App::update_check_running: skip exit()'s flush of every stream.
+            std::cout.flush();
+            std::cerr.flush();
+            std::fflush(stdout);
+            std::fflush(stderr);
+            std::_Exit(code);
+        }
+        return code;
     }
     catch (const std::exception &e)
     {

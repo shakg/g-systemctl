@@ -17,6 +17,7 @@ namespace gsystemctl::ui
         on_choice_ = std::move(on_choice);
         result_ = false;
         open_ = true;
+        opened_at_ = std::chrono::steady_clock::now();
     }
 
     void UpdateDialog::show_result(bool ok, const std::string &message)
@@ -91,6 +92,8 @@ namespace gsystemctl::ui
                     open_ = false;
                 return true;
             }
+            if (std::chrono::steady_clock::now() - opened_at_ < kGrace)
+                return true;
             const bool click = event.is_mouse() && event.mouse().button == Mouse::Left &&
                                event.mouse().motion == Mouse::Pressed;
             if (event == Event::Character('y') || event == Event::Character('Y') ||

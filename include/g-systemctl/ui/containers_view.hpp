@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include "g-systemctl/container/compose_store.hpp"
 #include "g-systemctl/container/container_manager.hpp"
 #include "g-systemctl/ui/action_bar.hpp"
@@ -176,8 +178,8 @@ namespace gsystemctl::ui
         int edit_cursors_[5] = {0, 0, 0, 0, 0};
         std::string edit_error_;
 
-        // Shell per container ID, found with `exec` on shell_thread_. Detection
-        // runs when a running container's page opens, or on Alt+t.
+        // Shell per container ID, found with `exec` on a thread per container.
+        // Detection runs when a running container's page opens, or on Alt+t.
         struct ShellInfo
         {
             bool checking = false;
@@ -186,9 +188,18 @@ namespace gsystemctl::ui
             std::string reason; // when not ok
         };
         std::map<std::string, ShellInfo> shells_;
-        // Container to open a shell in once detection finishes (Alt+t pressed meanwhile).
+        // Container to open a shell in once detection finishes (Alt+t pressed
+        // meanwhile). Dropped when the user leaves that container or the tab.
         std::string shell_open_pending_;
-        std::thread shell_thread_;
+        // Never joined on the UI thread while running: a finished job is joined
+        // (instantly) when the next one starts, the rest in the destructor.
+        struct ShellJob
+        {
+            std::thread thread;
+            std::shared_ptr<std::atomic<bool>> done;
+        };
+        std::vector<ShellJob> shell_jobs_;
+        bool active_ = false;
 
         bool add_open_ = false;
         std::string add_path_;

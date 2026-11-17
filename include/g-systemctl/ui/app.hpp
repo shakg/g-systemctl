@@ -15,6 +15,7 @@
 #include "g-systemctl/ui/update_dialog.hpp"
 #include <condition_variable>
 #include <ftxui/component/component.hpp>
+#include <chrono>
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/screen/box.hpp>
 #include <functional>
@@ -44,6 +45,11 @@ namespace gsystemctl::ui
             bool fallback_to_services = true, bool update_check = true);
         ~App();
         int run();
+        // True while the update check is still waiting on curl. It is abandoned
+        // on exit, and its stdio stream stays locked, so the caller must end the
+        // process with std::_Exit instead of returning from main (exit() would
+        // wait on that lock to flush it).
+        bool update_check_running() const;
 
     private:
         ftxui::ScreenInteractive screen_;
@@ -129,13 +135,25 @@ namespace gsystemctl::ui
 
         // Update check and install, on update_thread_. The offer waits until no
         // other dialog is open.
-        std::unique_ptr<Updater> updater_;
+        // Shared with the check thread, which App detaches on quit instead of
+        // waiting for curl. The thread posts back only while `alive` is true.
+        struct UpdateLink
+        {
+            std::mutex mutex;
+            bool alive = true;
+            bool done = false; // the check has returned
+        };
+        std::shared_ptr<Updater> updater_;
+        std::shared_ptr<UpdateLink> update_link_ = std::make_shared<UpdateLink>();
         std::thread update_thread_;
         std::optional<Updater::Release> update_offer_;
         Updater::Release update_release_;
         Updater::Plan update_plan_;
         UpdateDialog update_dialog_;
         bool update_busy_ = false;
+        // The offer opens only after this long without a key press.
+        static constexpr std::chrono::milliseconds kUpdateOfferQuiet{2000};
+        std::chrono::steady_clock::time_point last_key_time_{};
         // Top bar, e.g. "↑ 2.3.0 available: g-systemctl --update".
         std::string update_notice_;
 
@@ -172,6 +190,8 @@ namespace gsystemctl::ui
         // Goes up one level (full logs -> detail -> list). False if already at the list.
         bool services_back();
         void switch_tab(Tab tab);
+        // Exits the loop, unless an update is being installed.
+        void quit();
         bool handle_services_event(ftxui::Event event);
         ftxui::Component create_main_component();
         ftxui::Element render();
