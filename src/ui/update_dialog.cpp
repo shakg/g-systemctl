@@ -81,7 +81,7 @@ namespace gsystemctl::ui
                                color(MutedColor()));
             }
             return vbox(std::move(body)) | size(WIDTH, GREATER_THAN, 50) | size(WIDTH, LESS_THAN, 80) |
-                   borderStyled(ROUNDED, BorderColor()) | bgcolor(PanelColor());
+                   borderStyled(ROUNDED, BorderColor()) | bgcolor(PanelColor()) | isolated_borders;
         });
 
         return CatchEvent(renderer, [this](Event event) {

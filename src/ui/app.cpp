@@ -1034,7 +1034,7 @@ namespace gsystemctl::ui
                    }) |
                    size(WIDTH, GREATER_THAN, 44) |
                    borderStyled(ROUNDED, BorderColor()) |
-                   bgcolor(PanelColor());
+                   bgcolor(PanelColor()) | isolated_borders;
         });
         auto auth_modal = CatchEvent(auth_renderer, [this](Event event) {
             if (event == Event::Return) {
@@ -1643,7 +1643,7 @@ namespace gsystemctl::ui
                    separator() | color(BorderColor()),
                    text(" Tab / ←→ / 1-4 switch  ·  Esc or ? close") | color(MutedColor()),
                }) |
-               borderStyled(ROUNDED, BorderColor()) | bgcolor(BackgroundColor()) | center;
+               borderStyled(ROUNDED, BorderColor()) | bgcolor(BackgroundColor()) | isolated_borders | center;
     }
 
 } // namespace gsystemctl::ui

@@ -2,6 +2,10 @@
 
 #include "g-systemctl/core/text_wrap.hpp"
 
+#include <algorithm>
+#include <ftxui/dom/node.hpp>
+#include <ftxui/screen/screen.hpp>
+
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/screen/color.hpp>
 #include <string>
@@ -47,6 +51,44 @@ namespace gsystemctl::ui::theme
             element = element | bold;
         }
         return element | flex;
+    }
+
+
+    // A dialog drawn over the page. FTXUI merges neighbouring box-drawing
+    // cells when both allow it (turning a border's "─" into "┴" where a page
+    // line meets it). This clears that flag on the page cells around the
+    // dialog, so its border never joins the page's lines while its own
+    // separators still join its border ("├───┤").
+    class IsolatedBorders : public ftxui::Node
+    {
+    public:
+        explicit IsolatedBorders(ftxui::Element child) : Node({std::move(child)}) {}
+        void ComputeRequirement() override
+        {
+            children_[0]->ComputeRequirement();
+            requirement_ = children_[0]->requirement();
+        }
+        void SetBox(ftxui::Box box) override
+        {
+            Node::SetBox(box);
+            children_[0]->SetBox(box);
+        }
+        void Render(ftxui::Screen &screen) override
+        {
+            children_[0]->Render(screen);
+            for (int y = std::max(box_.y_min - 1, 0); y <= std::min(box_.y_max + 1, screen.dimy() - 1); ++y)
+                for (int x = std::max(box_.x_min - 1, 0); x <= std::min(box_.x_max + 1, screen.dimx() - 1); ++x)
+                {
+                    const bool inside = y >= box_.y_min && y <= box_.y_max && x >= box_.x_min && x <= box_.x_max;
+                    if (!inside)
+                        screen.PixelAt(x, y).automerge = false;
+                }
+        }
+    };
+
+    inline ftxui::Element isolated_borders(ftxui::Element dialog)
+    {
+        return std::make_shared<IsolatedBorders>(std::move(dialog));
     }
 
 } // namespace gsystemctl::ui::theme
