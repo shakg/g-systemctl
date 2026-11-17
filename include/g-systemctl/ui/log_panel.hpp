@@ -50,6 +50,8 @@ namespace gsystemctl::ui
         int scroll_position_ = 0;
         bool follow_tail_ = true;
         ftxui::Box box_;
+        int wrap_width_ = 0; // width the lines were last wrapped to; UI thread only
+
     };
 
 } // namespace gsystemctl::ui

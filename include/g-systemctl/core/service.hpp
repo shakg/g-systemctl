@@ -20,6 +20,30 @@ struct ServiceUnit {
     bool is_loaded() const { return load == "loaded"; }
 };
 
+// How a unit's state is shown and which actions apply to it.
+struct ServiceState {
+    enum class Kind { Active, Inactive, Failed, Changing };
+    Kind kind = Kind::Inactive;
+    std::string label;      // e.g. "● active", "✕ failed", "◐ activating"
+    bool can_start = false; // Start applies
+    bool can_stop = false;  // Stop and Restart apply
+};
+
+// From systemd's ActiveState (list-units ACTIVE column), or launchctl's
+// running/stopped on macOS.
+inline ServiceState service_state(const ServiceUnit& unit) {
+    using Kind = ServiceState::Kind;
+    const std::string& s = unit.active;
+    if (s == "active" || s == "running" || unit.is_running())
+        return {Kind::Active, "● active", false, true};
+    if (s == "failed")
+        return {Kind::Failed, "✕ failed", true, false};
+    // Stop also cancels a start that keeps retrying (activating, auto-restart).
+    if (s == "activating" || s == "deactivating" || s == "reloading" || s == "refreshing" || s == "maintenance")
+        return {Kind::Changing, "◐ " + s, false, true};
+    return {Kind::Inactive, "○ inactive", true, false};
+}
+
 // Label/value rows for a service's detail page, in display order.
 using ServiceDetails = std::vector<std::pair<std::string, std::string>>;
 

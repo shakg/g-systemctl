@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ftxui/component/component.hpp>
+#include <chrono>
 #include <ftxui/screen/box.hpp>
 #include <functional>
 #include <string>
@@ -44,6 +45,10 @@ namespace gsystemctl::ui
         std::function<void(Choice)> on_choice_;
         ftxui::Box update_box_;
         ftxui::Box later_box_;
+        // Keys and clicks that arrive this soon after the offer opens were meant
+        // for whatever was on screen before it; they are swallowed.
+        static constexpr std::chrono::milliseconds kGrace{800};
+        std::chrono::steady_clock::time_point opened_at_{};
 
         void choose(Choice choice);
     };

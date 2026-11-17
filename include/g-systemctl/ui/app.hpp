@@ -8,6 +8,7 @@
 #include "g-systemctl/ui/action_bar.hpp"
 #include "g-systemctl/ui/confirm_dialog.hpp"
 #include "g-systemctl/ui/containers_view.hpp"
+#include "g-systemctl/core/list_sort.hpp"
 #include "g-systemctl/ui/detail_page.hpp"
 #include "g-systemctl/ui/log_panel.hpp"
 #include "g-systemctl/ui/metric_graph.hpp"
@@ -15,6 +16,7 @@
 #include "g-systemctl/ui/update_dialog.hpp"
 #include <condition_variable>
 #include <ftxui/component/component.hpp>
+#include <chrono>
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/screen/box.hpp>
 #include <functional>
@@ -44,6 +46,11 @@ namespace gsystemctl::ui
             bool fallback_to_services = true, bool update_check = true);
         ~App();
         int run();
+        // True while the update check is still waiting on curl. It is abandoned
+        // on exit, and its stdio stream stays locked, so the caller must end the
+        // process with std::_Exit instead of returning from main (exit() would
+        // wait on that lock to flush it).
+        bool update_check_running() const;
 
     private:
         ftxui::ScreenInteractive screen_;
@@ -119,6 +126,14 @@ namespace gsystemctl::ui
         AuthAction pending_auth_action_ = AuthAction::None;
         ServiceUnit pending_auth_service_;
         std::vector<ftxui::Box> item_boxes_;
+        // Unit the user selected. Kept while the filter hides it, so clearing
+        // the filter returns to it; selected_index_ follows it.
+        std::string selected_unit_;
+        ftxui::Box service_list_box_;
+        // Alt+s / Alt+Shift+s or a header click. Header cell boxes, in sort_columns order.
+        SortOrder services_sort_;
+        std::vector<ftxui::Box> service_header_boxes_;
+        void sort_services_by(SortColumn column); // same column again: reverse
         // Action progress in the service list rows, keyed by unit.
         RowActivity row_activity_;
         ftxui::Box reload_button_box_;
@@ -129,13 +144,25 @@ namespace gsystemctl::ui
 
         // Update check and install, on update_thread_. The offer waits until no
         // other dialog is open.
-        std::unique_ptr<Updater> updater_;
+        // Shared with the check thread, which App detaches on quit instead of
+        // waiting for curl. The thread posts back only while `alive` is true.
+        struct UpdateLink
+        {
+            std::mutex mutex;
+            bool alive = true;
+            bool done = false; // the check has returned
+        };
+        std::shared_ptr<Updater> updater_;
+        std::shared_ptr<UpdateLink> update_link_ = std::make_shared<UpdateLink>();
         std::thread update_thread_;
         std::optional<Updater::Release> update_offer_;
         Updater::Release update_release_;
         Updater::Plan update_plan_;
         UpdateDialog update_dialog_;
         bool update_busy_ = false;
+        // The offer opens only after this long without a key press.
+        static constexpr std::chrono::milliseconds kUpdateOfferQuiet{2000};
+        std::chrono::steady_clock::time_point last_key_time_{};
         // Top bar, e.g. "↑ 2.3.0 available: g-systemctl --update".
         std::string update_notice_;
 
@@ -172,6 +199,13 @@ namespace gsystemctl::ui
         // Goes up one level (full logs -> detail -> list). False if already at the list.
         bool services_back();
         void switch_tab(Tab tab);
+        // Exits the loop, unless an update is being installed.
+        void quit();
+        // Selects row `index` of the filtered list (clamped) and remembers its unit.
+        void select_service(int index);
+        // Bottom bar: filter, count and key hints, fitted to the terminal width.
+        ftxui::Element render_filter_bar(const std::string &filter, const std::string &summary,
+                                         const std::string &hints);
         bool handle_services_event(ftxui::Event event);
         ftxui::Component create_main_component();
         ftxui::Element render();

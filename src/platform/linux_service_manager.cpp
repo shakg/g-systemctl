@@ -30,7 +30,26 @@ std::string describe_failure(const CommandResult& result) {
     if (output.empty()) {
         return "exit code " + std::to_string(result.exit_code);
     }
-    return output;
+    // One status line: join the lines with " · " (they ran together before).
+    // systemd's 'See "systemctl status X" and "journalctl -xeu X" for details.'
+    // becomes "see systemctl status X".
+    std::istringstream lines(output);
+    std::string line, joined;
+    while (std::getline(lines, line)) {
+        line = trim(line);
+        if (line.empty()) {
+            continue;
+        }
+        const std::string see = "See \"systemctl ";
+        if (line.rfind(see, 0) == 0) {
+            const auto end = line.find('"', see.size());
+            if (end != std::string::npos) {
+                line = "see systemctl " + line.substr(see.size(), end - see.size());
+            }
+        }
+        joined += (joined.empty() ? "" : " · ") + line;
+    }
+    return joined;
 }
 
 // systemctl prints these for counters that are unset or not tracked.
@@ -419,19 +438,19 @@ void LinuxServiceManager::populate_resource_usage(std::vector<ServiceUnit>& unit
 std::pair<bool, std::string> LinuxServiceManager::start_service(const std::string& name, const std::string& password) {
     std::string prefix = system_mode_ ? "systemctl" : "systemctl --user";
     auto result = executor_->execute_privileged(prefix + " start " + name, password);
-    return {result.exit_code == 0, result.stdout_output};
+    return {result.exit_code == 0, result.exit_code == 0 ? "" : describe_failure(result)};
 }
 
 std::pair<bool, std::string> LinuxServiceManager::stop_service(const std::string& name, const std::string& password) {
     std::string prefix = system_mode_ ? "systemctl" : "systemctl --user";
     auto result = executor_->execute_privileged(prefix + " stop " + name, password);
-    return {result.exit_code == 0, result.stdout_output};
+    return {result.exit_code == 0, result.exit_code == 0 ? "" : describe_failure(result)};
 }
 
 std::pair<bool, std::string> LinuxServiceManager::restart_service(const std::string& name, const std::string& password) {
     std::string prefix = system_mode_ ? "systemctl" : "systemctl --user";
     auto result = executor_->execute_privileged(prefix + " restart " + name, password);
-    return {result.exit_code == 0, result.stdout_output};
+    return {result.exit_code == 0, result.exit_code == 0 ? "" : describe_failure(result)};
 }
 
 std::pair<bool, std::string> LinuxServiceManager::toggle_service(const ServiceUnit& service, const std::string& password) {

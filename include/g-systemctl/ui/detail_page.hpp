@@ -1,5 +1,7 @@
 #pragma once
 
+#include "g-systemctl/core/text_wrap.hpp"
+
 #include "g-systemctl/core/command_format.hpp"
 #include "g-systemctl/ui/theme.hpp"
 #include <algorithm>
@@ -25,13 +27,72 @@ namespace gsystemctl::ui
         return std::clamp(ftxui::Terminal::Size().dimy / 3, 6, 14);
     }
 
+    // Text wrapped at spaces to the width it is given, breaking words that are
+    // longer than a row (paths, tokens) instead of clipping them. The width is
+    // only known after layout, so Check() asks FTXUI for another pass once it
+    // is known. `max_rows` > 0 keeps the first row and the last max_rows-1
+    // rows (where errors put their cause), joined by "…".
+    class WrapText : public ftxui::Node
+    {
+    public:
+        WrapText(std::string value, int max_rows = 0) : value_(std::move(value)), max_rows_(max_rows) {}
+
+        void ComputeRequirement() override
+        {
+            using namespace ftxui;
+            auto rows = wrap_words(value_, width_);
+            if (max_rows_ > 0 && static_cast<int>(rows.size()) > max_rows_)
+            {
+                std::vector<std::string> kept = {rows.front() + " …"};
+                kept.insert(kept.end(), rows.end() - (max_rows_ - 1), rows.end());
+                rows = std::move(kept);
+            }
+            Elements lines;
+            for (auto &row : rows)
+                lines.push_back(text(row));
+            children_ = {vbox(std::move(lines))};
+            children_[0]->ComputeRequirement();
+            requirement_ = children_[0]->requirement();
+            requirement_.min_x = 1; // width follows the parent
+            requirement_.flex_grow_x = 1;
+            requirement_.flex_shrink_x = 1;
+        }
+        void SetBox(ftxui::Box box) override
+        {
+            Node::SetBox(box);
+            children_[0]->SetBox(box);
+        }
+        void Check(Status *status) override
+        {
+            Node::Check(status);
+            if (status->iteration == 0)
+                return; // before any layout box_ is not a width
+            const int width = box_.x_max - box_.x_min + 1;
+            if (width > 0 && width != width_)
+            {
+                width_ = width;
+                status->need_iteration = true;
+            }
+        }
+
+    private:
+        std::string value_;
+        int max_rows_;
+        int width_ = 0;
+    };
+
+    inline ftxui::Element wrap_text_element(const std::string &value, int max_rows = 0)
+    {
+        return std::make_shared<WrapText>(value, max_rows);
+    }
+
     inline ftxui::Element field_row(const std::string &label, const std::string &value,
                                     ftxui::Color fg = theme::TextColor())
     {
         using namespace ftxui;
         return hbox({
             text(" " + label) | color(theme::HeaderColor()) | size(WIDTH, EQUAL, 16),
-            paragraph(value.empty() ? "-" : value) | color(fg) | flex,
+            wrap_text_element(value.empty() ? "-" : value) | color(fg) | flex,
         });
     }
 
@@ -50,7 +111,7 @@ namespace gsystemctl::ui
         {
             rows.push_back(hbox({
                 text(std::string(static_cast<size_t>(line.indent), ' ')),
-                paragraph(line.text) | color(theme::TextColor()) | flex,
+                wrap_text_element(line.text) | color(theme::TextColor()) | flex,
             }));
         }
         return hbox({
@@ -68,7 +129,7 @@ namespace gsystemctl::ui
     inline ftxui::Element section_title(const std::string &title, bool first = false)
     {
         using namespace ftxui;
-        auto heading = text(" " + title) | bold | color(theme::AccentColor());
+        auto heading = hbox({text(" "), wrap_text_element(title) | flex}) | bold | color(theme::AccentColor());
         return first ? heading : vbox({text(""), heading});
     }
 
@@ -143,12 +204,27 @@ namespace gsystemctl::ui
         {
             using namespace ftxui;
             count_ = static_cast<int>(lines.size());
-            offset_ = std::clamp(offset_, 0, std::max(0, count_ - 1));
+            // Height from the previous frame (1 before the first layout).
+            const int visible = box_.y_max - box_.y_min + 1;
+            // Stop scrolling once the last row is at the bottom: the furthest
+            // offset is the first row from which everything below still fits.
+            max_offset_ = std::max(0, count_ - 1);
+            if (visible > 1)
+            {
+                int below = 0;
+                for (int i = count_ - 1; i >= 0; --i)
+                {
+                    lines[i]->ComputeRequirement();
+                    below += lines[i]->requirement().min_y;
+                    if (below > visible)
+                        break;
+                    max_offset_ = i;
+                }
+            }
+            offset_ = std::clamp(offset_, 0, max_offset_);
             auto content = vbox(Elements(lines.begin() + offset_, lines.end()));
             content->ComputeRequirement();
             const int needed = content->requirement().min_y;
-            // Height from the previous frame; good enough to say whether more is hidden below.
-            const int visible = box_.y_max - box_.y_min + 1;
             if (visible > 1 && needed > visible)
             {
                 const int hidden = needed - (visible - 1);
@@ -161,13 +237,14 @@ namespace gsystemctl::ui
             }
             return content | yframe | flex | reflect(box_);
         }
-        void scroll(int delta) { offset_ = std::clamp(offset_ + delta, 0, std::max(0, count_ - 1)); }
+        void scroll(int delta) { offset_ = std::clamp(offset_ + delta, 0, max_offset_); }
         void reset() { offset_ = 0; }
         bool contains(int x, int y) const { return box_.Contain(x, y); }
 
     private:
         int offset_ = 0;
         int count_ = 0;
+        int max_offset_ = 0;
         ftxui::Box box_;
     };
 

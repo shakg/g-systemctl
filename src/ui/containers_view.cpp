@@ -9,6 +9,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ftxui/component/component_options.hpp>
+#include <ftxui/dom/node.hpp>
+#include <ftxui/screen/terminal.hpp>
+#include <functional>
 #include <iostream>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -17,6 +20,32 @@ using namespace ftxui;
 
 namespace gsystemctl::ui
 {
+
+    namespace
+    {
+        // Takes the rest of the row and is clipped when there is none: its
+        // width never pushes the columns before it, so rows stay aligned.
+        class Elastic : public Node
+        {
+        public:
+            explicit Elastic(Element child) : Node({std::move(child)}) {}
+            void ComputeRequirement() override
+            {
+                children_[0]->ComputeRequirement();
+                requirement_ = children_[0]->requirement();
+                requirement_.min_x = 0;
+                requirement_.flex_grow_x = 1;
+                requirement_.flex_shrink_x = 1;
+            }
+            void SetBox(Box box) override
+            {
+                Node::SetBox(box);
+                children_[0]->SetBox(box);
+            }
+        };
+        Element elastic(Element child) { return std::make_shared<Elastic>(std::move(child)); }
+    } // namespace
+
     using namespace theme;
 
     namespace
@@ -189,7 +218,103 @@ namespace gsystemctl::ui
             }
             return t;
         }
+
+        // Columns of the containers list with their headers; STATUS (uptime
+        // text) does not sort. Alt+s cycles through the sortable ones.
+        struct ListColumn
+        {
+            std::string header;
+            bool sortable;
+            SortColumn column;
+        };
+        const std::vector<ListColumn> kListColumns = {
+            {"CONTAINER", true, SortColumn::Name}, {"IMAGE", true, SortColumn::Image},
+            {"STATE", true, SortColumn::State},    {"STATUS", false, SortColumn::Name},
+            {"CPU", true, SortColumn::Cpu},        {"MEM", true, SortColumn::Memory},
+            {"PIDS", true, SortColumn::Pids},
+        };
+
+        // Running first, then paused/restarting/created, then stopped.
+        int state_rank(const std::string &state)
+        {
+            if (state == "running")
+                return 0;
+            if (state == "paused" || state == "restarting" || state == "created")
+                return 1;
+            return 2;
+        }
+
+        SortValue container_sort_value(const Container &c, SortColumn column)
+        {
+            SortValue v;
+            v.name = c.compose_service.empty() ? c.name : c.compose_service;
+            const bool sampled = c.is_running() && !c.stats.cpu.empty();
+            switch (column)
+            {
+            case SortColumn::Image:
+                v.text = c.image;
+                break;
+            case SortColumn::State:
+                v.number = state_rank(c.state);
+                break;
+            case SortColumn::Cpu:
+                v.number = parse_docker_percent(c.stats.cpu);
+                v.missing = !sampled;
+                break;
+            case SortColumn::Memory:
+                v.number = parse_docker_size_pair(c.stats.mem_usage).first;
+                v.missing = !sampled;
+                break;
+            case SortColumn::Pids:
+                v.number = parse_docker_size(c.stats.pids);
+                v.missing = !sampled;
+                break;
+            default:
+                v.text = v.name;
+                break;
+            }
+            return v;
+        }
+
+        SortValue project_sort_value(const ComposeProject &p, const std::vector<Container> &containers,
+                                     SortColumn column)
+        {
+            SortValue v;
+            v.name = p.ref.name;
+            const auto totals = project_totals(containers, p.ref.name);
+            switch (column)
+            {
+            case SortColumn::State:
+                v.number = p.down() ? 3 : p.running == p.total ? 0 : p.running > 0 ? 1 : 2;
+                break;
+            case SortColumn::Cpu:
+                v.number = totals.cpu;
+                v.missing = !totals.sampled;
+                break;
+            case SortColumn::Memory:
+                v.number = totals.memory;
+                v.missing = !totals.sampled;
+                break;
+            case SortColumn::Pids:
+                v.number = totals.pids;
+                v.missing = !totals.sampled;
+                break;
+            default: // Name, and Image (a project has none)
+                v.text = p.ref.name;
+                break;
+            }
+            return v;
+        }
     } // namespace
+
+    void ContainersView::sort_by(SortColumn column)
+    {
+        if (sort_.column == column)
+            sort_.descending = !sort_.descending;
+        else
+            sort_ = {column, default_descending(column)};
+        apply_filter();
+    }
 
     ContainersView::ContainersView(ScreenInteractive &screen, std::shared_ptr<ContainerManager> manager,
                                    const std::string &compose_store_path)
@@ -209,14 +334,17 @@ namespace gsystemctl::ui
             poller_.join();
         if (action_thread_.joinable())
             action_thread_.join();
-        if (shell_thread_.joinable())
-            shell_thread_.join();
+        for (auto &job : shell_jobs_)
+            job.thread.join();
     }
 
     // ---- polling ------------------------------------------------------------
 
     void ContainersView::set_active(bool active)
     {
+        active_ = active;
+        if (!active)
+            shell_open_pending_.clear();
         {
             std::lock_guard<std::mutex> lock(poll_mutex_);
             poll_active_ = active;
@@ -290,6 +418,18 @@ namespace gsystemctl::ui
             });
         }
 
+        // Which drift checks this poll does. Read before listing: a request made
+        // after the list was taken (e.g. by a finished `up -d`) must wait for the
+        // next poll, or it would be answered with the old containers' labels.
+        bool check_all = false;
+        std::string open_project;
+        {
+            std::lock_guard<std::mutex> lock(poll_mutex_);
+            check_all = poll_drift_all_ || ++poll_count_ % kDriftEvery == 0;
+            poll_drift_all_ = false;
+            open_project = poll_project_;
+        }
+
         std::vector<Container> listed;
         try
         {
@@ -305,6 +445,11 @@ namespace gsystemctl::ui
         catch (const std::exception &e)
         {
             runtime_ok = false;
+            if (check_all)
+            {
+                std::lock_guard<std::mutex> lock(poll_mutex_);
+                poll_drift_all_ = true;
+            }
             std::string message = e.what();
             screen_.Post([this, message] {
                 available_ = false;
@@ -328,14 +473,6 @@ namespace gsystemctl::ui
         }
 
         // Compare each compose service's config hash with its files as they are now.
-        bool check_all = false;
-        std::string open_project;
-        {
-            std::lock_guard<std::mutex> lock(poll_mutex_);
-            check_all = poll_drift_all_ || ++poll_count_ % kDriftEvery == 0;
-            poll_drift_all_ = false;
-            open_project = poll_project_;
-        }
         if (!poller_drift_ok_ || (!check_all && open_project.empty()))
             return;
         std::map<std::string, std::vector<std::string>> drift;
@@ -558,14 +695,38 @@ namespace gsystemctl::ui
                 multi_replica_.insert(key);
         }
 
+        // Projects, their containers and standalone containers each sort
+        // within their own group.
+        const auto order = sort_;
+        auto before = [&order](const SortValue &a, const SortValue &b) {
+            return sort_before(a, b, order.descending);
+        };
+        std::vector<size_t> project_order(projects_.size());
+        for (size_t i = 0; i < project_order.size(); ++i)
+            project_order[i] = i;
+        std::stable_sort(project_order.begin(), project_order.end(), [&](size_t a, size_t b) {
+            return before(project_sort_value(projects_[a], containers_, order.column),
+                          project_sort_value(projects_[b], containers_, order.column));
+        });
+        auto sorted_ids = [&](std::vector<std::string> ids) {
+            std::stable_sort(ids.begin(), ids.end(), [&](const std::string &a, const std::string &b) {
+                auto x = by_id.find(a), y = by_id.find(b);
+                if (x == by_id.end() || y == by_id.end())
+                    return false;
+                return before(container_sort_value(*x->second, order.column),
+                              container_sort_value(*y->second, order.column));
+            });
+            return ids;
+        };
+
         bool any_project = false;
-        for (size_t pi = 0; pi < projects_.size(); ++pi)
+        for (size_t pi : project_order)
         {
             const auto &p = projects_[pi];
             // A matching project shows all its containers.
             const bool project_match = needle.empty() || contains(p.ref.name);
             std::vector<int> children;
-            for (const auto &id : p.container_ids)
+            for (const auto &id : sorted_ids(p.container_ids))
             {
                 auto it = by_id.find(id);
                 if (it != by_id.end() && (project_match || matches(*it->second)))
@@ -582,10 +743,15 @@ namespace gsystemctl::ui
                 rows_.push_back({ListRow::Kind::Container, children[k], k + 1 == children.size()});
         }
 
-        bool divider = false;
+        std::vector<std::string> standalone_ids;
         for (const auto &c : containers_)
+            if (c.compose_project.empty())
+                standalone_ids.push_back(c.id);
+        bool divider = false;
+        for (const auto &id : sorted_ids(standalone_ids))
         {
-            if (!c.compose_project.empty() || !matches(c))
+            const auto &c = *by_id[id];
+            if (!matches(c))
                 continue;
             if (any_project && !divider)
             {
@@ -688,7 +854,8 @@ namespace gsystemctl::ui
 
     std::string ContainersView::summary() const
     {
-        auto text = std::to_string(filtered_.size()) + "/" + std::to_string(containers_.size()) + " containers";
+        auto text = std::to_string(filtered_.size()) + "/" + std::to_string(containers_.size()) +
+                    (containers_.size() == 1 ? " container" : " containers");
         if (!projects_.empty())
             text += " · " + std::to_string(projects_.size()) + (projects_.size() == 1 ? " project" : " projects");
         return text;
@@ -760,6 +927,16 @@ namespace gsystemctl::ui
         });
     }
 
+    void ContainersView::report_removed()
+    {
+        // On the page of a container that no longer exists, say so instead of doing nothing.
+        if (detail_open_ && detail_project_.empty())
+        {
+            clear_messages();
+            error_message_ = logs_name_ + " was removed";
+        }
+    }
+
     const Container *ContainersView::action_target() const
     {
         auto find = [this](auto pred) -> const Container * {
@@ -791,7 +968,10 @@ namespace gsystemctl::ui
         }
         const auto *c = action_target();
         if (!c)
+        {
+            report_removed();
             return;
+        }
         clear_messages();
         if (c->is_active())
         {
@@ -818,7 +998,10 @@ namespace gsystemctl::ui
         }
         const auto *c = action_target();
         if (!c)
+        {
+            report_removed();
             return;
+        }
         clear_messages();
         if (!c->is_active())
         {
@@ -852,7 +1035,10 @@ namespace gsystemctl::ui
         }
         const auto *c = action_target();
         if (!c)
+        {
+            report_removed();
             return;
+        }
         clear_messages();
         if (!c->is_active())
         {
@@ -996,7 +1182,10 @@ namespace gsystemctl::ui
         }
         const auto *c = action_target();
         if (!c)
+        {
+            report_removed();
             return;
+        }
         if (!c->is_running())
         {
             status_message_ = c->name + " is not running (Alt+o to start)";
@@ -1021,9 +1210,16 @@ namespace gsystemctl::ui
             return;
         info.checking = true;
         info.reason.clear();
-        if (shell_thread_.joinable())
-            shell_thread_.join();
-        shell_thread_ = std::thread([this, id] {
+        shell_jobs_.erase(std::remove_if(shell_jobs_.begin(), shell_jobs_.end(),
+                                         [](ShellJob &job) {
+                                             if (!*job.done)
+                                                 return false;
+                                             job.thread.join(); // already returned
+                                             return true;
+                                         }),
+                          shell_jobs_.end());
+        auto done = std::make_shared<std::atomic<bool>>(false);
+        shell_jobs_.push_back({std::thread([this, id, done] {
             auto [ok, value] = manager_->detect_shell(id);
             screen_.Post([this, id, ok = ok, value = value] {
                 auto &info = shells_[id];
@@ -1034,6 +1230,13 @@ namespace gsystemctl::ui
                 if (shell_open_pending_ != id)
                     return;
                 shell_open_pending_.clear();
+                // Only if that container is still the one the user is on.
+                const auto *target = active_ ? action_target() : nullptr;
+                if (!target || target->id != id)
+                {
+                    status_message_.clear();
+                    return;
+                }
                 const auto *c = find_container(id);
                 const std::string name = c ? c->name : id;
                 if (ok)
@@ -1048,7 +1251,8 @@ namespace gsystemctl::ui
                 }
             });
             screen_.PostEvent(Event::Custom);
-        });
+            *done = true;
+        }), done});
     }
 
     void ContainersView::enter_shell(const std::string &id, const std::string &name, const std::string &shell)
@@ -1160,6 +1364,7 @@ namespace gsystemctl::ui
 
     void ContainersView::close_detail()
     {
+        shell_open_pending_.clear();
         stop_logs();
         detail_open_ = false;
         logs_full_ = false;
@@ -1301,7 +1506,10 @@ namespace gsystemctl::ui
     {
         const auto *c = action_target();
         if (!c)
+        {
+            report_removed();
             return;
+        }
         try
         {
             auto details = manager_->inspect(c->id);
@@ -1444,19 +1652,19 @@ namespace gsystemctl::ui
         auto input = Input(&add_path_, "/path/to/compose.yaml or its directory", option);
         auto renderer = Renderer(input, [this, input] {
             Elements lines = {
-                text("Add compose project") | bold | color(AccentColor()),
+                text(" Add compose project") | bold | color(AccentColor()),
                 separator() | color(BorderColor()),
-                hbox({text("Path ") | color(HeaderColor()), text("[") | color(BorderColor()),
+                hbox({text(" Path ") | color(HeaderColor()), text("[") | color(BorderColor()),
                       input->Render() | color(TextColor()) | flex, text("]") | color(BorderColor())}),
-                text("Projects with containers show up by themselves. Add one here to") | color(MutedColor()),
-                text("bring it up from g-systemctl, or keep it listed while it is down.") | color(MutedColor()),
+                text(" Projects with containers show up by themselves. Add one here to") | color(MutedColor()),
+                text(" bring it up from g-systemctl, or keep it listed while it is down.") | color(MutedColor()),
             };
             if (!add_error_.empty())
-                lines.push_back(paragraph(add_error_) | color(Colors::error_fg()));
+                lines.push_back(paragraph(" " + add_error_ + " ") | color(Colors::error_fg()));
             lines.push_back(separator() | color(BorderColor()));
-            lines.push_back(text("Enter add  Esc cancel") | color(MutedColor()));
+            lines.push_back(text(" Enter add  Esc cancel") | color(MutedColor()));
             return vbox(std::move(lines)) | size(WIDTH, GREATER_THAN, 66) | size(WIDTH, LESS_THAN, 90) |
-                   borderStyled(ROUNDED, BorderColor()) | bgcolor(PanelColor());
+                   borderStyled(ROUNDED, BorderColor()) | bgcolor(PanelColor()) | isolated_borders;
         });
         return CatchEvent(renderer, [this](Event event) {
             if (event == Event::Return)
@@ -1490,7 +1698,7 @@ namespace gsystemctl::ui
 
         auto row = [](const std::string &label, Component input, const std::string &hint) {
             return hbox({
-                text(label) | color(HeaderColor()) | size(WIDTH, EQUAL, 15),
+                text(" " + label) | color(HeaderColor()) | size(WIDTH, EQUAL, 16),
                 text("[") | color(BorderColor()),
                 input->Render() | color(TextColor()) | size(WIDTH, EQUAL, 16),
                 text("]") | color(BorderColor()),
@@ -1500,7 +1708,7 @@ namespace gsystemctl::ui
 
         auto renderer = Renderer(inputs, [this, cpus, memory, swap, pids, restart, row] {
             Elements lines = {
-                hbox({text("Resources  ") | bold | color(AccentColor()), text(edit_target_name_) | color(WarningColor())}),
+                hbox({text(" Resources  ") | bold | color(AccentColor()), text(edit_target_name_) | color(WarningColor())}),
                 separator() | color(BorderColor()),
                 row("CPUs", cpus, "e.g. 0.5, 2"),
                 row("Memory", memory, "e.g. 256m, 2g"),
@@ -1508,18 +1716,18 @@ namespace gsystemctl::ui
                 row("PIDs limit", pids, "empty = unlimited"),
                 row("Restart", restart, "no|always|unless-stopped|on-failure[:N]"),
                 separator() | color(BorderColor()),
-                text("Applied live with `" + manager_->runtime_name() + " update`. Env, ports and volumes") |
+                text(" Applied live with `" + manager_->runtime_name() + " update`. Env, ports and volumes") |
                     color(MutedColor()),
-                text("need the container to be recreated.") | color(MutedColor()),
+                text(" need the container to be recreated.") | color(MutedColor()),
             };
             if (!edit_error_.empty())
             {
-                lines.push_back(paragraph(edit_error_) | color(Colors::error_fg()));
+                lines.push_back(paragraph(" " + edit_error_ + " ") | color(Colors::error_fg()));
             }
             lines.push_back(separator() | color(BorderColor()));
-            lines.push_back(text("Tab/↑↓ field  Enter apply  Esc cancel") | color(MutedColor()));
+            lines.push_back(text(" Tab/↑↓ field  Enter apply  Esc cancel") | color(MutedColor()));
             return vbox(std::move(lines)) | size(WIDTH, LESS_THAN, 80) | borderStyled(ROUNDED, BorderColor()) |
-                   bgcolor(PanelColor());
+                   bgcolor(PanelColor()) | isolated_borders;
         });
 
         return CatchEvent(renderer, [this](Event event) {
@@ -1584,6 +1792,27 @@ namespace gsystemctl::ui
             clear_messages();
             return true;
         }
+        else if (event == Event::PageUp || event == Event::PageDown)
+        {
+            // One screen of rows, from the list's height in the last frame.
+            const int page = std::max(1, list_box_.y_max - list_box_.y_min);
+            const bool page_up = event == Event::PageUp;
+            select(selected_index_ + (page_up ? -page : page), page_up ? -1 : 1);
+            clear_messages();
+            return true;
+        }
+        else if (event == Event::Home || event == Event::End || event.input() == "\x1b[1~" ||
+                 event.input() == "\x1b[4~" || event.input() == "\x1b[7~" || event.input() == "\x1b[8~" ||
+                 event.input() == "\x1bOH" || event.input() == "\x1bOF")
+        {
+            // FTXUI 5 knows only ESC[H / ESC[F; tmux, screen and rxvt send the others.
+            const auto &in = event.input();
+            const bool home = event == Event::Home || in == "\x1b[1~" || in == "\x1b[7~" || in == "\x1bOH";
+            // A label row at either end is stepped past by select().
+            select(home ? 0 : static_cast<int>(rows_.size()) - 1, home ? 1 : -1);
+            clear_messages();
+            return true;
+        }
         else if (event == Event::ArrowLeft || event == Event::ArrowRight)
         {
             fold_selected(event == Event::ArrowLeft);
@@ -1597,6 +1826,23 @@ namespace gsystemctl::ui
         }
 
         // Actions are ignored while a previous one is still running.
+        // Alt+s: sort by the next column; Alt+Shift+s: reverse (on the page, Alt+s shows secrets).
+        if (!detail_open_ && (event == Event::Special("\x1b" "s") || event == Event::Special("\x1b" "S")))
+        {
+            if (event == Event::Special("\x1b" "S"))
+            {
+                sort_by(sort_.column);
+                return true;
+            }
+            std::vector<SortColumn> cycle;
+            for (const auto &c : kListColumns)
+                if (c.sortable)
+                    cycle.push_back(c.column);
+            auto it = std::find(cycle.begin(), cycle.end(), sort_.column);
+            sort_by(it == cycle.end() || it + 1 == cycle.end() ? cycle.front() : *(it + 1));
+            return true;
+        }
+
         const bool is_action = event == Event::Special("\x1b" "o") || event == Event::Special("\x1b" "x") ||
                                event == Event::Special("\x1b" "r") || event == Event::Special("\x1b" "u") ||
                                event == Event::Special("\x1b" "b") || event == Event::Special("\x1b" "p") ||
@@ -1714,6 +1960,17 @@ namespace gsystemctl::ui
             }
             if (mouse.button == Mouse::Left && mouse.motion == Mouse::Pressed)
             {
+                if (!detail_open_)
+                {
+                    for (size_t i = 0; i < header_boxes_.size() && i < kListColumns.size(); ++i)
+                    {
+                        if (kListColumns[i].sortable && header_boxes_[i].Contain(mouse.x, mouse.y))
+                        {
+                            sort_by(kListColumns[i].column);
+                            return true;
+                        }
+                    }
+                }
                 switch (actions_.hit(mouse.x, mouse.y))
                 {
                 case ActionBar::Action::Start:
@@ -1794,12 +2051,14 @@ namespace gsystemctl::ui
         if (!detail_project_.empty())
             return render_project_detail();
         const auto *c = action_target();
+        actions_.fit_title(logs_name_, c ? state_style(c->state).label : "✕ removed");
         Element actions = c ? actions_.render(state_style(c->state).label, state_style(c->state).fg, c->is_active())
-                            : actions_.render("✕ removed", Colors::error_fg(), false);
+                            : actions_.render("✕ removed", Colors::error_fg(), false, false);
         auto title = detail_title_bar(actions_.render_back(), logs_name_, c ? c->image : details_.image, std::move(actions));
         Element summary = logs_full_ ? text("") : summary_.render(render_summary());
         const bool graphs = graphs_ ? graphs_->shown() : graphs_fit();
         // The title bar is full at narrow widths; the shell button goes with the log buttons.
+        actions_.fit_log_header(c != nullptr, logs_full_, graphs, graphs_fit());
         auto log_header = actions_.render_log_header(logs_full_, graphs, graphs_fit());
         if (c)
         {
@@ -1820,18 +2079,33 @@ namespace gsystemctl::ui
                    center | dim;
         }
 
-        auto header = hbox({
-                          text(" "),
-                          flex_cell("CONTAINER", HeaderColor()),
-                          cell("IMAGE", 24, HeaderColor()),
-                          cell("STATE", 13, HeaderColor()),
-                          cell("STATUS", 22, HeaderColor()),
-                          right_cell("CPU", 8, HeaderColor()),
-                          right_cell("MEM", 22, HeaderColor()),
-                          right_cell("PIDS", 6, HeaderColor()),
-                          text(" "),
-                      }) |
-                      bgcolor(PanelColor());
+        // Inside the border: selection mark, trailing space and the scroll indicator.
+        cols_ = fit_columns(Terminal::Size().dimx - 2 - 3);
+        // The sorted column shows ▲ (ascending) or ▼; headers are clickable.
+        header_boxes_.resize(kListColumns.size());
+        for (auto &box : header_boxes_)
+            box = Box{1, 0, 1, 0}; // empty: hidden columns take no clicks
+        auto label = [this](size_t i) {
+            const auto &c = kListColumns[i];
+            if (!c.sortable || c.column != sort_.column)
+                return c.header;
+            return c.header + (sort_.descending ? " ▼" : " ▲");
+        };
+        auto hc = [this](size_t i) {
+            return kListColumns[i].sortable && kListColumns[i].column == sort_.column ? AccentColor() : HeaderColor();
+        };
+        auto head = [&](size_t i, bool right) {
+            auto e = text(label(i)) | color(hc(i));
+            if (right)
+                e = e | align_right;
+            return e | reflect(header_boxes_[i]);
+        };
+        Elements header_cells = {text(" "), flex_cell(label(0), hc(0)) | reflect(header_boxes_[0])};
+        for (auto &e : fixed_columns({head(1, false), head(2, false), head(3, false), head(4, true), head(5, true),
+                                      head(6, true)}))
+            header_cells.push_back(e);
+        header_cells.push_back(text("  ")); // trailing space + the column rows lose to vscroll_indicator
+        auto header = hbox(std::move(header_cells)) | bgcolor(PanelColor());
 
         // Projects in the compose group, containers in the standalone group.
         auto section_count = [this](int section) {
@@ -1892,9 +2166,45 @@ namespace gsystemctl::ui
 
         return vbox({
                    header,
-                   vbox(std::move(rows)) | vscroll_indicator | yframe | flex,
+                   vbox(std::move(rows)) | vscroll_indicator | yframe | flex | reflect(list_box_),
                }) |
                flex;
+    }
+
+    ContainersView::ListColumns ContainersView::fit_columns(int room)
+    {
+        // Steps in order until the name column gets kMinNameWidth.
+        ListColumns c;
+        const std::vector<std::function<void(ListColumns &)>> steps = {
+            [](ListColumns &c) { c.image = 16; },
+            [](ListColumns &c) { c.status = 16; },
+            [](ListColumns &c) { c.image = 0; },
+            [](ListColumns &c) { c.pids = 0; },
+            [](ListColumns &c) { c.mem = 15; },   // "214MiB / 1GiB"
+            [](ListColumns &c) { c.status = 0; },
+            [](ListColumns &c) { c.mem = 9; },    // "999.9 MiB" (projects); containers cut at the left
+        };
+        for (const auto &step : steps)
+        {
+            if (room - c.total() >= kMinNameWidth)
+                break;
+            step(c);
+        }
+        return c;
+    }
+
+    Elements ContainersView::fixed_columns(std::vector<Element> cells) const
+    {
+        // A column starts with a space, so neighbours never touch when a value fills it.
+        const int widths[] = {cols_.image, cols_.state, cols_.status, cols_.cpu, cols_.mem, cols_.pids};
+        Elements out;
+        for (size_t i = 0; i < cells.size() && i < 6; ++i)
+        {
+            if (widths[i] <= 0)
+                continue;
+            out.push_back(hbox({text(" "), cells[i] | flex}) | size(WIDTH, EQUAL, widths[i]));
+        }
+        return out;
     }
 
     Element ContainersView::render_project_row(const ComposeProject &p, bool is_selected)
@@ -1908,27 +2218,31 @@ namespace gsystemctl::ui
         std::string kind = p.down() ? "compose · saved"
                                     : "compose · " + std::to_string(p.services.size()) +
                                           (p.services.size() == 1 ? " service" : " services");
+        const int status_room = std::max(1, cols_.status - 1);
         Element status = text("");
         if (auto it = drift_.find(name); it != drift_.end() && !it->second.empty())
-            status = text("⚠ " + std::to_string(it->second.size()) + " changed (Alt+u)") | color(WarningColor());
+            status = text(ellipsize("⚠ " + std::to_string(it->second.size()) + " changed (Alt+u)", status_room)) | color(WarningColor());
         else if (drift_error_.count(name))
-            status = text("? config unreadable") | color(MutedColor());
+            status = text(ellipsize("? config unreadable", status_room)) | color(MutedColor());
         else if (p.down())
-            status = text("Alt+o to bring up") | color(MutedColor());
+            status = text(ellipsize("Alt+o to bring up", status_room)) | color(MutedColor());
         if (auto activity = row_activity_.render(kProjectKey + name))
             status = activity;
 
-        return hbox({
+        Elements row = {
             text(p.down() ? "▹ " : folded ? "▸ " : "▾ ") | color(AccentColor()),
             text(name) | bold | color(is_selected ? Color::White : AccentColor()) | flex,
-            cell(kind, 24, MutedColor()),
-            cell(style.label, 13, style.fg, p.running > 0),
-            status | size(WIDTH, EQUAL, 22),
-            right_cell(sampled(format_metric_percent(totals.cpu)), 8, MutedColor()),
-            right_cell(sampled(format_metric_bytes(totals.memory)), 22, MutedColor()),
-            right_cell(sampled(format_metric_count(totals.pids)), 6, MutedColor()),
-            text(" "),
-        });
+        };
+        auto state = text(style.label) | color(style.fg);
+        if (p.running > 0)
+            state = state | bold;
+        for (auto &e : fixed_columns({text(ellipsize(kind, std::max(1, cols_.image - 1))) | color(MutedColor()), state, status,
+                                      text(sampled(format_metric_percent(totals.cpu))) | color(MutedColor()) | align_right,
+                                      text(sampled(format_metric_bytes(totals.memory))) | color(MutedColor()) | align_right,
+                                      text(sampled(format_metric_count(totals.pids))) | color(MutedColor()) | align_right}))
+            row.push_back(e);
+        row.push_back(text(" "));
+        return hbox(std::move(row));
     }
 
     Element ContainersView::render_container_row(const Container &c, bool is_selected, bool child, bool last_child)
@@ -1960,17 +2274,18 @@ namespace gsystemctl::ui
         if (!status && child)
             status = row_activity_.render(kProjectKey + c.compose_project);
         if (!status)
-            status = text(c.status) | color(MutedColor());
-        return hbox({
-            name | flex,
-            cell(c.image, 24, MutedColor()),
-            cell(style.label, 13, style.fg, c.is_running()),
-            status | size(WIDTH, EQUAL, 22),
-            right_cell(dash(c.stats.cpu), 8, MutedColor()),
-            right_cell(dash(c.stats.mem_usage), 22, MutedColor()),
-            right_cell(dash(c.stats.pids), 6, MutedColor()),
-            text(" "),
-        });
+            status = text(ellipsize(c.status, std::max(1, cols_.status - 1))) | color(MutedColor());
+        Elements row = {name | flex};
+        auto state = text(style.label) | color(style.fg);
+        if (c.is_running())
+            state = state | bold;
+        for (auto &e : fixed_columns({text(ellipsize(c.image, std::max(1, cols_.image - 1))) | color(MutedColor()), state, status,
+                                      text(dash(c.stats.cpu)) | color(MutedColor()) | align_right,
+                                      text(dash(c.stats.mem_usage)) | color(MutedColor()) | align_right,
+                                      text(dash(c.stats.pids)) | color(MutedColor()) | align_right}))
+            row.push_back(e);
+        row.push_back(text(" "));
+        return hbox(std::move(row));
     }
 
     Elements ContainersView::render_summary()
@@ -2053,7 +2368,7 @@ namespace gsystemctl::ui
 
         section("Mounts");
         for (const auto &m : d.mounts)
-            lines.push_back(text(" " + m) | color(TextColor()));
+            lines.push_back(hbox({text(" "), wrap_text_element(m) | flex}) | color(TextColor()));
         if (d.mounts.empty())
             lines.push_back(text(" none") | color(MutedColor()));
 
@@ -2065,7 +2380,7 @@ namespace gsystemctl::ui
             {
                 shown = e.substr(0, e.find('=')) + "=••••••";
             }
-            lines.push_back(text(" " + shown) | color(TextColor()));
+            lines.push_back(hbox({text(" "), wrap_text_element(shown) | flex}) | color(TextColor()));
         }
         if (d.env.empty())
             lines.push_back(text(" none") | color(MutedColor()));
@@ -2081,10 +2396,12 @@ namespace gsystemctl::ui
         if (p)
         {
             auto style = project_style(*p);
+            actions_.fit_title(detail_project_, style.label);
             actions = actions_.render(style.label, style.fg, p->down() || p->active < p->total, p->active > 0);
         }
         else
         {
+            actions_.fit_title(detail_project_, "✕ gone");
             actions = actions_.render("✕ gone", Colors::error_fg(), false, false);
         }
         auto title = detail_title_bar(actions_.render_back(), detail_project_, p ? p->ref.working_dir : "", std::move(actions));
@@ -2093,7 +2410,11 @@ namespace gsystemctl::ui
             summary = summary_.render(p ? render_project_summary(*p) : Elements{text(" Project no longer listed") | dim});
         const bool graphs = graphs_ ? graphs_->shown() : graphs_fit();
         return detail_page(std::move(title), std::move(summary),
-                           logs_.render(actions_.render_log_header(logs_full_, graphs, graphs_fit())), logs_full_,
+                           logs_.render([&] {
+                               actions_.fit_log_header(false, logs_full_, graphs, graphs_fit());
+                               return actions_.render_log_header(logs_full_, graphs, graphs_fit());
+                           }()),
+                           logs_full_,
                            logs_full_ || !graphs ? nullptr : render_project_graphs());
     }
 
@@ -2107,7 +2428,7 @@ namespace gsystemctl::ui
         auto style = project_style(p);
         lines.push_back(field_row("State", p.down() ? "down · no containers" : style.label + " (" +
                                                                                   std::to_string(p.services.size()) +
-                                                                                  " services)",
+                                                                                  (p.services.size() == 1 ? " service)" : " services)"),
                                   style.fg));
         lines.push_back(field_row("Directory", p.ref.working_dir));
         if (p.ref.config_files.empty())
@@ -2148,13 +2469,16 @@ namespace gsystemctl::ui
             const bool drifted = drift != drift_.end() && std::find(drift->second.begin(), drift->second.end(),
                                                                     c->compose_service) != drift->second.end();
             auto cs = state_style(c->state);
+            // Same columns on every row: the drift mark sits after the name (as in
+            // the list), and the status column is the one that gives way.
             lines.push_back(hbox({
                 text(" "),
-                cell(service_label(*c, multi), 15, TextColor(), true),
-                cell(cs.label, 13, cs.fg),
-                cell(c->status, 24, MutedColor()),
-                drifted ? text("⚠ changed  ") | color(WarningColor()) : text(""),
-                text(short_ports(c->ports)) | color(MutedColor()) | flex,
+                hbox({text(service_label(*c, multi)) | bold | color(TextColor()),
+                      drifted ? text(" ⚠") | color(WarningColor()) : text("")}) |
+                    size(WIDTH, EQUAL, 15),
+                cell(" " + cs.label, 14, cs.fg),
+                text(" " + c->status) | color(MutedColor()) | size(WIDTH, EQUAL, 25) | xflex_shrink,
+                elastic(text(" " + short_ports(c->ports)) | color(MutedColor())),
             }));
             if (!c->compose_oneoff && !c->compose_depends_on.empty())
                 depends[c->compose_service] = c->compose_depends_on;

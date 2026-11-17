@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <ftxui/dom/node.hpp>
 #include <ftxui/dom/requirement.hpp>
+#include <ftxui/screen/string.hpp>
+#include <ftxui/screen/terminal.hpp>
 
 using namespace ftxui;
 
@@ -14,14 +16,15 @@ namespace gsystemctl::ui
     namespace
     {
         // Log lines wrapped to the width this node is given. The width is only
-        // known after layout, so the first pass lays out unwrapped and Check()
-        // asks FTXUI for another pass once the width is known or changes.
+        // known after layout, so the node starts from the width of the previous
+        // frame (`width`, kept by LogPanel) and Check() asks FTXUI for another
+        // pass only when the real width differs.
         // Selects the last row of `focus_line` so a surrounding frame scrolls to it.
         class WrappedLines : public Node
         {
         public:
-            WrappedLines(std::vector<std::string> lines, int focus_line)
-                : lines_(std::move(lines)), focus_line_(focus_line) {}
+            WrappedLines(std::vector<std::string> lines, int focus_line, int &width)
+                : lines_(std::move(lines)), focus_line_(focus_line), width_(width) {}
 
             void ComputeRequirement() override
             {
@@ -58,6 +61,9 @@ namespace gsystemctl::ui
             void Check(Status *status) override
             {
                 Node::Check(status);
+                // Iteration 0 runs before any layout: box_ is still empty, not a width.
+                if (status->iteration == 0)
+                    return;
                 const int width = box_.x_max - box_.x_min + 1;
                 if (width > 0 && width != width_)
                 {
@@ -69,7 +75,7 @@ namespace gsystemctl::ui
         private:
             std::vector<std::string> lines_;
             int focus_line_;
-            int width_ = 0;
+            int &width_;
         };
     } // namespace
 
@@ -181,14 +187,34 @@ namespace gsystemctl::ui
         }
 
         Element body = lines.empty() ? text("Waiting for log output...") | dim
-                                     : std::make_shared<WrappedLines>(std::move(lines), scroll_position);
+                                     : std::make_shared<WrappedLines>(std::move(lines), scroll_position, wrap_width_);
+
+        // Fit the header: the buttons were already shortened by their owner; the
+        // state shortens to "paused", then the title ends in "…". Always a gap
+        // between title and state.
+        actions->ComputeRequirement();
+        const int width = box_.x_max - box_.x_min + 1 > 1 ? box_.x_max - box_.x_min + 1 : Terminal::Size().dimx - 2;
+        const int fixed = string_width(" LOGS ") + 2 + actions->requirement().min_x;
+        std::string state = following ? "following  " : "paused (scroll to end to follow)  ";
+        if (!following && fixed + string_width(title) + string_width(state) > width)
+            state = "paused  ";
+        const int title_room = width - fixed - string_width(state);
+        auto glyphs = Utf8ToGlyphs(title);
+        if (static_cast<int>(glyphs.size()) > title_room)
+        {
+            title.clear();
+            for (int i = 0; i < title_room - 1; ++i)
+                title += glyphs[i];
+            title += title_room > 0 ? "…" : "";
+        }
 
         return vbox({
                    hbox({
                        text(" LOGS ") | color(HeaderColor()),
                        text(title) | color(WarningColor()),
+                       text("  "),
                        filler(),
-                       text(following ? "following  " : "paused (scroll to end to follow)  ") | color(MutedColor()),
+                       text(state) | color(MutedColor()),
                        std::move(actions),
                    }),
                    separator() | color(BorderColor()),

@@ -1,7 +1,10 @@
 #pragma once
 
+#include <atomic>
+
 #include "g-systemctl/container/compose_store.hpp"
 #include "g-systemctl/container/container_manager.hpp"
+#include "g-systemctl/core/list_sort.hpp"
 #include "g-systemctl/ui/action_bar.hpp"
 #include "g-systemctl/ui/detail_page.hpp"
 #include "g-systemctl/ui/log_panel.hpp"
@@ -143,6 +146,11 @@ namespace gsystemctl::ui
         bool busy_ = false;
         std::string busy_message_;
         std::vector<ftxui::Box> item_boxes_;
+        // Alt+s / Alt+Shift+s or a header click. Header cell boxes, one per column.
+        SortOrder sort_;
+        std::vector<ftxui::Box> header_boxes_;
+        void sort_by(SortColumn column); // same column again: reverse
+        ftxui::Box list_box_; // the list's area, for PgUp/PgDn
         // Action progress in the list rows, keyed like selected_key_.
         RowActivity row_activity_;
 
@@ -176,8 +184,8 @@ namespace gsystemctl::ui
         int edit_cursors_[5] = {0, 0, 0, 0, 0};
         std::string edit_error_;
 
-        // Shell per container ID, found with `exec` on shell_thread_. Detection
-        // runs when a running container's page opens, or on Alt+t.
+        // Shell per container ID, found with `exec` on a thread per container.
+        // Detection runs when a running container's page opens, or on Alt+t.
         struct ShellInfo
         {
             bool checking = false;
@@ -186,9 +194,18 @@ namespace gsystemctl::ui
             std::string reason; // when not ok
         };
         std::map<std::string, ShellInfo> shells_;
-        // Container to open a shell in once detection finishes (Alt+t pressed meanwhile).
+        // Container to open a shell in once detection finishes (Alt+t pressed
+        // meanwhile). Dropped when the user leaves that container or the tab.
         std::string shell_open_pending_;
-        std::thread shell_thread_;
+        // Never joined on the UI thread while running: a finished job is joined
+        // (instantly) when the next one starts, the rest in the destructor.
+        struct ShellJob
+        {
+            std::thread thread;
+            std::shared_ptr<std::atomic<bool>> done;
+        };
+        std::vector<ShellJob> shell_jobs_;
+        bool active_ = false;
 
         bool add_open_ = false;
         std::string add_path_;
@@ -236,6 +253,8 @@ namespace gsystemctl::ui
                         const RowActivity::Labels &labels = {});
         // The container on the open detail page, else the selected one.
         const Container *action_target() const;
+        // Error message for an action on the page of a removed container.
+        void report_removed();
         void start_target();
         void stop_target();
         void restart_target();
@@ -275,6 +294,19 @@ namespace gsystemctl::ui
         void close_add_dialog();
 
         ftxui::Element render_list();
+        // Column widths of the list, fitted to the terminal width in render_list.
+        // 0 = column hidden. Lower-priority columns give way first, so the name
+        // column keeps at least kMinNameWidth.
+        struct ListColumns
+        {
+            int image = 24, state = 13, status = 22, cpu = 8, mem = 22, pids = 6;
+            int total() const { return image + state + status + cpu + mem + pids; }
+        };
+        static constexpr int kMinNameWidth = 16;
+        static ListColumns fit_columns(int name_room);
+        ListColumns cols_;
+        // The fixed columns of one row; `cells` in the order image, state, status, cpu, mem, pids.
+        ftxui::Elements fixed_columns(std::vector<ftxui::Element> cells) const;
         ftxui::Element render_project_row(const ComposeProject &project, bool is_selected);
         ftxui::Element render_container_row(const Container &c, bool is_selected, bool child, bool last_child);
         ftxui::Element render_detail();

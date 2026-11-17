@@ -5,6 +5,7 @@
 #include "g-systemctl/core/command_executor.hpp"
 #include "g-systemctl/core/logging_manager.hpp"
 #include "g-systemctl/platform/platform.hpp"
+#include <ftxui/screen/string.hpp>
 #include <ftxui/screen/terminal.hpp>
 #include <algorithm>
 #include <cctype>
@@ -59,13 +60,18 @@ namespace gsystemctl::ui
         sampler_ = std::thread([this] { sampler_loop(); });
         if (update_check)
         {
-            updater_ = std::make_unique<Updater>(executor_, G_SYSTEMCTL_VERSION);
+            updater_ = std::make_shared<Updater>(executor_, G_SYSTEMCTL_VERSION);
             start_update_check();
         }
     }
 
     App::~App()
     {
+        // From here on the update check thread must not post to screen_.
+        {
+            std::lock_guard<std::mutex> lock(update_link_->mutex);
+            update_link_->alive = false;
+        }
         {
             std::lock_guard<std::mutex> lock(sampler_mutex_);
             sampler_stop_ = true;
@@ -81,8 +87,31 @@ namespace gsystemctl::ui
         }
         if (update_thread_.joinable())
         {
-            update_thread_.join();
+            // An install must finish (quit() refuses meanwhile); a check is abandoned.
+            if (update_busy_ || !update_check_running())
+                update_thread_.join();
+            else
+                update_thread_.detach();
         }
+    }
+
+    bool App::update_check_running() const
+    {
+        if (update_busy_ || !update_thread_.joinable())
+            return false;
+        std::lock_guard<std::mutex> lock(update_link_->mutex);
+        return !update_link_->done;
+    }
+
+    void App::quit()
+    {
+        // Leaving mid-install could stop between download and replace; wait for it.
+        if (update_busy_)
+        {
+            status_message_ = "Installing the update: quit when it finishes";
+            return;
+        }
+        screen_.Exit();
     }
 
     // ---- updates ------------------------------------------------------------------
@@ -98,12 +127,17 @@ namespace gsystemctl::ui
                 update_notice_ = "↑ " + cached->version + " available: g-systemctl --update";
             return;
         }
-        update_thread_ = std::thread([this] {
+        // Touches only what it holds a reference to, so it can outlive App.
+        update_thread_ = std::thread([this, updater = updater_, link = update_link_] {
             std::string error;
-            auto release = updater_->check(&error);
+            auto release = updater->check(&error);
             Updater::Plan plan;
             if (release)
-                plan = updater_->plan(*release);
+                plan = updater->plan(*release);
+            std::lock_guard<std::mutex> lock(link->mutex);
+            link->done = true;
+            if (!link->alive)
+                return;
             // A failed check stays quiet; the next one is tomorrow.
             screen_.Post([this, release, plan] {
                 if (!release || release->tag == updater_->state().skip)
@@ -123,6 +157,12 @@ namespace gsystemctl::ui
         if (!update_offer_ || show_help_ || auth_dialog_open_ || confirm_.is_open() || update_dialog_.is_open() ||
             containers_view_->edit_dialog_open())
             return;
+        // Never pop up under someone typing: their next keys would answer it.
+        if (std::chrono::steady_clock::now() - last_key_time_ < kUpdateOfferQuiet)
+        {
+            animation::RequestAnimationFrame(); // render again until the quiet period is over
+            return;
+        }
         auto release = *update_offer_;
         update_offer_.reset();
         update_dialog_.offer(release.version, updater_->current_version(), update_plan_.error,
@@ -201,8 +241,56 @@ namespace gsystemctl::ui
         }
     }
 
+    namespace
+    {
+        // Columns of the services list, in Alt+s order, with their headers.
+        const std::vector<std::pair<SortColumn, std::string>> kServiceColumns = {
+            {SortColumn::Name, "SERVICE"}, {SortColumn::State, "STATUS"}, {SortColumn::Pid, "PID"},
+            {SortColumn::Cpu, "CPU"},      {SortColumn::Memory, "MEM"},
+        };
+
+        SortValue service_sort_value(const ServiceUnit &s, SortColumn column)
+        {
+            SortValue v;
+            v.name = s.unit;
+            switch (column)
+            {
+            case SortColumn::State:
+            {
+                // Running first, then changing, failed, stopped.
+                const auto &a = s.active;
+                v.number = (a == "active" || a == "running" || s.is_running()) ? 0
+                           : a == "failed"                                     ? 2
+                           : (a == "inactive" || a == "stopped" || a.empty())  ? 3
+                                                                               : 1;
+                break;
+            }
+            case SortColumn::Pid:
+                v.number = s.pid.empty() ? 0 : std::strtod(s.pid.c_str(), nullptr);
+                v.missing = s.pid.empty();
+                break;
+            case SortColumn::Cpu:
+                v.number = parse_percent(s.cpu);
+                v.missing = v.number < 0;
+                break;
+            case SortColumn::Memory:
+                v.number = parse_size(s.memory);
+                v.missing = v.number < 0;
+                break;
+            default:
+                v.text = s.unit;
+                break;
+            }
+            return v;
+        }
+    } // namespace
+
     void App::apply_filter()
     {
+        // Keep the selected unit selected when the order changes.
+        const std::string previous = selected_index_ >= 0 && selected_index_ < static_cast<int>(filtered_services_.size())
+                                         ? filtered_services_[selected_index_].unit
+                                         : std::string();
         if (filter_text_.empty())
         {
             filtered_services_ = services_;
@@ -228,17 +316,77 @@ namespace gsystemctl::ui
             }
         }
 
-        if (selected_index_ >= static_cast<int>(filtered_services_.size()))
+        const auto order = services_sort_;
+        auto sorted = [&order](const ServiceUnit &a, const ServiceUnit &b) {
+            return sort_before(service_sort_value(a, order.column), service_sort_value(b, order.column),
+                               order.descending);
+        };
+        std::stable_sort(filtered_services_.begin(), filtered_services_.end(), sorted);
+
+        // Keep the selected unit. If the filter hides it, select the nearest
+        // listed unit (in sorted order) but remember it for when it shows again.
+        if (filtered_services_.empty())
         {
-            selected_index_ = std::max(0, static_cast<int>(filtered_services_.size()) - 1);
+            selected_index_ = 0;
+            return;
         }
+        const std::string &keep = selected_unit_.empty() ? previous : selected_unit_;
+        if (keep.empty())
+        {
+            selected_index_ = std::clamp(selected_index_, 0, static_cast<int>(filtered_services_.size()) - 1);
+            return;
+        }
+        std::vector<ServiceUnit> all = services_;
+        std::stable_sort(all.begin(), all.end(), sorted);
+        auto position = [&all](const std::string &unit) {
+            auto it = std::find_if(all.begin(), all.end(), [&unit](const ServiceUnit &s) { return s.unit == unit; });
+            return static_cast<int>(it - all.begin());
+        };
+        const int wanted = position(keep);
+        selected_index_ = static_cast<int>(filtered_services_.size()) - 1;
+        for (size_t i = 0; i < filtered_services_.size(); ++i)
+        {
+            if (position(filtered_services_[i].unit) >= wanted)
+            {
+                selected_index_ = static_cast<int>(i);
+                break;
+            }
+        }
+    }
+
+    void App::select_service(int index)
+    {
+        if (filtered_services_.empty())
+            return;
+        selected_index_ = std::clamp(index, 0, static_cast<int>(filtered_services_.size()) - 1);
+        selected_unit_ = filtered_services_[selected_index_].unit;
+    }
+
+    void App::sort_services_by(SortColumn column)
+    {
+        if (services_sort_.column == column)
+            services_sort_.descending = !services_sort_.descending;
+        else
+            services_sort_ = {column, default_descending(column)};
+        apply_filter();
     }
 
     namespace
     {
-        bool service_is_active(const ServiceUnit &service)
+        Color state_color(const ServiceState &state)
         {
-            return service.active == "active" || service.is_running();
+            switch (state.kind)
+            {
+            case ServiceState::Kind::Active:
+                return Colors::running_fg();
+            case ServiceState::Kind::Failed:
+                return Colors::error_fg();
+            case ServiceState::Kind::Changing:
+                return WarningColor();
+            case ServiceState::Kind::Inactive:
+                break;
+            }
+            return Colors::stopped_fg();
         }
     } // namespace
 
@@ -270,18 +418,20 @@ namespace gsystemctl::ui
             return;
         }
         const auto service = *target;
-        const bool active = service_is_active(service);
+        const auto state = service_state(service);
         status_message_.clear();
         error_message_.clear();
 
-        if (action == AuthAction::Start && active)
+        if (action == AuthAction::Start && !state.can_start)
         {
-            status_message_ = service.unit + " is already running";
+            status_message_ = state.kind == ServiceState::Kind::Active ? service.unit + " is already running"
+                                                                       : service.unit + " is " + service.active;
             return;
         }
-        if ((action == AuthAction::Stop || action == AuthAction::Restart) && !active)
+        if ((action == AuthAction::Stop || action == AuthAction::Restart) && !state.can_stop)
         {
-            status_message_ = service.unit + " is not running (Alt+o to start)";
+            status_message_ = service.unit + (state.kind == ServiceState::Kind::Failed ? " has failed" : " is not running") +
+                              " (Alt+o to start)";
             return;
         }
 
@@ -753,9 +903,38 @@ namespace gsystemctl::ui
                 return true;
             }
         } else {
+            if (event == Event::Special("\x1b" "s") || event == Event::Special("\x1b" "S")) {
+                // Alt+s: next column; Alt+Shift+s: reverse the order.
+                if (event == Event::Special("\x1b" "S")) {
+                    sort_services_by(services_sort_.column);
+                } else {
+                    size_t next = 0;
+                    for (size_t i = 0; i < kServiceColumns.size(); ++i)
+                        if (kServiceColumns[i].first == services_sort_.column)
+                            next = (i + 1) % kServiceColumns.size();
+                    sort_services_by(kServiceColumns[next].first);
+                }
+                clear_messages();
+                return true;
+            }
             if (up || down) {
-                selected_index_ = std::clamp(selected_index_ + (up ? -1 : 1), 0,
-                                             std::max(0, static_cast<int>(filtered_services_.size()) - 1));
+                select_service(selected_index_ + (up ? -1 : 1));
+                clear_messages();
+                return true;
+            }
+            if (event == Event::PageUp || event == Event::PageDown) {
+                // One screen of rows, from the list's height in the last frame.
+                const int page = std::max(1, service_list_box_.y_max - service_list_box_.y_min);
+                select_service(selected_index_ + (event == Event::PageUp ? -page : page));
+                clear_messages();
+                return true;
+            }
+            // FTXUI 5 knows only ESC[H / ESC[F; tmux, screen and rxvt send the others.
+            const auto &in = event.input();
+            const bool home = event == Event::Home || in == "\x1b[1~" || in == "\x1b[7~" || in == "\x1bOH";
+            const bool end = event == Event::End || in == "\x1b[4~" || in == "\x1b[8~" || in == "\x1bOF";
+            if (home || end) {
+                select_service(home ? 0 : static_cast<int>(filtered_services_.size()) - 1);
                 clear_messages();
                 return true;
             }
@@ -777,8 +956,7 @@ namespace gsystemctl::ui
             if (mouse.button == Mouse::WheelUp || mouse.button == Mouse::WheelDown) {
                 const int delta = mouse.button == Mouse::WheelUp ? -1 : 1;
                 if (!detail_open_) {
-                    selected_index_ = std::clamp(selected_index_ + delta, 0,
-                                                 std::max(0, static_cast<int>(filtered_services_.size()) - 1));
+                    select_service(selected_index_ + delta);
                     clear_messages();
                 } else if (service_logs_.contains(mouse.x, mouse.y)) {
                     service_logs_.scroll(delta * 3);
@@ -788,6 +966,14 @@ namespace gsystemctl::ui
                 return true;
             }
             if (mouse.button == Mouse::Left && mouse.motion == Mouse::Pressed) {
+                if (!detail_open_) {
+                    for (size_t i = 0; i < service_header_boxes_.size() && i < kServiceColumns.size(); ++i) {
+                        if (service_header_boxes_[i].Contain(mouse.x, mouse.y)) {
+                            sort_services_by(kServiceColumns[i].first);
+                            return true;
+                        }
+                    }
+                }
                 if (reload_button_box_.Contain(mouse.x, mouse.y)) {
                     request_daemon_reload();
                     return true;
@@ -825,7 +1011,7 @@ namespace gsystemctl::ui
                         if (static_cast<int>(i) == selected_index_) {
                             open_service_detail(false);
                         } else {
-                            selected_index_ = static_cast<int>(i);
+                            select_service(static_cast<int>(i));
                         }
                         clear_messages();
                         return true;
@@ -845,6 +1031,9 @@ namespace gsystemctl::ui
 
         auto main_component = CatchEvent(renderer, [this](Event event)
                           {
+        if (!event.is_mouse() && !event.is_cursor_reporting() && event != Event::Custom) {
+            last_key_time_ = std::chrono::steady_clock::now();
+        }
         if (busy_) {
             return true;
         }
@@ -864,12 +1053,12 @@ namespace gsystemctl::ui
                 filter_text_.clear();
                 apply_filter();
             } else {
-                screen_.Exit();
+                quit();
             }
             return true;
         }
         if (event == Event::Special("\x1b" "q")) {
-            screen_.Exit();
+            quit();
             return true;
         }
         if (event == Event::Special("\x1b" "g")) {
@@ -921,19 +1110,19 @@ namespace gsystemctl::ui
         auto password_input = Input(&auth_password_, "sudo password", password_option);
         auto auth_renderer = Renderer(password_input, [this, password_input] {
             return vbox({
-                       text("Authentication required") | bold | color(AccentColor()),
+                       text(" Authentication required") | bold | color(AccentColor()),
                        separator() | color(BorderColor()),
-                       text(auth_dialog_message_) | color(TextColor()),
+                       text(" " + auth_dialog_message_ + " ") | color(TextColor()),
                        hbox({
-                           text("Password: ") | color(MutedColor()),
+                           text(" Password: ") | color(MutedColor()),
                            password_input->Render() | flex,
                        }),
                        separator() | color(BorderColor()),
-                       text("Enter submit  Esc cancel") | color(MutedColor()),
+                       text(" Enter submit  Esc cancel") | color(MutedColor()),
                    }) |
                    size(WIDTH, GREATER_THAN, 44) |
                    borderStyled(ROUNDED, BorderColor()) |
-                   bgcolor(PanelColor());
+                   bgcolor(PanelColor()) | isolated_borders;
         });
         auto auth_modal = CatchEvent(auth_renderer, [this](Event event) {
             if (event == Event::Return) {
@@ -956,7 +1145,14 @@ namespace gsystemctl::ui
                                              std::function<void()> on_confirm) {
             confirm_.ask(question, label, std::move(on_confirm));
         });
-        return main_component;
+        // Dialogs take every key while open; Alt+q still quits from any of them.
+        return CatchEvent(main_component, [this](Event event) {
+            if (event == Event::Special("\x1b" "q")) {
+                quit();
+                return true;
+            }
+            return false;
+        });
     }
 
     Element App::render()
@@ -984,8 +1180,9 @@ namespace gsystemctl::ui
         if (!status.empty() || !error.empty())
         {
             layout.push_back(separator() | color(BorderColor()));
-            layout.push_back(!error.empty() ? text(" " + error) | color(Colors::error_fg())
-                                            : text(" " + status) | color(MutedColor()));
+            // Up to three rows; a longer error keeps its start and its end (the cause).
+            layout.push_back(hbox({text(" "), wrap_text_element(error.empty() ? status : error, 3) | flex}) |
+                             color(error.empty() ? MutedColor() : Colors::error_fg()));
         }
         layout.push_back(separator() | color(BorderColor()));
 
@@ -999,14 +1196,9 @@ namespace gsystemctl::ui
             : on_detail  ? "  ·  ↑↓ scroll info  ·  PgUp/PgDn scroll logs  ·  Enter expand logs  ·  Esc back  ·  ? help  "
                          : "  ·  ↑↓ move  ·  Enter open  ·  Alt+o start  ·  Alt+x stop  ·  Alt+r restart  ·  ? help  ";
         const auto summary = containers ? containers_view_->summary()
-                                        : std::to_string(filtered_services_.size()) + "/" + std::to_string(services_.size()) + " services";
-        layout.push_back(hbox({
-            text(" Filter: ") | color(MutedColor()),
-            text(filter + "█") | color(AccentColor()),
-            filler(),
-            text(summary) | color(MutedColor()),
-            text(hints) | color(MutedColor()),
-        }));
+                                        : std::to_string(filtered_services_.size()) + "/" + std::to_string(services_.size()) +
+                                              (services_.size() == 1 ? " service" : " services");
+        layout.push_back(render_filter_bar(filter, summary, hints));
 
         auto page = vbox(std::move(layout)) | borderStyled(ROUNDED, BorderColor()) | bgcolor(BackgroundColor());
         show_update_offer();
@@ -1044,60 +1236,193 @@ namespace gsystemctl::ui
         });
     }
 
+    namespace
+    {
+        // "↑ 2.3.0 available: …" or "✓ 2.3.0 installed: …" → "2.3.0".
+        std::string version_of_notice(const std::string &notice)
+        {
+            const auto start = notice.find(' ');
+            if (start == std::string::npos)
+                return "";
+            const auto end = notice.find(' ', start + 1);
+            return notice.substr(start + 1, end == std::string::npos ? std::string::npos : end - start - 1);
+        }
+    } // namespace
+
+    Element App::render_filter_bar(const std::string &filter, const std::string &summary, const std::string &hints)
+    {
+        // Fit to the terminal width (inside the border) instead of letting FTXUI
+        // squeeze every part: hints drop whole, from the right ("? help" last),
+        // then the summary shortens to "N/M", then the filter shows its end.
+        const std::string sep = "  ·  ";
+        std::vector<std::string> items;
+        for (size_t start = 0; start < hints.size();)
+        {
+            auto at = hints.find(sep, start);
+            auto item = hints.substr(start, at == std::string::npos ? std::string::npos : at - start);
+            while (!item.empty() && item.back() == ' ')
+                item.pop_back();
+            while (!item.empty() && item.front() == ' ')
+                item.erase(0, 1);
+            if (!item.empty())
+                items.push_back(item);
+            if (at == std::string::npos)
+                break;
+            start = at + sep.size();
+        }
+        auto join = [&](size_t keep) {
+            // The first keep-1 hints plus the last one ("? help").
+            std::string out;
+            for (size_t i = 0; i < items.size(); ++i)
+                if (i + 1 < keep || (keep > 0 && i + 1 == items.size()))
+                    out += sep + items[i];
+            return out.empty() ? out : out + "  ";
+        };
+
+        const int room = Terminal::Size().dimx - 2;
+        const std::string label = " Filter: ";
+        std::string shown_filter = filter;
+        std::string shown_summary = summary;
+        std::string shown_hints;
+        auto used = [&] {
+            // At least one space between the filter and the summary.
+            return string_width(label + shown_filter + "█") + 1 + string_width(" " + shown_summary + shown_hints);
+        };
+        size_t keep = items.size();
+        for (;; --keep)
+        {
+            shown_hints = join(keep);
+            if (used() <= room || keep == 0)
+                break;
+        }
+        if (used() > room)
+            shown_summary = summary.substr(0, summary.find(' '));
+        if (used() > room)
+        {
+            // Show the end of the filter, where the cursor is.
+            const int for_filter = std::max(1, room - (used() - string_width(shown_filter)) - 1);
+            auto glyphs = Utf8ToGlyphs(filter);
+            std::string tail;
+            for (int i = static_cast<int>(glyphs.size()) - 1, w = 0; i >= 0 && w < for_filter; --i, ++w)
+                tail = glyphs[i] + tail;
+            shown_filter = "…" + tail;
+        }
+        return hbox({
+            text(label) | color(MutedColor()),
+            text(shown_filter + "█") | color(AccentColor()),
+            filler(),
+            text(" " + shown_summary) | color(MutedColor()),
+            text(shown_hints) | color(MutedColor()),
+        });
+    }
+
     Element App::render_top_bar()
     {
         const bool containers = active_tab_ == Tab::Containers;
         const bool busy = containers ? containers_view_->busy() : busy_;
         const auto &busy_message = containers ? containers_view_->busy_message() : busy_message_;
+        auto now = std::chrono::steady_clock::now().time_since_epoch();
+        // Braille spinner, advanced by wall clock so speed is independent of frame rate.
+        auto frame = static_cast<size_t>(std::chrono::duration_cast<std::chrono::milliseconds>(now).count() / 80);
+        if (busy || update_busy_)
+            animation::RequestAnimationFrame();
 
-        Element reload_button;
+        // Each label has variants from longest to shortest; the first combination
+        // that fits the terminal is drawn, so the tabs and "?" are never clipped.
+        struct Label
+        {
+            std::string text;
+            std::string key; // drawn muted after the text
+        };
+        std::vector<Label> reload;
+        Color reload_color = MutedColor();
+        bool reload_dim = false;
         if (busy)
         {
-            // Braille spinner, advanced by wall clock so speed is independent of frame rate.
-            auto now = std::chrono::steady_clock::now().time_since_epoch();
-            auto frame = static_cast<size_t>(std::chrono::duration_cast<std::chrono::milliseconds>(now).count() / 80);
-            reload_button = hbox({
-                spinner(15, frame) | color(WarningColor()),
-                text(" " + busy_message + " ") | color(WarningColor()),
-            });
-            animation::RequestAnimationFrame();
+            // "Reloading systemd daemon..." → "Reloading..." → "working...".
+            const auto verb = busy_message.substr(0, busy_message.find(' '));
+            reload = {{" " + busy_message + " ", ""}, {" " + verb + (verb.size() > 3 && verb.compare(verb.size() - 3, 3, "...") == 0 ? "" : "...") + " ", ""},
+                      {" working... ", ""}};
+            reload_color = WarningColor();
         }
         else if (containers)
         {
-            reload_button = text(" Refresh(Alt+R) ") | color(MutedColor());
+            reload = {{" Refresh(Alt+R) ", ""}, {" Refresh ", ""}, {" ↻ ", ""}};
         }
         else if (service_manager_->supports_unit_files())
         {
-            reload_button = hbox({text(" ↻ systemctl daemon-reload ") | color(AccentColor()),
-                                  text("Alt+Shift+r ") | color(MutedColor())});
+            reload = {{" ↻ systemctl daemon-reload ", "Alt+Shift+r "},
+                      {" ↻ daemon-reload ", "Alt+Shift+r "},
+                      {" ↻ daemon-reload ", ""},
+                      {" ↻ reload ", ""},
+                      {" ↻ ", ""}};
+            reload_color = AccentColor();
         }
         else
         {
-            reload_button = text(" daemon-reload (n/a on macOS) ") | color(MutedColor()) | dim;
+            reload = {{" daemon-reload (n/a on macOS) ", ""}, {" ", ""}};
+            reload_dim = true;
         }
 
-        Element update = text("");
+        std::vector<std::string> update;
+        const auto &version = update_release_.version;
         if (update_busy_)
-        {
-            auto now = std::chrono::steady_clock::now().time_since_epoch();
-            auto frame = static_cast<size_t>(std::chrono::duration_cast<std::chrono::milliseconds>(now).count() / 80);
-            update = hbox({spinner(15, frame), text(" Updating to " + update_release_.version + "... ")}) |
-                     color(WarningColor());
-            animation::RequestAnimationFrame();
-        }
-        else if (!update_notice_.empty())
-        {
-            update = text(" " + update_notice_ + " ") | color(AccentColor());
-        }
+            update = {" Updating to " + version + "... ", " Updating... ", " "};
+        else if (update_notice_.rfind("↑ ", 0) == 0)
+            update = {" " + update_notice_ + " ", " ↑ " + version_of_notice(update_notice_) + " available ",
+                      " ↑ " + version_of_notice(update_notice_) + " "};
+        else if (update_notice_.rfind("✓ ", 0) == 0)
+            update = {" " + update_notice_ + " ", " ✓ " + version_of_notice(update_notice_) + " installed ",
+                      " ✓ " + version_of_notice(update_notice_) + " "};
+        else
+            update = {""};
+        const std::vector<std::string> shortcuts = {" Shortcuts(?) ", " ? "};
+
+        // Border (2), brand, gap and tabs are always there.
+        const int fixed = 2 + string_width(" g-systemctl ") + 1 + string_width(" Containers │ Services ");
+        const int room = Terminal::Size().dimx - fixed;
+        const int spinner_width = (busy ? 1 : 0) + (update_busy_ ? 1 : 0);
+        size_t r = 0, u = 0, k = 0;
+        auto width = [&] {
+            return spinner_width + string_width(reload[r].text + reload[r].key) + string_width(update[u]) +
+                   string_width(shortcuts[k]);
+        };
+        // The fitting combination with the least shortening; at equal cost the
+        // update notice is shortened before the reload label, "Shortcuts(?)" last.
+        [&] {
+            for (k = 0; k < shortcuts.size(); ++k)
+                for (size_t cost = 0; cost < update.size() + reload.size() - 1; ++cost)
+                    for (r = 0; r <= cost && r < reload.size(); ++r)
+                    {
+                        u = cost - r;
+                        if (u < update.size() && width() <= room)
+                            return;
+                    }
+            // Nothing fits: draw the shortest and let the bar clip.
+            k = shortcuts.size() - 1;
+            u = update.size() - 1;
+            r = reload.size() - 1;
+        }();
+
+        Element reload_button = hbox({text(reload[r].text) | color(reload_color),
+                                      text(reload[r].key) | color(MutedColor())});
+        if (busy)
+            reload_button = hbox({spinner(15, frame) | color(WarningColor()), reload_button});
+        if (reload_dim)
+            reload_button = reload_button | dim;
+
+        Element update_element = text(update[u]) | color(update_busy_ ? WarningColor() : AccentColor());
+        if (update_busy_)
+            update_element = hbox({spinner(15, frame) | color(WarningColor()), update_element});
 
         return hbox({
                    text(" g-systemctl ") | color(AccentColor()) | bold,
                    text(" "),
                    render_tabs(),
                    filler(),
-                   update,
+                   update_element,
                    reload_button | reflect(reload_button_box_),
-                   text(" Shortcuts(?) ") | color(MutedColor()) | reflect(shortcuts_box_),
+                   text(shortcuts[k]) | color(MutedColor()) | reflect(shortcuts_box_),
                }) |
                bgcolor(PanelColor());
     }
@@ -1114,13 +1439,24 @@ namespace gsystemctl::ui
             return text("No services found") | center | dim;
         }
 
+        // The sorted column shows ▲ (ascending) or ▼; headers are clickable.
+        service_header_boxes_.resize(kServiceColumns.size());
+        auto label = [this](size_t i) {
+            const auto &[column, name] = kServiceColumns[i];
+            if (column != services_sort_.column)
+                return name;
+            return name + (services_sort_.descending ? " ▼" : " ▲");
+        };
+        auto sorted = [this](size_t i) { return kServiceColumns[i].first == services_sort_.column; };
+        auto header_color = [&](size_t i) { return sorted(i) ? AccentColor() : HeaderColor(); };
         auto header = hbox({
                           text(" "),
-                          flex_cell("SERVICE", HeaderColor()),
-                          cell("STATUS", 16, HeaderColor()),
-                          right_cell("PID", 7, HeaderColor()),
-                          right_cell("CPU", 7, HeaderColor()),
-                          right_cell("MEM", 8, HeaderColor()),
+                          flex_cell(label(0), header_color(0)) | reflect(service_header_boxes_[0]),
+                          cell(label(1), 16, header_color(1)) | reflect(service_header_boxes_[1]),
+                          right_cell(label(2), 7, header_color(2)) | reflect(service_header_boxes_[2]),
+                          right_cell(label(3), 7, header_color(3)) | reflect(service_header_boxes_[3]),
+                          right_cell(label(4), 8, header_color(4)) | reflect(service_header_boxes_[4]),
+                          text(" "), // the rows lose this column to vscroll_indicator
                       }) |
                       bgcolor(PanelColor());
 
@@ -1131,15 +1467,14 @@ namespace gsystemctl::ui
         {
             const auto &svc = filtered_services_[i];
             bool selected = (static_cast<int>(i) == selected_index_);
-            bool active = service_is_active(svc);
-            auto status_color = active ? Colors::running_fg() : Colors::stopped_fg();
-            std::string status_text = active ? "● active" : "○ inactive";
+            const auto state = service_state(svc);
+            const bool emphasize = state.kind != ServiceState::Kind::Inactive;
 
             auto card = hbox({
                 flex_cell(svc.unit, selected ? Color::White : TextColor(), selected),
                 [&] {
                     auto activity = row_activity_.render(svc.unit);
-                    return activity ? activity | size(WIDTH, EQUAL, 16) : cell(status_text, 16, status_color, active);
+                    return activity ? activity | size(WIDTH, EQUAL, 16) : cell(state.label, 16, state_color(state), emphasize);
                 }(),
                 right_cell(svc.pid.empty() ? "-" : svc.pid, 7, MutedColor()),
                 right_cell(svc.cpu.empty() ? "-" : svc.cpu, 7, MutedColor()),
@@ -1166,18 +1501,19 @@ namespace gsystemctl::ui
 
         return vbox({
             header,
-            vbox(items) | vscroll_indicator | yframe | flex,
+            vbox(items) | vscroll_indicator | yframe | flex | reflect(service_list_box_),
         }) | flex;
     }
 
     Element App::render_service_detail()
     {
         const auto *service = action_target();
-        const bool active = service && service_is_active(*service);
-        const std::string state = !service ? "? unknown" : active ? "● active" : "○ inactive";
-        auto actions = service_actions_.render(state, active ? Colors::running_fg() : Colors::stopped_fg(), active);
+        const auto state = service ? service_state(*service) : ServiceState{ServiceState::Kind::Inactive, "? unknown"};
+        service_actions_.fit_title(detail_unit_, state.label);
+        auto actions = service_actions_.render(state.label, state_color(state), state.can_start, state.can_stop);
         auto title = detail_title_bar(service_actions_.render_back(), detail_unit_, service ? service->description : "", std::move(actions));
         Element summary = logs_full_ ? text("") : service_summary_.render(render_service_summary());
+        service_actions_.fit_log_header(false, logs_full_, graphs_.shown(), graphs_fit());
         return detail_page(std::move(title), std::move(summary),
                            service_logs_.render(service_actions_.render_log_header(logs_full_, graphs_.shown(), graphs_fit())),
                            logs_full_, logs_full_ || !graphs_.shown() ? nullptr : render_service_graphs());
@@ -1268,7 +1604,7 @@ namespace gsystemctl::ui
         };
         if (event == Event::Special("\x1b" "q"))
         {
-            screen_.Exit();
+            quit();
         }
         else if (event == Event::Escape || event == Event::Character('?'))
         {
@@ -1313,11 +1649,12 @@ namespace gsystemctl::ui
             body = {
                 heading("Containers"),
                 key("Enter / Alt+i", "Open detail page (summary + logs)"),
+                key("PgUp/PgDn  Home/End", "Move a page / to the first or last row"),
                 key("Alt+l", "Open with full-size logs"),
                 key("Alt+o / x / r", "Start / stop / restart (stop, restart ask y/n)"),
                 key("Alt+u", "Edit resource limits (docker/podman update)"),
                 key("Alt+t", "Shell in the container (bash, else sh)"),
-                key("Alt+s", "Show/hide secret env values"),
+                key("Alt+s", "Show/hide secret env values (detail page)"),
                 key("Alt+Shift+r", "Refresh now"),
                 gap(),
                 heading("Compose projects (on a project row or page)"),
@@ -1336,6 +1673,7 @@ namespace gsystemctl::ui
             body = {
                 heading("Services"),
                 key("Enter", "Open detail page (summary + logs)"),
+                key("PgUp/PgDn  Home/End", "Move a page / to the first or last unit"),
                 key("Alt+l", "Open with full-size logs"),
                 key("Alt+o / x / r", "Start / stop / restart (stop, restart ask y/n)"),
                 key("Alt+e", "Edit unit file ($GSYSTEMCTL_EDITOR, default vim)"),
@@ -1349,6 +1687,7 @@ namespace gsystemctl::ui
                 heading("List"),
                 key("↑↓ / Alt+k/j", "Move selection"),
                 key("type / Backspace", "Filter"),
+                key("Alt+s / Alt+Shift+s", "Sort by the next column / reverse (or click a header)"),
                 key("Enter / click", "Open detail page"),
                 gap(),
                 heading("Detail page"),
@@ -1407,11 +1746,11 @@ namespace gsystemctl::ui
                    hbox({text(" Help ") | bold | color(AccentColor()), filler(), hbox(std::move(tabs))}),
                    separator() | color(BorderColor()),
                    // Fixed size, so switching tabs does not resize the dialog.
-                   vbox(std::move(body)) | size(HEIGHT, EQUAL, 19) | size(WIDTH, EQUAL, 86),
+                   hbox({text(" "), vbox(std::move(body))}) | size(HEIGHT, EQUAL, 21) | size(WIDTH, EQUAL, 87),
                    separator() | color(BorderColor()),
                    text(" Tab / ←→ / 1-4 switch  ·  Esc or ? close") | color(MutedColor()),
                }) |
-               borderStyled(ROUNDED, BorderColor()) | bgcolor(BackgroundColor()) | center;
+               borderStyled(ROUNDED, BorderColor()) | bgcolor(BackgroundColor()) | isolated_borders | center;
     }
 
 } // namespace gsystemctl::ui
