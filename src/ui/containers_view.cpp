@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ftxui/component/component_options.hpp>
+#include <ftxui/dom/node.hpp>
 #include <ftxui/screen/terminal.hpp>
 #include <functional>
 #include <iostream>
@@ -19,6 +20,32 @@ using namespace ftxui;
 
 namespace gsystemctl::ui
 {
+
+    namespace
+    {
+        // Takes the rest of the row and is clipped when there is none: its
+        // width never pushes the columns before it, so rows stay aligned.
+        class Elastic : public Node
+        {
+        public:
+            explicit Elastic(Element child) : Node({std::move(child)}) {}
+            void ComputeRequirement() override
+            {
+                children_[0]->ComputeRequirement();
+                requirement_ = children_[0]->requirement();
+                requirement_.min_x = 0;
+                requirement_.flex_grow_x = 1;
+                requirement_.flex_shrink_x = 1;
+            }
+            void SetBox(Box box) override
+            {
+                Node::SetBox(box);
+                children_[0]->SetBox(box);
+            }
+        };
+        Element elastic(Element child) { return std::make_shared<Elastic>(std::move(child)); }
+    } // namespace
+
     using namespace theme;
 
     namespace
@@ -2248,13 +2275,16 @@ namespace gsystemctl::ui
             const bool drifted = drift != drift_.end() && std::find(drift->second.begin(), drift->second.end(),
                                                                     c->compose_service) != drift->second.end();
             auto cs = state_style(c->state);
+            // Same columns on every row: the drift mark sits after the name (as in
+            // the list), and the status column is the one that gives way.
             lines.push_back(hbox({
                 text(" "),
-                cell(service_label(*c, multi), 15, TextColor(), true),
-                cell(cs.label, 13, cs.fg),
-                cell(c->status, 24, MutedColor()),
-                drifted ? text("⚠ changed  ") | color(WarningColor()) : text(""),
-                text(short_ports(c->ports)) | color(MutedColor()) | flex,
+                hbox({text(service_label(*c, multi)) | bold | color(TextColor()),
+                      drifted ? text(" ⚠") | color(WarningColor()) : text("")}) |
+                    size(WIDTH, EQUAL, 15),
+                cell(" " + cs.label, 14, cs.fg),
+                text(" " + c->status) | color(MutedColor()) | size(WIDTH, EQUAL, 25) | xflex_shrink,
+                elastic(text(" " + short_ports(c->ports)) | color(MutedColor())),
             }));
             if (!c->compose_oneoff && !c->compose_depends_on.empty())
                 depends[c->compose_service] = c->compose_depends_on;
