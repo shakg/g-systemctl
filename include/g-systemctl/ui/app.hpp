@@ -198,6 +198,9 @@ namespace gsystemctl::ui
         void quit();
         // Selects row `index` of the filtered list (clamped) and remembers its unit.
         void select_service(int index);
+        // Bottom bar: filter, count and key hints, fitted to the terminal width.
+        ftxui::Element render_filter_bar(const std::string &filter, const std::string &summary,
+                                         const std::string &hints);
         bool handle_services_event(ftxui::Event event);
         ftxui::Component create_main_component();
         ftxui::Element render();
