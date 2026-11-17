@@ -1148,7 +1148,7 @@ namespace gsystemctl::ui
         // Dialogs take every key while open; Alt+q still quits from any of them.
         return CatchEvent(main_component, [this](Event event) {
             if (event == Event::Special("\x1b" "q")) {
-                screen_.Exit();
+                quit();
                 return true;
             }
             return false;
