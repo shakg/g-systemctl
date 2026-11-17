@@ -9,6 +9,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ftxui/component/component_options.hpp>
+#include <ftxui/screen/terminal.hpp>
+#include <functional>
 #include <iostream>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -1874,18 +1876,14 @@ namespace gsystemctl::ui
                    center | dim;
         }
 
-        auto header = hbox({
-                          text(" "),
-                          flex_cell("CONTAINER", HeaderColor()),
-                          cell("IMAGE", 24, HeaderColor()),
-                          cell("STATE", 13, HeaderColor()),
-                          cell("STATUS", 22, HeaderColor()),
-                          right_cell("CPU", 8, HeaderColor()),
-                          right_cell("MEM", 22, HeaderColor()),
-                          right_cell("PIDS", 6, HeaderColor()),
-                          text("  "), // trailing space + the column rows lose to vscroll_indicator
-                      }) |
-                      bgcolor(PanelColor());
+        // Inside the border: selection mark, trailing space and the scroll indicator.
+        cols_ = fit_columns(Terminal::Size().dimx - 2 - 3);
+        Elements header_cells = {text(" "), flex_cell("CONTAINER", HeaderColor())};
+        for (auto &e : fixed_columns({text("IMAGE"), text("STATE"), text("STATUS"), text("CPU") | align_right,
+                                      text("MEM") | align_right, text("PIDS") | align_right}))
+            header_cells.push_back(e | color(HeaderColor()));
+        header_cells.push_back(text("  ")); // trailing space + the column rows lose to vscroll_indicator
+        auto header = hbox(std::move(header_cells)) | bgcolor(PanelColor());
 
         // Projects in the compose group, containers in the standalone group.
         auto section_count = [this](int section) {
@@ -1951,6 +1949,42 @@ namespace gsystemctl::ui
                flex;
     }
 
+    ContainersView::ListColumns ContainersView::fit_columns(int room)
+    {
+        // Steps in order until the name column gets kMinNameWidth.
+        ListColumns c;
+        const std::vector<std::function<void(ListColumns &)>> steps = {
+            [](ListColumns &c) { c.image = 16; },
+            [](ListColumns &c) { c.status = 16; },
+            [](ListColumns &c) { c.image = 0; },
+            [](ListColumns &c) { c.pids = 0; },
+            [](ListColumns &c) { c.mem = 15; },   // "214MiB / 1GiB"
+            [](ListColumns &c) { c.status = 0; },
+            [](ListColumns &c) { c.mem = 9; },    // "999.9 MiB" (projects); containers cut at the left
+        };
+        for (const auto &step : steps)
+        {
+            if (room - c.total() >= kMinNameWidth)
+                break;
+            step(c);
+        }
+        return c;
+    }
+
+    Elements ContainersView::fixed_columns(std::vector<Element> cells) const
+    {
+        // A column starts with a space, so neighbours never touch when a value fills it.
+        const int widths[] = {cols_.image, cols_.state, cols_.status, cols_.cpu, cols_.mem, cols_.pids};
+        Elements out;
+        for (size_t i = 0; i < cells.size() && i < 6; ++i)
+        {
+            if (widths[i] <= 0)
+                continue;
+            out.push_back(hbox({text(" "), cells[i] | flex}) | size(WIDTH, EQUAL, widths[i]));
+        }
+        return out;
+    }
+
     Element ContainersView::render_project_row(const ComposeProject &p, bool is_selected)
     {
         const auto &name = p.ref.name;
@@ -1972,17 +2006,20 @@ namespace gsystemctl::ui
         if (auto activity = row_activity_.render(kProjectKey + name))
             status = activity;
 
-        return hbox({
+        Elements row = {
             text(p.down() ? "▹ " : folded ? "▸ " : "▾ ") | color(AccentColor()),
             text(name) | bold | color(is_selected ? Color::White : AccentColor()) | flex,
-            cell(kind, 24, MutedColor()),
-            cell(style.label, 13, style.fg, p.running > 0),
-            status | size(WIDTH, EQUAL, 22),
-            right_cell(sampled(format_metric_percent(totals.cpu)), 8, MutedColor()),
-            right_cell(sampled(format_metric_bytes(totals.memory)), 22, MutedColor()),
-            right_cell(sampled(format_metric_count(totals.pids)), 6, MutedColor()),
-            text(" "),
-        });
+        };
+        auto state = text(style.label) | color(style.fg);
+        if (p.running > 0)
+            state = state | bold;
+        for (auto &e : fixed_columns({text(kind) | color(MutedColor()), state, status,
+                                      text(sampled(format_metric_percent(totals.cpu))) | color(MutedColor()) | align_right,
+                                      text(sampled(format_metric_bytes(totals.memory))) | color(MutedColor()) | align_right,
+                                      text(sampled(format_metric_count(totals.pids))) | color(MutedColor()) | align_right}))
+            row.push_back(e);
+        row.push_back(text(" "));
+        return hbox(std::move(row));
     }
 
     Element ContainersView::render_container_row(const Container &c, bool is_selected, bool child, bool last_child)
@@ -2015,16 +2052,17 @@ namespace gsystemctl::ui
             status = row_activity_.render(kProjectKey + c.compose_project);
         if (!status)
             status = text(c.status) | color(MutedColor());
-        return hbox({
-            name | flex,
-            cell(c.image, 24, MutedColor()),
-            cell(style.label, 13, style.fg, c.is_running()),
-            status | size(WIDTH, EQUAL, 22),
-            right_cell(dash(c.stats.cpu), 8, MutedColor()),
-            right_cell(dash(c.stats.mem_usage), 22, MutedColor()),
-            right_cell(dash(c.stats.pids), 6, MutedColor()),
-            text(" "),
-        });
+        Elements row = {name | flex};
+        auto state = text(style.label) | color(style.fg);
+        if (c.is_running())
+            state = state | bold;
+        for (auto &e : fixed_columns({text(c.image) | color(MutedColor()), state, status,
+                                      text(dash(c.stats.cpu)) | color(MutedColor()) | align_right,
+                                      text(dash(c.stats.mem_usage)) | color(MutedColor()) | align_right,
+                                      text(dash(c.stats.pids)) | color(MutedColor()) | align_right}))
+            row.push_back(e);
+        row.push_back(text(" "));
+        return hbox(std::move(row));
     }
 
     Elements ContainersView::render_summary()
