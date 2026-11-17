@@ -885,6 +885,10 @@ namespace gsystemctl::ui
             return true;
         }
         if (detail_open_) {
+            if (event == Event::Special("\x1b" "y")) {
+                service_logs_.copy();
+                return true;
+            }
             if (event == Event::PageUp || event == Event::PageDown) {
                 service_logs_.scroll(event == Event::PageUp ? -10 : 10);
                 return true;
@@ -953,6 +957,9 @@ namespace gsystemctl::ui
         }
         if (event.is_mouse()) {
             auto& mouse = event.mouse();
+            if (detail_open_ && service_logs_.handle_mouse(mouse)) {
+                return true;
+            }
             if (mouse.button == Mouse::WheelUp || mouse.button == Mouse::WheelDown) {
                 const int delta = mouse.button == Mouse::WheelUp ? -1 : 1;
                 if (!detail_open_) {
@@ -1045,7 +1052,9 @@ namespace gsystemctl::ui
         }
         if (event == Event::Escape) {
             // Close the innermost thing first; quit only from the plain list.
-            if (active_tab_ == Tab::Containers && containers_view_->back()) {
+            if (active_tab_ == Tab::Containers && containers_view_->clear_log_selection()) {
+            } else if (active_tab_ == Tab::Services && service_logs_.clear_selection()) {
+            } else if (active_tab_ == Tab::Containers && containers_view_->back()) {
             } else if (active_tab_ == Tab::Services && services_back()) {
             } else if (active_tab_ == Tab::Containers && !containers_view_->filter_text().empty()) {
                 containers_view_->set_filter("");
@@ -1695,6 +1704,8 @@ namespace gsystemctl::ui
                 key("Alt+g", "Graphs on/off (replace the info below 100 cols)"),
                 key("↑↓", "Scroll summary (logs when expanded)"),
                 key("PgUp / PgDn", "Scroll logs"),
+                key("drag over logs", "Select and copy to the clipboard (Esc clears)"),
+                key("Alt+y", "Copy the selection, or the last 100 log lines"),
                 key("Esc", "Back one level"),
                 gap(),
                 heading("App"),

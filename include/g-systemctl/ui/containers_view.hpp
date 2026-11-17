@@ -60,6 +60,8 @@ namespace gsystemctl::ui
         bool logs_full() const { return logs_full_; }
         // Goes up one level (full logs -> detail -> list). False if already at the list.
         bool back();
+        // Clears the log text selection; false when there was none.
+        bool clear_log_selection() { return logs_.clear_selection(); }
 
         // Returns true if the event was consumed.
         bool handle_event(ftxui::Event event);

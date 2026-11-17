@@ -1768,6 +1768,11 @@ namespace gsystemctl::ui
                 show_secrets_ = !show_secrets_;
                 return true;
             }
+            if (event == Event::Special("\x1b" "y"))
+            {
+                logs_.copy();
+                return true;
+            }
             if (event == Event::PageUp || event == Event::PageDown)
             {
                 logs_.scroll(event == Event::PageUp ? -10 : 10);
@@ -1947,6 +1952,8 @@ namespace gsystemctl::ui
         if (event.is_mouse())
         {
             auto &mouse = event.mouse();
+            if (detail_open_ && logs_.handle_mouse(mouse))
+                return true;
             if (mouse.button == Mouse::WheelUp || mouse.button == Mouse::WheelDown)
             {
                 int delta = mouse.button == Mouse::WheelUp ? -1 : 1;
