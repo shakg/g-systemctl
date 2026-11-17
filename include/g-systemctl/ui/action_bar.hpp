@@ -3,7 +3,10 @@
 #include "g-systemctl/ui/styles.hpp"
 #include "g-systemctl/ui/theme.hpp"
 #include <ftxui/dom/elements.hpp>
+#include <algorithm>
 #include <ftxui/screen/box.hpp>
+#include <ftxui/screen/string.hpp>
+#include <ftxui/screen/terminal.hpp>
 #include <string>
 
 namespace gsystemctl::ui
@@ -27,6 +30,24 @@ namespace gsystemctl::ui
             Shell,
         };
 
+        // Call before render()/render_back() each frame: picks how much of the
+        // title-bar buttons to draw so `name` (up to kNameRoom cells) still fits
+        // on the terminal: full ("▶ Start Alt+o"), without keys ("▶ Start"),
+        // or glyphs only ("▶").
+        void fit_title(const std::string &name, const std::string &state_label)
+        {
+            const int room = ftxui::Terminal::Size().dimx - 2; // inside the page border
+            const int name_width = std::min(ftxui::string_width(name), kNameRoom);
+            for (level_ = 0; level_ < 2; ++level_)
+            {
+                // " " + Back + name + " " + state + "  " + Start Stop Restart
+                const int need = 1 + button_width(kBack) + name_width + 1 + ftxui::string_width(state_label) + 2 +
+                                 button_width(kStart) + button_width(kStop) + button_width(kRestart);
+                if (need <= room)
+                    return;
+            }
+        }
+
         // `running`: the item is up, so Start is disabled; otherwise Stop and Restart are.
         ftxui::Element render(const std::string &state_label, ftxui::Color state_color, bool running)
         {
@@ -41,16 +62,16 @@ namespace gsystemctl::ui
             visible_ = true;
             return hbox({
                 text(state_label + "  ") | color(state_color) | bold,
-                button("▶ Start", "Alt+o", Colors::running_fg(), can_start, start_),
-                button("■ Stop", "Alt+x", Colors::error_fg(), can_stop, stop_),
-                button("↻ Restart", "Alt+r", WarningColor(), can_stop, restart_),
+                button(kStart, Colors::running_fg(), can_start, start_),
+                button(kStop, Colors::error_fg(), can_stop, stop_),
+                button(kRestart, WarningColor(), can_stop, restart_),
             });
         }
 
         // Back sits apart, at the left end of the title bar.
         ftxui::Element render_back()
         {
-            return button("← Back", "Esc", theme::TextColor(), true, back_);
+            return button(kBack, theme::TextColor(), true, back_);
         }
 
         // Opens a shell in the container; enabled once one was found.
@@ -114,6 +135,36 @@ namespace gsystemctl::ui
         }
 
     private:
+        // Title-bar buttons: glyph, word, key.
+        struct TitleButton
+        {
+            const char *glyph;
+            const char *word;
+            const char *key;
+        };
+        static constexpr TitleButton kBack{"←", "Back", "Esc"};
+        static constexpr TitleButton kStart{"▶", "Start", "Alt+o"};
+        static constexpr TitleButton kStop{"■", "Stop", "Alt+x"};
+        static constexpr TitleButton kRestart{"↻", "Restart", "Alt+r"};
+        // The name keeps this many cells before the buttons give up their words.
+        static constexpr int kNameRoom = 24;
+        int level_ = 0; // 0 full, 1 no key, 2 glyph only
+
+        std::string label(const TitleButton &b) const
+        {
+            return level_ >= 2 ? std::string(b.glyph) : std::string(b.glyph) + " " + b.word;
+        }
+        std::string key(const TitleButton &b) const { return level_ >= 1 ? "" : b.key; }
+        int button_width(const TitleButton &b) const
+        {
+            const auto k = key(b);
+            return ftxui::string_width(" " + label(b) + " ") + (k.empty() ? 0 : ftxui::string_width(k + " ")) + 1;
+        }
+        ftxui::Element button(const TitleButton &b, ftxui::Color fg, bool enabled, ftxui::Box &box) const
+        {
+            return button(label(b), key(b), fg, enabled, box);
+        }
+
         bool visible_ = false;
         bool shell_visible_ = false;
         ftxui::Box start_;
@@ -128,7 +179,8 @@ namespace gsystemctl::ui
                                      ftxui::Box &box)
         {
             using namespace ftxui;
-            auto element = hbox({text(" " + label + " "), text(key + " ") | dim}) | bgcolor(theme::BorderColor());
+            auto element = hbox({text(" " + label + " "), key.empty() ? text("") : text(key + " ") | dim}) |
+                           bgcolor(theme::BorderColor());
             element = enabled ? element | color(fg) : element | color(theme::MutedColor()) | dim;
             return hbox({element | reflect(box), text(" ")});
         }

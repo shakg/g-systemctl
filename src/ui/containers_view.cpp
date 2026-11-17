@@ -1850,6 +1850,7 @@ namespace gsystemctl::ui
         if (!detail_project_.empty())
             return render_project_detail();
         const auto *c = action_target();
+        actions_.fit_title(logs_name_, c ? state_style(c->state).label : "✕ removed");
         Element actions = c ? actions_.render(state_style(c->state).label, state_style(c->state).fg, c->is_active())
                             : actions_.render("✕ removed", Colors::error_fg(), false, false);
         auto title = detail_title_bar(actions_.render_back(), logs_name_, c ? c->image : details_.image, std::move(actions));
@@ -2173,10 +2174,12 @@ namespace gsystemctl::ui
         if (p)
         {
             auto style = project_style(*p);
+            actions_.fit_title(detail_project_, style.label);
             actions = actions_.render(style.label, style.fg, p->down() || p->active < p->total, p->active > 0);
         }
         else
         {
+            actions_.fit_title(detail_project_, "✕ gone");
             actions = actions_.render("✕ gone", Colors::error_fg(), false, false);
         }
         auto title = detail_title_bar(actions_.render_back(), detail_project_, p ? p->ref.working_dir : "", std::move(actions));
