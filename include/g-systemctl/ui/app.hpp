@@ -8,6 +8,7 @@
 #include "g-systemctl/ui/action_bar.hpp"
 #include "g-systemctl/ui/confirm_dialog.hpp"
 #include "g-systemctl/ui/containers_view.hpp"
+#include "g-systemctl/core/list_sort.hpp"
 #include "g-systemctl/ui/detail_page.hpp"
 #include "g-systemctl/ui/log_panel.hpp"
 #include "g-systemctl/ui/metric_graph.hpp"
@@ -129,6 +130,10 @@ namespace gsystemctl::ui
         // the filter returns to it; selected_index_ follows it.
         std::string selected_unit_;
         ftxui::Box service_list_box_;
+        // Alt+s / Alt+Shift+s or a header click. Header cell boxes, in sort_columns order.
+        SortOrder services_sort_;
+        std::vector<ftxui::Box> service_header_boxes_;
+        void sort_services_by(SortColumn column); // same column again: reverse
         // Action progress in the service list rows, keyed by unit.
         RowActivity row_activity_;
         ftxui::Box reload_button_box_;

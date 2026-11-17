@@ -4,6 +4,7 @@
 
 #include "g-systemctl/container/compose_store.hpp"
 #include "g-systemctl/container/container_manager.hpp"
+#include "g-systemctl/core/list_sort.hpp"
 #include "g-systemctl/ui/action_bar.hpp"
 #include "g-systemctl/ui/detail_page.hpp"
 #include "g-systemctl/ui/log_panel.hpp"
@@ -145,6 +146,10 @@ namespace gsystemctl::ui
         bool busy_ = false;
         std::string busy_message_;
         std::vector<ftxui::Box> item_boxes_;
+        // Alt+s / Alt+Shift+s or a header click. Header cell boxes, one per column.
+        SortOrder sort_;
+        std::vector<ftxui::Box> header_boxes_;
+        void sort_by(SortColumn column); // same column again: reverse
         // Action progress in the list rows, keyed like selected_key_.
         RowActivity row_activity_;
 

@@ -218,7 +218,103 @@ namespace gsystemctl::ui
             }
             return t;
         }
+
+        // Columns of the containers list with their headers; STATUS (uptime
+        // text) does not sort. Alt+s cycles through the sortable ones.
+        struct ListColumn
+        {
+            std::string header;
+            bool sortable;
+            SortColumn column;
+        };
+        const std::vector<ListColumn> kListColumns = {
+            {"CONTAINER", true, SortColumn::Name}, {"IMAGE", true, SortColumn::Image},
+            {"STATE", true, SortColumn::State},    {"STATUS", false, SortColumn::Name},
+            {"CPU", true, SortColumn::Cpu},        {"MEM", true, SortColumn::Memory},
+            {"PIDS", true, SortColumn::Pids},
+        };
+
+        // Running first, then paused/restarting/created, then stopped.
+        int state_rank(const std::string &state)
+        {
+            if (state == "running")
+                return 0;
+            if (state == "paused" || state == "restarting" || state == "created")
+                return 1;
+            return 2;
+        }
+
+        SortValue container_sort_value(const Container &c, SortColumn column)
+        {
+            SortValue v;
+            v.name = c.compose_service.empty() ? c.name : c.compose_service;
+            const bool sampled = c.is_running() && !c.stats.cpu.empty();
+            switch (column)
+            {
+            case SortColumn::Image:
+                v.text = c.image;
+                break;
+            case SortColumn::State:
+                v.number = state_rank(c.state);
+                break;
+            case SortColumn::Cpu:
+                v.number = parse_docker_percent(c.stats.cpu);
+                v.missing = !sampled;
+                break;
+            case SortColumn::Memory:
+                v.number = parse_docker_size_pair(c.stats.mem_usage).first;
+                v.missing = !sampled;
+                break;
+            case SortColumn::Pids:
+                v.number = parse_docker_size(c.stats.pids);
+                v.missing = !sampled;
+                break;
+            default:
+                v.text = v.name;
+                break;
+            }
+            return v;
+        }
+
+        SortValue project_sort_value(const ComposeProject &p, const std::vector<Container> &containers,
+                                     SortColumn column)
+        {
+            SortValue v;
+            v.name = p.ref.name;
+            const auto totals = project_totals(containers, p.ref.name);
+            switch (column)
+            {
+            case SortColumn::State:
+                v.number = p.down() ? 3 : p.running == p.total ? 0 : p.running > 0 ? 1 : 2;
+                break;
+            case SortColumn::Cpu:
+                v.number = totals.cpu;
+                v.missing = !totals.sampled;
+                break;
+            case SortColumn::Memory:
+                v.number = totals.memory;
+                v.missing = !totals.sampled;
+                break;
+            case SortColumn::Pids:
+                v.number = totals.pids;
+                v.missing = !totals.sampled;
+                break;
+            default: // Name, and Image (a project has none)
+                v.text = p.ref.name;
+                break;
+            }
+            return v;
+        }
     } // namespace
+
+    void ContainersView::sort_by(SortColumn column)
+    {
+        if (sort_.column == column)
+            sort_.descending = !sort_.descending;
+        else
+            sort_ = {column, default_descending(column)};
+        apply_filter();
+    }
 
     ContainersView::ContainersView(ScreenInteractive &screen, std::shared_ptr<ContainerManager> manager,
                                    const std::string &compose_store_path)
@@ -599,14 +695,38 @@ namespace gsystemctl::ui
                 multi_replica_.insert(key);
         }
 
+        // Projects, their containers and standalone containers each sort
+        // within their own group.
+        const auto order = sort_;
+        auto before = [&order](const SortValue &a, const SortValue &b) {
+            return sort_before(a, b, order.descending);
+        };
+        std::vector<size_t> project_order(projects_.size());
+        for (size_t i = 0; i < project_order.size(); ++i)
+            project_order[i] = i;
+        std::stable_sort(project_order.begin(), project_order.end(), [&](size_t a, size_t b) {
+            return before(project_sort_value(projects_[a], containers_, order.column),
+                          project_sort_value(projects_[b], containers_, order.column));
+        });
+        auto sorted_ids = [&](std::vector<std::string> ids) {
+            std::stable_sort(ids.begin(), ids.end(), [&](const std::string &a, const std::string &b) {
+                auto x = by_id.find(a), y = by_id.find(b);
+                if (x == by_id.end() || y == by_id.end())
+                    return false;
+                return before(container_sort_value(*x->second, order.column),
+                              container_sort_value(*y->second, order.column));
+            });
+            return ids;
+        };
+
         bool any_project = false;
-        for (size_t pi = 0; pi < projects_.size(); ++pi)
+        for (size_t pi : project_order)
         {
             const auto &p = projects_[pi];
             // A matching project shows all its containers.
             const bool project_match = needle.empty() || contains(p.ref.name);
             std::vector<int> children;
-            for (const auto &id : p.container_ids)
+            for (const auto &id : sorted_ids(p.container_ids))
             {
                 auto it = by_id.find(id);
                 if (it != by_id.end() && (project_match || matches(*it->second)))
@@ -623,10 +743,15 @@ namespace gsystemctl::ui
                 rows_.push_back({ListRow::Kind::Container, children[k], k + 1 == children.size()});
         }
 
-        bool divider = false;
+        std::vector<std::string> standalone_ids;
         for (const auto &c : containers_)
+            if (c.compose_project.empty())
+                standalone_ids.push_back(c.id);
+        bool divider = false;
+        for (const auto &id : sorted_ids(standalone_ids))
         {
-            if (!c.compose_project.empty() || !matches(c))
+            const auto &c = *by_id[id];
+            if (!matches(c))
                 continue;
             if (any_project && !divider)
             {
@@ -1680,6 +1805,23 @@ namespace gsystemctl::ui
         }
 
         // Actions are ignored while a previous one is still running.
+        // Alt+s: sort by the next column; Alt+Shift+s: reverse (on the page, Alt+s shows secrets).
+        if (!detail_open_ && (event == Event::Special("\x1b" "s") || event == Event::Special("\x1b" "S")))
+        {
+            if (event == Event::Special("\x1b" "S"))
+            {
+                sort_by(sort_.column);
+                return true;
+            }
+            std::vector<SortColumn> cycle;
+            for (const auto &c : kListColumns)
+                if (c.sortable)
+                    cycle.push_back(c.column);
+            auto it = std::find(cycle.begin(), cycle.end(), sort_.column);
+            sort_by(it == cycle.end() || it + 1 == cycle.end() ? cycle.front() : *(it + 1));
+            return true;
+        }
+
         const bool is_action = event == Event::Special("\x1b" "o") || event == Event::Special("\x1b" "x") ||
                                event == Event::Special("\x1b" "r") || event == Event::Special("\x1b" "u") ||
                                event == Event::Special("\x1b" "b") || event == Event::Special("\x1b" "p") ||
@@ -1797,6 +1939,17 @@ namespace gsystemctl::ui
             }
             if (mouse.button == Mouse::Left && mouse.motion == Mouse::Pressed)
             {
+                if (!detail_open_)
+                {
+                    for (size_t i = 0; i < header_boxes_.size() && i < kListColumns.size(); ++i)
+                    {
+                        if (kListColumns[i].sortable && header_boxes_[i].Contain(mouse.x, mouse.y))
+                        {
+                            sort_by(kListColumns[i].column);
+                            return true;
+                        }
+                    }
+                }
                 switch (actions_.hit(mouse.x, mouse.y))
                 {
                 case ActionBar::Action::Start:
@@ -1907,10 +2060,29 @@ namespace gsystemctl::ui
 
         // Inside the border: selection mark, trailing space and the scroll indicator.
         cols_ = fit_columns(Terminal::Size().dimx - 2 - 3);
-        Elements header_cells = {text(" "), flex_cell("CONTAINER", HeaderColor())};
-        for (auto &e : fixed_columns({text("IMAGE"), text("STATE"), text("STATUS"), text("CPU") | align_right,
-                                      text("MEM") | align_right, text("PIDS") | align_right}))
-            header_cells.push_back(e | color(HeaderColor()));
+        // The sorted column shows ▲ (ascending) or ▼; headers are clickable.
+        header_boxes_.resize(kListColumns.size());
+        for (auto &box : header_boxes_)
+            box = Box{1, 0, 1, 0}; // empty: hidden columns take no clicks
+        auto label = [this](size_t i) {
+            const auto &c = kListColumns[i];
+            if (!c.sortable || c.column != sort_.column)
+                return c.header;
+            return c.header + (sort_.descending ? " ▼" : " ▲");
+        };
+        auto hc = [this](size_t i) {
+            return kListColumns[i].sortable && kListColumns[i].column == sort_.column ? AccentColor() : HeaderColor();
+        };
+        auto head = [&](size_t i, bool right) {
+            auto e = text(label(i)) | color(hc(i));
+            if (right)
+                e = e | align_right;
+            return e | reflect(header_boxes_[i]);
+        };
+        Elements header_cells = {text(" "), flex_cell(label(0), hc(0)) | reflect(header_boxes_[0])};
+        for (auto &e : fixed_columns({head(1, false), head(2, false), head(3, false), head(4, true), head(5, true),
+                                      head(6, true)}))
+            header_cells.push_back(e);
         header_cells.push_back(text("  ")); // trailing space + the column rows lose to vscroll_indicator
         auto header = hbox(std::move(header_cells)) | bgcolor(PanelColor());
 
