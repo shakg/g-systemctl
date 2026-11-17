@@ -1,5 +1,7 @@
 #pragma once
 
+#include "g-systemctl/core/text_wrap.hpp"
+
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/screen/color.hpp>
 #include <string>
@@ -21,7 +23,8 @@ namespace gsystemctl::ui::theme
     inline ftxui::Element cell(const std::string &value, int width, ftxui::Color fg = TextColor(), bool bold_text = false)
     {
         using namespace ftxui;
-        auto element = text(value) | color(fg);
+        // Cut with "…" rather than clipped mid-word.
+        auto element = text(ellipsize(value, width)) | color(fg);
         if (bold_text)
         {
             element = element | bold;
@@ -32,7 +35,7 @@ namespace gsystemctl::ui::theme
     inline ftxui::Element right_cell(const std::string &value, int width, ftxui::Color fg = TextColor())
     {
         using namespace ftxui;
-        return text(value) | color(fg) | align_right | size(WIDTH, EQUAL, width);
+        return text(ellipsize(value, width)) | color(fg) | align_right | size(WIDTH, EQUAL, width);
     }
 
     inline ftxui::Element flex_cell(const std::string &value, ftxui::Color fg = TextColor(), bool bold_text = false)

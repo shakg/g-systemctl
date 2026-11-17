@@ -2025,13 +2025,14 @@ namespace gsystemctl::ui
         std::string kind = p.down() ? "compose · saved"
                                     : "compose · " + std::to_string(p.services.size()) +
                                           (p.services.size() == 1 ? " service" : " services");
+        const int status_room = std::max(1, cols_.status - 1);
         Element status = text("");
         if (auto it = drift_.find(name); it != drift_.end() && !it->second.empty())
-            status = text("⚠ " + std::to_string(it->second.size()) + " changed (Alt+u)") | color(WarningColor());
+            status = text(ellipsize("⚠ " + std::to_string(it->second.size()) + " changed (Alt+u)", status_room)) | color(WarningColor());
         else if (drift_error_.count(name))
-            status = text("? config unreadable") | color(MutedColor());
+            status = text(ellipsize("? config unreadable", status_room)) | color(MutedColor());
         else if (p.down())
-            status = text("Alt+o to bring up") | color(MutedColor());
+            status = text(ellipsize("Alt+o to bring up", status_room)) | color(MutedColor());
         if (auto activity = row_activity_.render(kProjectKey + name))
             status = activity;
 
@@ -2042,7 +2043,7 @@ namespace gsystemctl::ui
         auto state = text(style.label) | color(style.fg);
         if (p.running > 0)
             state = state | bold;
-        for (auto &e : fixed_columns({text(kind) | color(MutedColor()), state, status,
+        for (auto &e : fixed_columns({text(ellipsize(kind, std::max(1, cols_.image - 1))) | color(MutedColor()), state, status,
                                       text(sampled(format_metric_percent(totals.cpu))) | color(MutedColor()) | align_right,
                                       text(sampled(format_metric_bytes(totals.memory))) | color(MutedColor()) | align_right,
                                       text(sampled(format_metric_count(totals.pids))) | color(MutedColor()) | align_right}))
@@ -2080,12 +2081,12 @@ namespace gsystemctl::ui
         if (!status && child)
             status = row_activity_.render(kProjectKey + c.compose_project);
         if (!status)
-            status = text(c.status) | color(MutedColor());
+            status = text(ellipsize(c.status, std::max(1, cols_.status - 1))) | color(MutedColor());
         Elements row = {name | flex};
         auto state = text(style.label) | color(style.fg);
         if (c.is_running())
             state = state | bold;
-        for (auto &e : fixed_columns({text(c.image) | color(MutedColor()), state, status,
+        for (auto &e : fixed_columns({text(ellipsize(c.image, std::max(1, cols_.image - 1))) | color(MutedColor()), state, status,
                                       text(dash(c.stats.cpu)) | color(MutedColor()) | align_right,
                                       text(dash(c.stats.mem_usage)) | color(MutedColor()) | align_right,
                                       text(dash(c.stats.pids)) | color(MutedColor()) | align_right}))
@@ -2174,7 +2175,7 @@ namespace gsystemctl::ui
 
         section("Mounts");
         for (const auto &m : d.mounts)
-            lines.push_back(text(" " + m) | color(TextColor()));
+            lines.push_back(hbox({text(" "), wrap_text_element(m) | flex}) | color(TextColor()));
         if (d.mounts.empty())
             lines.push_back(text(" none") | color(MutedColor()));
 
@@ -2186,7 +2187,7 @@ namespace gsystemctl::ui
             {
                 shown = e.substr(0, e.find('=')) + "=••••••";
             }
-            lines.push_back(text(" " + shown) | color(TextColor()));
+            lines.push_back(hbox({text(" "), wrap_text_element(shown) | flex}) | color(TextColor()));
         }
         if (d.env.empty())
             lines.push_back(text(" none") | color(MutedColor()));

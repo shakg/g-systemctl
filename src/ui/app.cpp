@@ -1085,8 +1085,9 @@ namespace gsystemctl::ui
         if (!status.empty() || !error.empty())
         {
             layout.push_back(separator() | color(BorderColor()));
-            layout.push_back(!error.empty() ? text(" " + error) | color(Colors::error_fg())
-                                            : text(" " + status) | color(MutedColor()));
+            // Up to three rows; a longer error keeps its start and its end (the cause).
+            layout.push_back(hbox({text(" "), wrap_text_element(error.empty() ? status : error, 3) | flex}) |
+                             color(error.empty() ? MutedColor() : Colors::error_fg()));
         }
         layout.push_back(separator() | color(BorderColor()));
 
