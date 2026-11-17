@@ -23,23 +23,59 @@ namespace gsystemctl::ui
         class WrappedLines : public Node
         {
         public:
-            WrappedLines(std::vector<std::string> lines, int focus_line, int &width)
-                : lines_(std::move(lines)), focus_line_(focus_line), width_(width) {}
+            WrappedLines(std::vector<std::string> lines, int focus_line, int &width,
+                         std::shared_ptr<LogPanel::Layout> layout, bool selected, TextPoint a, TextPoint b,
+                         LogPanel::Pin pin)
+                : lines_(std::move(lines)), focus_line_(focus_line), width_(width), layout_(std::move(layout)),
+                  selected_(selected), a_(a), b_(b), pin_(pin) {}
 
             void ComputeRequirement() override
             {
+                std::vector<std::vector<std::string>> wrapped;
+                size_t count = 0;
+                for (auto &line : lines_)
+                {
+                    wrapped.push_back(wrap_text(line, width_));
+                    count += wrapped.back().size();
+                }
+                // Sized before reflect() takes references into it.
+                layout_->rows.clear();
+                layout_->boxes.assign(count, Box{});
+
                 Elements rows;
                 int focus_row = 0;
-                for (size_t i = 0; i < lines_.size(); ++i)
+                for (size_t i = 0; i < wrapped.size(); ++i)
                 {
-                    for (auto &row : wrap_text(lines_[i], width_))
+                    int col = 0;
+                    const int line = static_cast<int>(i);
+                    for (auto &row : wrapped[i])
                     {
-                        rows.push_back(text(std::move(row)));
+                        const int w = string_width(row);
+                        layout_->rows.push_back({line, col, w});
+                        rows.push_back(render_row(row, line, col, w) |
+                                       reflect(layout_->boxes[layout_->rows.size() - 1]));
+                        col += w;
                     }
-                    if (static_cast<int>(i) == focus_line_)
+                    if (line == focus_line_)
                     {
                         focus_row = static_cast<int>(rows.size()) - 1;
                     }
+                }
+                layout_->focus_line = focus_line_;
+                if (pin_.on)
+                {
+                    // yframe centers the focused row: focus half a frame below the pinned top row.
+                    const auto &info = layout_->rows;
+                    int top = 0;
+                    for (size_t r = 0; r < info.size(); ++r)
+                    {
+                        if (info[r].line < pin_.top.line ||
+                            (info[r].line == pin_.top.line && info[r].col <= pin_.top.col))
+                            top = static_cast<int>(r);
+                    }
+                    focus_row = std::min(top + pin_.extent / 2, std::max(0, static_cast<int>(info.size()) - 1));
+                    if (!info.empty())
+                        layout_->focus_line = info[focus_row].line;
                 }
                 children_ = {vbox(std::move(rows))};
                 children_[0]->ComputeRequirement();
@@ -73,9 +109,31 @@ namespace gsystemctl::ui
             }
 
         private:
+            // The selected part of a row is drawn inverted.
+            Element render_row(const std::string &row, int line, int col, int w) const
+            {
+                if (!selected_ || line < a_.line || line > b_.line)
+                    return text(row);
+                const int from = line == a_.line ? a_.col : 0;
+                const int to = line == b_.line ? b_.col + 1 : col + w;
+                const int s = std::max(from, col) - col;
+                const int e = std::min(to, col + w) - col;
+                if (s >= e)
+                    return text(row);
+                return hbox({
+                    text(slice_columns(row, 0, s)),
+                    text(slice_columns(row, s, e)) | inverted,
+                    text(slice_columns(row, e, w)),
+                });
+            }
+
             std::vector<std::string> lines_;
             int focus_line_;
             int &width_;
+            std::shared_ptr<LogPanel::Layout> layout_;
+            bool selected_;
+            TextPoint a_, b_;
+            LogPanel::Pin pin_;
         };
     } // namespace
 
@@ -100,6 +158,8 @@ namespace gsystemctl::ui
         }
         scroll_position_ = 0;
         follow_tail_ = true;
+        has_selection_ = selecting_ = false;
+        pin_.on = false;
         open_ = true;
     }
 
@@ -122,7 +182,21 @@ namespace gsystemctl::ui
             lines_.push_back(sanitize(line));
             if (lines_.size() > max_lines_)
             {
-                lines_.erase(lines_.begin(), lines_.begin() + static_cast<long>(max_lines_ / 5));
+                const int dropped = static_cast<int>(max_lines_ / 5);
+                lines_.erase(lines_.begin(), lines_.begin() + dropped);
+                if (has_selection_)
+                {
+                    anchor_.line -= dropped;
+                    cursor_.line -= dropped;
+                    if (anchor_.line < 0 && cursor_.line < 0)
+                    {
+                        has_selection_ = selecting_ = false;
+                    }
+                    pin_.top.line -= dropped;
+                    for (auto *p : {&anchor_, &cursor_, &pin_.top})
+                        if (p->line < 0)
+                            *p = TextPoint{0, 0};
+                }
             }
             const int last = std::max(0, static_cast<int>(lines_.size()) - 1);
             scroll_position_ = follow_tail_ ? last : std::clamp(scroll_position_, 0, last);
@@ -139,6 +213,8 @@ namespace gsystemctl::ui
         lines_.clear();
         scroll_position_ = 0;
         follow_tail_ = true;
+        has_selection_ = selecting_ = false;
+        pin_.on = false;
     }
 
     void LogPanel::set_title(const std::string &title)
@@ -161,6 +237,13 @@ namespace gsystemctl::ui
             return;
         }
         const int max_position = static_cast<int>(lines_.size()) - 1;
+        if (pin_.on)
+        {
+            // Continue from where the pinned view is.
+            pin_.on = false;
+            follow_tail_ = false;
+            scroll_position_ = layout_->focus_line;
+        }
         scroll_position_ = std::clamp(scroll_position_ + delta, 0, max_position);
         follow_tail_ = scroll_position_ == max_position;
     }
@@ -176,6 +259,9 @@ namespace gsystemctl::ui
         std::vector<std::string> lines;
         int scroll_position = 0;
         bool following = true;
+        bool selected = false;
+        Pin pin;
+        TextPoint a, b;
         {
             std::lock_guard<std::mutex> lock(mutex_);
             title = title_;
@@ -184,10 +270,17 @@ namespace gsystemctl::ui
             scroll_position = scroll_position_;
             following = follow_tail_;
             lines = lines_;
+            selected = has_selection_;
+            pin = pin_;
+            a = anchor_;
+            b = cursor_;
         }
+        if (b.line < a.line || (b.line == a.line && b.col < a.col))
+            std::swap(a, b);
 
         Element body = lines.empty() ? text("Waiting for log output...") | dim
-                                     : std::make_shared<WrappedLines>(std::move(lines), scroll_position, wrap_width_);
+                                     : std::make_shared<WrappedLines>(std::move(lines), scroll_position, wrap_width_,
+                                                                               layout_, selected, a, b, pin);
 
         // Fit the header: the buttons were already shortened by their owner; the
         // state shortens to "paused", then the title ends in "…". Always a gap
@@ -198,6 +291,14 @@ namespace gsystemctl::ui
         std::string state = following ? "following  " : "paused (scroll to end to follow)  ";
         if (!following && fixed + string_width(title) + string_width(state) > width)
             state = "paused  ";
+        bool noticed = false;
+        if (!notice_.empty() && std::chrono::steady_clock::now() < notice_until_)
+        {
+            state = notice_ + "  ";
+            noticed = true;
+            if (fixed + string_width(state) > width)
+                state = "copied  ";
+        }
         const int title_room = width - fixed - string_width(state);
         auto glyphs = Utf8ToGlyphs(title);
         if (static_cast<int>(glyphs.size()) > title_room)
@@ -214,13 +315,148 @@ namespace gsystemctl::ui
                        text(title) | color(WarningColor()),
                        text("  "),
                        filler(),
-                       text(state) | color(MutedColor()),
+                       text(state) | color(noticed ? AccentColor() : MutedColor()),
                        std::move(actions),
                    }),
                    separator() | color(BorderColor()),
-                   std::move(body) | color(TextColor()) | vscroll_indicator | yframe | flex,
+                   std::move(body) | color(TextColor()) | vscroll_indicator | yframe | reflect(body_box_) | flex,
                }) |
                bgcolor(PanelColor()) | reflect(box_);
+    }
+
+    bool LogPanel::point_at(int x, int y, TextPoint &out) const
+    {
+        const auto &rows = layout_->rows;
+        const auto &boxes = layout_->boxes;
+        int first = -1, last = -1;
+        for (size_t i = 0; i < rows.size() && i < boxes.size(); ++i)
+        {
+            // reflect() clips boxes to what is drawn: rows scrolled out of view are empty.
+            const int row_y = boxes[i].y_min;
+            if (boxes[i].y_max < row_y || boxes[i].x_max < boxes[i].x_min || row_y < body_box_.y_min ||
+                row_y > body_box_.y_max)
+                continue;
+            if (first < 0)
+                first = static_cast<int>(i);
+            last = static_cast<int>(i);
+            if (row_y == y)
+            {
+                const auto &r = rows[i];
+                out = {r.line, r.col + std::clamp(x - boxes[i].x_min, 0, std::max(0, r.width - 1))};
+                return true;
+            }
+        }
+        if (first < 0)
+            return false;
+        // Above or below the text (dragging past an edge, or the empty space under short logs).
+        if (y < boxes[first].y_min)
+            out = {rows[first].line, rows[first].col};
+        else
+            out = {rows[last].line, rows[last].col + std::max(0, rows[last].width - 1)};
+        return true;
+    }
+
+    bool LogPanel::handle_mouse(const Mouse &mouse)
+    {
+        if (!is_open())
+            return false;
+        const bool left = mouse.button == Mouse::Left;
+        if (selecting_)
+        {
+            TextPoint p;
+            const bool released = mouse.motion == Mouse::Released;
+            if (point_at(mouse.x, mouse.y, p))
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                cursor_ = p;
+            }
+            if (released)
+            {
+                selecting_ = false;
+                std::string text;
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    text = selected_text(lines_, anchor_, cursor_);
+                }
+                copy_text(text, "selection");
+            }
+            return true;
+        }
+        if (!left || mouse.motion != Mouse::Pressed)
+            return false;
+        TextPoint p;
+        if (!body_box_.Contain(mouse.x, mouse.y) || !point_at(mouse.x, mouse.y, p))
+        {
+            clear_selection();
+            return false;
+        }
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!has_selection_)
+            resume_follow_ = follow_tail_;
+        // Hold the view still while a selection exists.
+        if (!pin_.on)
+        {
+            TextPoint top;
+            // Column 0 of a row is where that row starts in its log line.
+            if (point_at(body_box_.x_min, body_box_.y_min, top))
+            {
+                pin_ = {true, top, body_box_.y_max - body_box_.y_min};
+            }
+        }
+        follow_tail_ = false;
+        anchor_ = cursor_ = p;
+        has_selection_ = selecting_ = true;
+        return true;
+    }
+
+    void LogPanel::copy()
+    {
+        std::string text;
+        std::string what;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (!open_)
+                return;
+            if (has_selection_)
+            {
+                text = selected_text(lines_, anchor_, cursor_);
+                what = "selection";
+            }
+            else
+            {
+                const size_t n = std::min(kCopyLines, lines_.size());
+                text = last_lines(lines_, kCopyLines);
+                what = "last " + std::to_string(n) + (n == 1 ? " line" : " lines");
+            }
+        }
+        copy_text(text, what);
+    }
+
+    void LogPanel::copy_text(const std::string &text, const std::string &what)
+    {
+        if (text.empty())
+        {
+            notice_ = "nothing to copy";
+        }
+        else
+        {
+            const std::string via = copy_to_clipboard(text);
+            notice_ = via.empty() ? "copy failed" : "copied " + what + " via " + via;
+        }
+        // Cleared by a later redraw (the tab pollers redraw every 2s).
+        notice_until_ = std::chrono::steady_clock::now() + std::chrono::seconds(4);
+    }
+
+    bool LogPanel::clear_selection()
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!has_selection_)
+            return false;
+        has_selection_ = selecting_ = false;
+        pin_.on = false;
+        if (resume_follow_)
+            follow_tail_ = true;
+        return true;
     }
 
     std::string LogPanel::sanitize(const std::string &line)

@@ -1,6 +1,9 @@
 #pragma once
 
+#include "g-systemctl/core/clipboard.hpp"
 #include "g-systemctl/core/logging_manager.hpp"
+#include <chrono>
+#include <ftxui/component/mouse.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/screen/box.hpp>
@@ -36,6 +39,38 @@ namespace gsystemctl::ui
         // `actions` is drawn at the right end of the header.
         ftxui::Element render(ftxui::Element actions);
 
+        // Lines Alt+y copies when nothing is selected.
+        static constexpr size_t kCopyLines = 100;
+
+        // Mouse drag over the log text selects it; releasing copies it.
+        // Returns true when the event was used. A click elsewhere clears the selection.
+        bool handle_mouse(const ftxui::Mouse &mouse);
+        // Copies the selection, or the last kCopyLines lines when none.
+        void copy();
+        // Returns false when there was no selection.
+        bool clear_selection();
+
+        // Row layout of the last frame: which log line and column each row starts at.
+        struct Row
+        {
+            int line = 0;
+            int col = 0;
+            int width = 0;
+        };
+        struct Layout
+        {
+            std::vector<Row> rows;
+            std::vector<ftxui::Box> boxes;
+            int focus_line = 0; // log line the frame was focused on
+        };
+        // Keeps `top` as the first visible row (frame height - 1 = `extent`).
+        struct Pin
+        {
+            bool on = false;
+            TextPoint top;
+            int extent = 0;
+        };
+
         // Strips ANSI escape sequences and carriage returns, expands tabs.
         static std::string sanitize(const std::string &line);
 
@@ -51,6 +86,21 @@ namespace gsystemctl::ui
         bool follow_tail_ = true;
         ftxui::Box box_;
         int wrap_width_ = 0; // width the lines were last wrapped to; UI thread only
+
+        // Selection; line indexes shift when old lines are dropped. UI thread
+        // except for the shift in append(), under mutex_.
+        bool selecting_ = false; // mouse button held
+        bool has_selection_ = false;
+        bool resume_follow_ = false; // follow the tail again when the selection is cleared
+        TextPoint anchor_, cursor_;
+        Pin pin_; // while a selection exists, so new lines do not move the text under it
+        std::shared_ptr<Layout> layout_ = std::make_shared<Layout>();
+        ftxui::Box body_box_;
+        std::string notice_;
+        std::chrono::steady_clock::time_point notice_until_;
+
+        bool point_at(int x, int y, TextPoint &out) const;
+        void copy_text(const std::string &text, const std::string &what);
 
     };
 
