@@ -144,3 +144,52 @@ TEST(MacOSUnitFileTest, DaemonReloadIsNoOp) {
 }
 
 } // namespace gsystemctl
+
+namespace gsystemctl {
+
+TEST(LinuxServiceActionTest, JobFailureIsOneLineWithShortHint) {
+    auto executor = std::make_shared<RecordingCommandExecutor>();
+    executor->next_result = {1,
+                             "Job for nginx.service failed because the control process exited with error code.\n"
+                             "See \"systemctl status nginx.service\" and \"journalctl -xeu nginx.service\" for details.\n",
+                             ""};
+    LinuxServiceManager manager(executor, true);
+
+    auto [ok, message] = manager.restart_service("nginx.service", "");
+
+    EXPECT_FALSE(ok);
+    EXPECT_EQ(message, "Job for nginx.service failed because the control process exited with error code."
+                       " · see systemctl status nginx.service");
+    EXPECT_EQ(message.find('\n'), std::string::npos);
+}
+
+TEST(LinuxServiceActionTest, WrongSudoPasswordOnStartAndStop) {
+    auto executor = std::make_shared<RecordingCommandExecutor>();
+    executor->next_result = {1, "Sorry, try again.\nsudo: 1 incorrect password attempt\n", ""};
+    LinuxServiceManager manager(executor, true);
+
+    EXPECT_EQ(manager.start_service("nginx.service", "wrong").second, "incorrect password");
+    EXPECT_EQ(manager.stop_service("nginx.service", "wrong").second, "incorrect password");
+}
+
+TEST(LinuxServiceActionTest, OtherMultiLineOutputIsJoined) {
+    auto executor = std::make_shared<RecordingCommandExecutor>();
+    executor->next_result = {5, "Failed to stop foo.service: Unit foo.service not loaded.\n\nsecond line\n", ""};
+    LinuxServiceManager manager(executor, true);
+
+    EXPECT_EQ(manager.stop_service("foo.service", "").second,
+              "Failed to stop foo.service: Unit foo.service not loaded. · second line");
+}
+
+TEST(LinuxServiceActionTest, SuccessHasNoMessage) {
+    auto executor = std::make_shared<RecordingCommandExecutor>();
+    executor->next_result = {0, "some chatter\n", ""};
+    LinuxServiceManager manager(executor, true);
+
+    auto [ok, message] = manager.start_service("nginx.service", "");
+    EXPECT_TRUE(ok);
+    EXPECT_EQ(message, "");
+    EXPECT_EQ(executor->commands.back().command, "systemctl start nginx.service");
+}
+
+} // namespace gsystemctl
