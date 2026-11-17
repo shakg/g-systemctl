@@ -5,6 +5,7 @@
 #include "g-systemctl/core/command_executor.hpp"
 #include "g-systemctl/core/logging_manager.hpp"
 #include "g-systemctl/platform/platform.hpp"
+#include <ftxui/screen/string.hpp>
 #include <ftxui/screen/terminal.hpp>
 #include <algorithm>
 #include <cctype>
@@ -1145,60 +1146,126 @@ namespace gsystemctl::ui
         });
     }
 
+    namespace
+    {
+        // "↑ 2.3.0 available: …" or "✓ 2.3.0 installed: …" → "2.3.0".
+        std::string version_of_notice(const std::string &notice)
+        {
+            const auto start = notice.find(' ');
+            if (start == std::string::npos)
+                return "";
+            const auto end = notice.find(' ', start + 1);
+            return notice.substr(start + 1, end == std::string::npos ? std::string::npos : end - start - 1);
+        }
+    } // namespace
+
     Element App::render_top_bar()
     {
         const bool containers = active_tab_ == Tab::Containers;
         const bool busy = containers ? containers_view_->busy() : busy_;
         const auto &busy_message = containers ? containers_view_->busy_message() : busy_message_;
+        auto now = std::chrono::steady_clock::now().time_since_epoch();
+        // Braille spinner, advanced by wall clock so speed is independent of frame rate.
+        auto frame = static_cast<size_t>(std::chrono::duration_cast<std::chrono::milliseconds>(now).count() / 80);
+        if (busy || update_busy_)
+            animation::RequestAnimationFrame();
 
-        Element reload_button;
+        // Each label has variants from longest to shortest; the first combination
+        // that fits the terminal is drawn, so the tabs and "?" are never clipped.
+        struct Label
+        {
+            std::string text;
+            std::string key; // drawn muted after the text
+        };
+        std::vector<Label> reload;
+        Color reload_color = MutedColor();
+        bool reload_dim = false;
         if (busy)
         {
-            // Braille spinner, advanced by wall clock so speed is independent of frame rate.
-            auto now = std::chrono::steady_clock::now().time_since_epoch();
-            auto frame = static_cast<size_t>(std::chrono::duration_cast<std::chrono::milliseconds>(now).count() / 80);
-            reload_button = hbox({
-                spinner(15, frame) | color(WarningColor()),
-                text(" " + busy_message + " ") | color(WarningColor()),
-            });
-            animation::RequestAnimationFrame();
+            // "Reloading systemd daemon..." → "Reloading..." → "working...".
+            const auto verb = busy_message.substr(0, busy_message.find(' '));
+            reload = {{" " + busy_message + " ", ""}, {" " + verb + (verb.size() > 3 && verb.compare(verb.size() - 3, 3, "...") == 0 ? "" : "...") + " ", ""},
+                      {" working... ", ""}};
+            reload_color = WarningColor();
         }
         else if (containers)
         {
-            reload_button = text(" Refresh(Alt+R) ") | color(MutedColor());
+            reload = {{" Refresh(Alt+R) ", ""}, {" Refresh ", ""}, {" ↻ ", ""}};
         }
         else if (service_manager_->supports_unit_files())
         {
-            reload_button = hbox({text(" ↻ systemctl daemon-reload ") | color(AccentColor()),
-                                  text("Alt+Shift+r ") | color(MutedColor())});
+            reload = {{" ↻ systemctl daemon-reload ", "Alt+Shift+r "},
+                      {" ↻ daemon-reload ", "Alt+Shift+r "},
+                      {" ↻ daemon-reload ", ""},
+                      {" ↻ reload ", ""},
+                      {" ↻ ", ""}};
+            reload_color = AccentColor();
         }
         else
         {
-            reload_button = text(" daemon-reload (n/a on macOS) ") | color(MutedColor()) | dim;
+            reload = {{" daemon-reload (n/a on macOS) ", ""}, {" ", ""}};
+            reload_dim = true;
         }
 
-        Element update = text("");
+        std::vector<std::string> update;
+        const auto &version = update_release_.version;
         if (update_busy_)
-        {
-            auto now = std::chrono::steady_clock::now().time_since_epoch();
-            auto frame = static_cast<size_t>(std::chrono::duration_cast<std::chrono::milliseconds>(now).count() / 80);
-            update = hbox({spinner(15, frame), text(" Updating to " + update_release_.version + "... ")}) |
-                     color(WarningColor());
-            animation::RequestAnimationFrame();
-        }
-        else if (!update_notice_.empty())
-        {
-            update = text(" " + update_notice_ + " ") | color(AccentColor());
-        }
+            update = {" Updating to " + version + "... ", " Updating... ", " "};
+        else if (update_notice_.rfind("↑ ", 0) == 0)
+            update = {" " + update_notice_ + " ", " ↑ " + version_of_notice(update_notice_) + " available ",
+                      " ↑ " + version_of_notice(update_notice_) + " "};
+        else if (update_notice_.rfind("✓ ", 0) == 0)
+            update = {" " + update_notice_ + " ", " ✓ " + version_of_notice(update_notice_) + " installed ",
+                      " ✓ " + version_of_notice(update_notice_) + " "};
+        else
+            update = {""};
+        const std::vector<std::string> shortcuts = {" Shortcuts(?) ", " ? "};
+
+        // Border (2), brand, gap and tabs are always there.
+        const int fixed = 2 + string_width(" g-systemctl ") + 1 + string_width(" Containers │ Services ");
+        const int room = Terminal::Size().dimx - fixed;
+        const int spinner_width = (busy ? 1 : 0) + (update_busy_ ? 1 : 0);
+        size_t r = 0, u = 0, k = 0;
+        auto width = [&] {
+            return spinner_width + string_width(reload[r].text + reload[r].key) + string_width(update[u]) +
+                   string_width(shortcuts[k]);
+        };
+        // The fitting combination with the least shortening; at equal cost the
+        // update notice is shortened before the reload label, "Shortcuts(?)" last.
+        [&] {
+            for (k = 0; k < shortcuts.size(); ++k)
+                for (size_t cost = 0; cost < update.size() + reload.size() - 1; ++cost)
+                    for (r = 0; r <= cost && r < reload.size(); ++r)
+                    {
+                        u = cost - r;
+                        if (u < update.size() && width() <= room)
+                            return;
+                    }
+            // Nothing fits: draw the shortest and let the bar clip.
+            k = shortcuts.size() - 1;
+            u = update.size() - 1;
+            r = reload.size() - 1;
+        }();
+
+        Element reload_button = hbox({text(reload[r].text) | color(reload_color),
+                                      text(reload[r].key) | color(MutedColor())});
+        if (busy)
+            reload_button = hbox({spinner(15, frame) | color(WarningColor()), reload_button});
+        if (reload_dim)
+            reload_button = reload_button | dim;
+
+        Element update_element = text(update[u]) | color(update_busy_ ? WarningColor() : AccentColor());
+        if (update_busy_)
+            update_element = hbox({spinner(15, frame) | color(WarningColor()), update_element});
 
         return hbox({
                    text(" g-systemctl ") | color(AccentColor()) | bold,
                    text(" "),
                    render_tabs(),
                    filler(),
-                   update,
+                   update_element,
                    reload_button | reflect(reload_button_box_),
-                   text(" Shortcuts(?) ") | color(MutedColor()) | reflect(shortcuts_box_),
+                   text(shortcuts[k]) | color(MutedColor()) | reflect(shortcuts_box_),
                }) |
                bgcolor(PanelColor());
     }
