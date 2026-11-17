@@ -772,6 +772,16 @@ namespace gsystemctl::ui
         });
     }
 
+    void ContainersView::report_removed()
+    {
+        // On the page of a container that no longer exists, say so instead of doing nothing.
+        if (detail_open_ && detail_project_.empty())
+        {
+            clear_messages();
+            error_message_ = logs_name_ + " was removed";
+        }
+    }
+
     const Container *ContainersView::action_target() const
     {
         auto find = [this](auto pred) -> const Container * {
@@ -803,7 +813,10 @@ namespace gsystemctl::ui
         }
         const auto *c = action_target();
         if (!c)
+        {
+            report_removed();
             return;
+        }
         clear_messages();
         if (c->is_active())
         {
@@ -830,7 +843,10 @@ namespace gsystemctl::ui
         }
         const auto *c = action_target();
         if (!c)
+        {
+            report_removed();
             return;
+        }
         clear_messages();
         if (!c->is_active())
         {
@@ -864,7 +880,10 @@ namespace gsystemctl::ui
         }
         const auto *c = action_target();
         if (!c)
+        {
+            report_removed();
             return;
+        }
         clear_messages();
         if (!c->is_active())
         {
@@ -1008,7 +1027,10 @@ namespace gsystemctl::ui
         }
         const auto *c = action_target();
         if (!c)
+        {
+            report_removed();
             return;
+        }
         if (!c->is_running())
         {
             status_message_ = c->name + " is not running (Alt+o to start)";
@@ -1329,7 +1351,10 @@ namespace gsystemctl::ui
     {
         const auto *c = action_target();
         if (!c)
+        {
+            report_removed();
             return;
+        }
         try
         {
             auto details = manager_->inspect(c->id);
@@ -1823,7 +1848,7 @@ namespace gsystemctl::ui
             return render_project_detail();
         const auto *c = action_target();
         Element actions = c ? actions_.render(state_style(c->state).label, state_style(c->state).fg, c->is_active())
-                            : actions_.render("✕ removed", Colors::error_fg(), false);
+                            : actions_.render("✕ removed", Colors::error_fg(), false, false);
         auto title = detail_title_bar(actions_.render_back(), logs_name_, c ? c->image : details_.image, std::move(actions));
         Element summary = logs_full_ ? text("") : summary_.render(render_summary());
         const bool graphs = graphs_ ? graphs_->shown() : graphs_fit();

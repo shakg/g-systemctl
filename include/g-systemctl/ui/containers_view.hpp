@@ -247,6 +247,8 @@ namespace gsystemctl::ui
                         const RowActivity::Labels &labels = {});
         // The container on the open detail page, else the selected one.
         const Container *action_target() const;
+        // Error message for an action on the page of a removed container.
+        void report_removed();
         void start_target();
         void stop_target();
         void restart_target();
