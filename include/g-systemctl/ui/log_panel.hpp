@@ -71,6 +71,15 @@ namespace gsystemctl::ui
             int extent = 0;
         };
 
+        // Search: matches (case-insensitive) are highlighted; setting it
+        // scrolls to the newest matching line. Empty clears it. UI thread.
+        void set_search(const std::string &query);
+        const std::string &search() const { return search_; }
+        // Scrolls to the next (`forward`, newer) or previous matching line, wrapping.
+        void next_match(bool forward);
+        // "3/12" (current matching line / matching lines), "no matches", or "" with no search.
+        std::string match_summary() const;
+
         // Strips ANSI escape sequences and carriage returns, expands tabs.
         static std::string sanitize(const std::string &line);
 
@@ -96,6 +105,8 @@ namespace gsystemctl::ui
         Pin pin_; // while a selection exists, so new lines do not move the text under it
         std::shared_ptr<Layout> layout_ = std::make_shared<Layout>();
         ftxui::Box body_box_;
+        std::string search_;
+        int match_line_ = -1; // line the search last moved to; under mutex_
         std::string notice_;
         std::chrono::steady_clock::time_point notice_until_;
 

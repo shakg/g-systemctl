@@ -62,6 +62,7 @@ namespace gsystemctl::ui
         bool back();
         // Clears the log text selection; false when there was none.
         bool clear_log_selection() { return logs_.clear_selection(); }
+        LogPanel &logs() { return logs_; }
 
         // Returns true if the event was consumed.
         bool handle_event(ftxui::Event event);

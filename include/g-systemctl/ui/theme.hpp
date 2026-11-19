@@ -1,5 +1,6 @@
 #pragma once
 
+#include "g-systemctl/core/fuzzy.hpp"
 #include "g-systemctl/core/text_wrap.hpp"
 
 #include <algorithm>
@@ -42,10 +43,49 @@ namespace gsystemctl::ui::theme
         return text(ellipsize(value, width)) | color(fg) | align_right | size(WIDTH, EQUAL, width);
     }
 
-    inline ftxui::Element flex_cell(const std::string &value, ftxui::Color fg = TextColor(), bool bold_text = false)
+    inline ftxui::Color MatchColor() { return ftxui::Color::RGB(255, 190, 45); }
+
+    // `value` with the bytes at `positions` (sorted, from fuzzy_match) drawn
+    // in MatchColor, bold and underlined. Not cut: the caller sizes it.
+    inline ftxui::Element highlighted(const std::string &value, const std::vector<size_t> &positions, ftxui::Color fg)
     {
         using namespace ftxui;
-        auto element = text(value) | color(fg);
+        if (positions.empty())
+            return text(value) | color(fg);
+        Elements parts;
+        size_t i = 0, k = 0;
+        while (i < value.size())
+        {
+            const bool hit = k < positions.size() && positions[k] == i;
+            size_t j = i;
+            if (hit)
+                while (k < positions.size() && positions[k] == j)
+                    ++k, ++j;
+            else
+                j = k < positions.size() ? positions[k] : value.size();
+            // Keep a UTF-8 sequence whole.
+            while (j < value.size() && (static_cast<unsigned char>(value[j]) & 0xC0) == 0x80)
+                ++j;
+            auto part = text(value.substr(i, j - i));
+            parts.push_back(hit ? part | color(MatchColor()) | bold | underlined : part | color(fg));
+            i = j;
+        }
+        return hbox(std::move(parts));
+    }
+
+    // Fuzzy highlight of `filter` in `value`.
+    inline ftxui::Element filter_highlighted(const std::string &value, const std::string &filter, ftxui::Color fg)
+    {
+        auto m = fuzzy_match(filter, value);
+        return highlighted(value, m ? *m : std::vector<size_t>{}, fg);
+    }
+
+    // `filter`: fuzzy matches in `value` are highlighted.
+    inline ftxui::Element flex_cell(const std::string &value, ftxui::Color fg = TextColor(), bool bold_text = false,
+                                    const std::string &filter = "")
+    {
+        using namespace ftxui;
+        auto element = filter_highlighted(value, filter, fg);
         if (bold_text)
         {
             element = element | bold;

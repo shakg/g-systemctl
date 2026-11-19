@@ -170,6 +170,7 @@ h1 .acc { color: var(--acc); }
 .fl-n { padding: 4px 12px 10px; color: var(--muted); font-size: 12px; }
 .fl-list li .s { color: var(--acc); font-size: 12px; }
 .fl-list li .s.o { color: #8a8ea0; }
+.fl-list li .m { color: var(--warn, #ffbe2d); font-weight: 700; text-decoration: underline; }
 
 /* safe card */
 .safe { display: grid; gap: 14px; height: 100%; align-content: center; }
