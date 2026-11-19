@@ -51,14 +51,14 @@ namespace gsystemctl::ui
                            text(" "),
                        }),
                        separator() | color(BorderColor()),
-                       text(" y confirm · n / Esc cancel") | color(MutedColor()),
+                       text(" y / Enter confirm · n / Esc cancel") | color(MutedColor()),
                    }) |
                    size(WIDTH, GREATER_THAN, 44) | size(WIDTH, LESS_THAN, 80) | borderStyled(ROUNDED, BorderColor()) |
                    bgcolor(PanelColor()) | isolated_borders;
         });
 
         return CatchEvent(renderer, [this](Event event) {
-            if (event == Event::Character('y') || event == Event::Character('Y'))
+            if (event == Event::Character('y') || event == Event::Character('Y') || event == Event::Return)
             {
                 confirm();
                 return true;
@@ -75,7 +75,7 @@ namespace gsystemctl::ui
                 else if (cancel_box_.Contain(event.mouse().x, event.mouse().y))
                     cancel();
             }
-            // Swallow everything else, Enter included.
+            // Swallow everything else.
             return true;
         });
     }
