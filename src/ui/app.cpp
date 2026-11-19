@@ -1,4 +1,5 @@
 #include "g-systemctl/ui/app.hpp"
+#include "g-systemctl/core/fuzzy.hpp"
 #include "g-systemctl/ui/styles.hpp"
 #include "g-systemctl/ui/theme.hpp"
 #include "g-systemctl/container/container_manager.hpp"
@@ -298,22 +299,9 @@ namespace gsystemctl::ui
         else
         {
             filtered_services_.clear();
-            std::string lower_filter = filter_text_;
-            std::transform(lower_filter.begin(), lower_filter.end(), lower_filter.begin(),
-                           [](unsigned char c)
-                           { return std::tolower(c); });
-
             for (const auto &svc : services_)
-            {
-                std::string lower_unit = svc.unit;
-                std::transform(lower_unit.begin(), lower_unit.end(), lower_unit.begin(),
-                               [](unsigned char c)
-                               { return std::tolower(c); });
-                if (lower_unit.find(lower_filter) != std::string::npos)
-                {
+                if (fuzzy_match(filter_text_, svc.unit))
                     filtered_services_.push_back(svc);
-                }
-            }
         }
 
         const auto order = services_sort_;
@@ -811,6 +799,16 @@ namespace gsystemctl::ui
         service_details_error_.clear();
     }
 
+    bool App::on_detail_page() const
+    {
+        return active_tab_ == Tab::Containers ? containers_view_->detail_open() : detail_open_;
+    }
+
+    LogPanel &App::active_logs()
+    {
+        return active_tab_ == Tab::Containers ? containers_view_->logs() : service_logs_;
+    }
+
     bool App::services_back()
     {
         if (logs_full_)
@@ -902,8 +900,14 @@ namespace gsystemctl::ui
                 }
                 return true;
             }
-            // The list is hidden on the detail page, so typing does not change the filter there.
+            // On the detail page typing searches the logs.
             if (event.is_character() || event == Event::Backspace) {
+                auto query = service_logs_.search();
+                if (event.is_character())
+                    query += event.character();
+                else if (!query.empty())
+                    query.pop_back();
+                service_logs_.set_search(query);
                 return true;
             }
         } else {
@@ -1054,6 +1058,8 @@ namespace gsystemctl::ui
             // Close the innermost thing first; quit only from the plain list.
             if (active_tab_ == Tab::Containers && containers_view_->clear_log_selection()) {
             } else if (active_tab_ == Tab::Services && service_logs_.clear_selection()) {
+            } else if (on_detail_page() && !active_logs().search().empty()) {
+                active_logs().set_search("");
             } else if (active_tab_ == Tab::Containers && containers_view_->back()) {
             } else if (active_tab_ == Tab::Services && services_back()) {
             } else if (active_tab_ == Tab::Containers && !containers_view_->filter_text().empty()) {
@@ -1068,6 +1074,10 @@ namespace gsystemctl::ui
         }
         if (event == Event::Special("\x1b" "q")) {
             quit();
+            return true;
+        }
+        if (on_detail_page() && (event == Event::Special("\x1b" "n") || event == Event::Special("\x1b" "N"))) {
+            active_logs().next_match(event == Event::Special("\x1b" "n"));
             return true;
         }
         if (event == Event::Special("\x1b" "g")) {
@@ -1195,19 +1205,23 @@ namespace gsystemctl::ui
         }
         layout.push_back(separator() | color(BorderColor()));
 
-        const auto &filter = containers ? containers_view_->filter_text() : filter_text_;
         const bool on_detail = containers ? containers_view_->detail_open() : detail_open_;
         const bool on_full_logs = containers ? containers_view_->logs_full() : logs_full_;
+        // On the detail page the bar searches the logs.
+        const auto &filter = on_detail ? active_logs().search()
+                             : containers ? containers_view_->filter_text()
+                                          : filter_text_;
         const auto view_hints = containers ? containers_view_->hints() : std::string();
         const std::string hints =
             !view_hints.empty() ? view_hints
-            : on_full_logs ? "  ·  ↑↓ PgUp/PgDn scroll  ·  Enter shrink logs  ·  Esc back  ·  ? help  "
-            : on_detail  ? "  ·  ↑↓ scroll info  ·  PgUp/PgDn scroll logs  ·  Enter expand logs  ·  Esc back  ·  ? help  "
-                         : "  ·  ↑↓ move  ·  Enter open  ·  Alt+o start  ·  Alt+x stop  ·  Alt+r restart  ·  ? help  ";
-        const auto summary = containers ? containers_view_->summary()
-                                        : std::to_string(filtered_services_.size()) + "/" + std::to_string(services_.size()) +
-                                              (services_.size() == 1 ? " service" : " services");
-        layout.push_back(render_filter_bar(filter, summary, hints));
+            : on_full_logs ? "  ·  Alt+n/N next/prev match  ·  ↑↓ PgUp/PgDn scroll  ·  Esc back  "
+            : on_detail  ? "  ·  Alt+n/N next/prev match  ·  ↑↓ scroll info  ·  PgUp/PgDn scroll logs  ·  Esc back  "
+                         : "  ·  ↑↓ move  ·  Enter open  ·  Alt+o start  ·  Alt+x stop  ·  Alt+r restart  ";
+        const auto summary = on_detail ? active_logs().match_summary()
+                             : containers ? containers_view_->summary()
+                                          : std::to_string(filtered_services_.size()) + "/" + std::to_string(services_.size()) +
+                                                (services_.size() == 1 ? " service" : " services");
+        layout.push_back(render_filter_bar(on_detail ? " Search logs: " : " Filter: ", filter, summary, hints));
 
         auto page = vbox(std::move(layout)) | borderStyled(ROUNDED, BorderColor()) | bgcolor(BackgroundColor());
         show_update_offer();
@@ -1258,10 +1272,11 @@ namespace gsystemctl::ui
         }
     } // namespace
 
-    Element App::render_filter_bar(const std::string &filter, const std::string &summary, const std::string &hints)
+    Element App::render_filter_bar(const std::string &label, const std::string &filter, const std::string &summary,
+                                   const std::string &hints)
     {
         // Fit to the terminal width (inside the border) instead of letting FTXUI
-        // squeeze every part: hints drop whole, from the right ("? help" last),
+        // squeeze every part: hints drop whole, from the right,
         // then the summary shortens to "N/M", then the filter shows its end.
         const std::string sep = "  ·  ";
         std::vector<std::string> items;
@@ -1280,16 +1295,14 @@ namespace gsystemctl::ui
             start = at + sep.size();
         }
         auto join = [&](size_t keep) {
-            // The first keep-1 hints plus the last one ("? help").
+            // The first `keep` hints.
             std::string out;
-            for (size_t i = 0; i < items.size(); ++i)
-                if (i + 1 < keep || (keep > 0 && i + 1 == items.size()))
-                    out += sep + items[i];
+            for (size_t i = 0; i < keep && i < items.size(); ++i)
+                out += sep + items[i];
             return out.empty() ? out : out + "  ";
         };
 
         const int room = Terminal::Size().dimx - 2;
-        const std::string label = " Filter: ";
         std::string shown_filter = filter;
         std::string shown_summary = summary;
         std::string shown_hints;
@@ -1480,7 +1493,7 @@ namespace gsystemctl::ui
             const bool emphasize = state.kind != ServiceState::Kind::Inactive;
 
             auto card = hbox({
-                flex_cell(svc.unit, selected ? Color::White : TextColor(), selected),
+                flex_cell(svc.unit, selected ? Color::White : TextColor(), selected, filter_text_),
                 [&] {
                     auto activity = row_activity_.render(svc.unit);
                     return activity ? activity | size(WIDTH, EQUAL, 16) : cell(state.label, 16, state_color(state), emphasize);
@@ -1695,7 +1708,8 @@ namespace gsystemctl::ui
             body = {
                 heading("List"),
                 key("↑↓ / Alt+k/j", "Move selection"),
-                key("type / Backspace", "Filter"),
+                key("type / Backspace", "Fuzzy filter (list), search logs (detail page)"),
+                key("Alt+n / Alt+N", "Next / previous log match"),
                 key("Alt+s / Alt+Shift+s", "Sort by the next column / reverse (or click a header)"),
                 key("Enter / click", "Open detail page"),
                 gap(),
@@ -1711,7 +1725,7 @@ namespace gsystemctl::ui
                 heading("App"),
                 key("Tab", "Switch tab"),
                 key("Alt+1 / Alt+2", "Containers / Services"),
-                key("Esc", "Back, clear filter, then quit"),
+                key("Esc", "Clear search, back, clear filter, then quit"),
                 key("Alt+q", "Quit"),
             };
             break;

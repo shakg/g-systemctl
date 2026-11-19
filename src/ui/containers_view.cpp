@@ -672,7 +672,7 @@ namespace gsystemctl::ui
         projects_ = group_compose_projects(containers_, compose_store_.projects());
 
         const auto needle = lower(filter_text_);
-        auto contains = [&needle](const std::string &value) { return lower(value).find(needle) != std::string::npos; };
+        auto contains = [&needle](const std::string &value) { return fuzzy_match(needle, value).has_value(); };
         auto matches = [&](const Container &c) {
             return needle.empty() || contains(c.name) || contains(c.image) || contains(c.compose_project) ||
                    contains(c.compose_service);
@@ -866,7 +866,7 @@ namespace gsystemctl::ui
         if (logs_full_)
             return "";
         if (detail_open_ && !detail_project_.empty())
-            return "  ·  Alt+u up  ·  Alt+d down  ·  Enter logs  ·  Esc back  ·  ? help  ";
+            return "  ·  Alt+n/N next/prev match  ·  Alt+u up  ·  Alt+d down  ·  Esc back  ";
         if (detail_open_)
         {
             const auto *c = action_target();
@@ -876,12 +876,11 @@ namespace gsystemctl::ui
             const bool shell = c->is_running() && it != shells_.end() && it->second.ok;
             if (c->compose_project.empty() && !shell)
                 return "";
-            return std::string("  ·  ↑↓ scroll info") + (shell ? "  ·  Alt+t shell" : "") +
-                   (c->compose_project.empty() ? "" : "  ·  Alt+v project") +
-                   "  ·  Enter expand logs  ·  Esc back  ·  ? help  ";
+            return std::string("  ·  Alt+n/N next/prev match  ·  ↑↓ scroll info") + (shell ? "  ·  Alt+t shell" : "") +
+                   (c->compose_project.empty() ? "" : "  ·  Alt+v project") + "  ·  Esc back  ";
         }
         if (selected_project())
-            return "  ·  ←→ fold  ·  Enter open  ·  Alt+o start  ·  Alt+x stop  ·  Alt+d down  ·  Alt+a add  ·  ? help  ";
+            return "  ·  ←→ fold  ·  Enter open  ·  Alt+o start  ·  Alt+x stop  ·  Alt+d down  ·  Alt+a add  ";
         return "";
     }
 
@@ -1938,9 +1937,17 @@ namespace gsystemctl::ui
         }
         if (event.is_character() || event == Event::Backspace)
         {
-            // The list is hidden on the detail page, so typing does not change the filter there.
+            // On the detail page typing searches the logs.
             if (detail_open_)
+            {
+                auto query = logs_.search();
+                if (event.is_character())
+                    query += event.character();
+                else if (!query.empty())
+                    query.pop_back();
+                logs_.set_search(query);
                 return true;
+            }
             if (event.is_character())
                 filter_text_ += event.character();
             else if (!filter_text_.empty())
@@ -2238,7 +2245,7 @@ namespace gsystemctl::ui
 
         Elements row = {
             text(p.down() ? "▹ " : folded ? "▸ " : "▾ ") | color(AccentColor()),
-            text(name) | bold | color(is_selected ? Color::White : AccentColor()) | flex,
+            filter_highlighted(name, filter_text_, is_selected ? Color::White : AccentColor()) | bold | flex,
         };
         auto state = text(style.label) | color(style.fg);
         if (p.running > 0)
@@ -2265,7 +2272,7 @@ namespace gsystemctl::ui
                 drifted = std::find(it->second.begin(), it->second.end(), c.compose_service) != it->second.end();
             name = hbox({
                 text(last_child ? "  └ " : "  ├ ") | color(MutedColor()),
-                text(service_label(c, multi)) | color(is_selected ? Color::White : TextColor()),
+                filter_highlighted(service_label(c, multi), filter_text_, is_selected ? Color::White : TextColor()),
                 drifted ? text(" ⚠") | color(WarningColor()) : text(""),
                 filler(),
             });
@@ -2274,7 +2281,7 @@ namespace gsystemctl::ui
         }
         else
         {
-            name = flex_cell(c.name, is_selected ? Color::White : TextColor(), is_selected);
+            name = flex_cell(c.name, is_selected ? Color::White : TextColor(), is_selected, filter_text_);
         }
         // An action on the container, else on its compose project.
         auto status = row_activity_.render(c.id);

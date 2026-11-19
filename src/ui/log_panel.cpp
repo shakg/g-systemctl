@@ -1,4 +1,5 @@
 #include "g-systemctl/ui/log_panel.hpp"
+#include "g-systemctl/core/fuzzy.hpp"
 #include "g-systemctl/core/text_wrap.hpp"
 #include "g-systemctl/ui/theme.hpp"
 #include <algorithm>
@@ -25,9 +26,9 @@ namespace gsystemctl::ui
         public:
             WrappedLines(std::vector<std::string> lines, int focus_line, int &width,
                          std::shared_ptr<LogPanel::Layout> layout, bool selected, TextPoint a, TextPoint b,
-                         LogPanel::Pin pin)
+                         LogPanel::Pin pin, std::string search, int match_line)
                 : lines_(std::move(lines)), focus_line_(focus_line), width_(width), layout_(std::move(layout)),
-                  selected_(selected), a_(a), b_(b), pin_(pin) {}
+                  selected_(selected), a_(a), b_(b), pin_(pin), search_(std::move(search)), match_line_(match_line) {}
 
             void ComputeRequirement() override
             {
@@ -47,14 +48,17 @@ namespace gsystemctl::ui
                 for (size_t i = 0; i < wrapped.size(); ++i)
                 {
                     int col = 0;
+                    size_t offset = 0; // byte offset of the row in its line
                     const int line = static_cast<int>(i);
+                    const auto hits = find_all(search_, lines_[i]);
                     for (auto &row : wrapped[i])
                     {
                         const int w = string_width(row);
                         layout_->rows.push_back({line, col, w});
-                        rows.push_back(render_row(row, line, col, w) |
+                        rows.push_back(render_row(row, line, col, w, hits, offset) |
                                        reflect(layout_->boxes[layout_->rows.size() - 1]));
                         col += w;
+                        offset += row.size();
                     }
                     if (line == focus_line_)
                     {
@@ -109,11 +113,12 @@ namespace gsystemctl::ui
             }
 
         private:
-            // The selected part of a row is drawn inverted.
-            Element render_row(const std::string &row, int line, int col, int w) const
+            // The selected part of a row is drawn inverted; otherwise search hits are highlighted.
+            Element render_row(const std::string &row, int line, int col, int w,
+                               const std::vector<std::pair<size_t, size_t>> &hits, size_t offset) const
             {
                 if (!selected_ || line < a_.line || line > b_.line)
-                    return text(row);
+                    return render_hits(row, line, hits, offset);
                 const int from = line == a_.line ? a_.col : 0;
                 const int to = line == b_.line ? b_.col + 1 : col + w;
                 const int s = std::max(from, col) - col;
@@ -127,6 +132,30 @@ namespace gsystemctl::ui
                 });
             }
 
+            Element render_hits(const std::string &row, int line, const std::vector<std::pair<size_t, size_t>> &hits,
+                                size_t offset) const
+            {
+                Elements parts;
+                size_t at = 0; // within row
+                const auto hl = line == match_line_ ? AccentColor() : WarningColor();
+                for (const auto &[b, e] : hits)
+                {
+                    if (e <= offset || b >= offset + row.size())
+                        continue;
+                    const size_t s = std::max(b, offset) - offset;
+                    const size_t t = std::min(e, offset + row.size()) - offset;
+                    if (s > at)
+                        parts.push_back(text(row.substr(at, s - at)));
+                    parts.push_back(text(row.substr(s, t - s)) | bgcolor(hl) | color(Color::Black) | bold);
+                    at = t;
+                }
+                if (parts.empty())
+                    return text(row);
+                if (at < row.size())
+                    parts.push_back(text(row.substr(at)));
+                return hbox(std::move(parts));
+            }
+
             std::vector<std::string> lines_;
             int focus_line_;
             int &width_;
@@ -134,6 +163,8 @@ namespace gsystemctl::ui
             bool selected_;
             TextPoint a_, b_;
             LogPanel::Pin pin_;
+            std::string search_;
+            int match_line_;
         };
     } // namespace
 
@@ -149,6 +180,7 @@ namespace gsystemctl::ui
     {
         // Not under the lock: the stream's reader thread may be blocked in append().
         stream_.reset();
+        search_.clear();
         std::lock_guard<std::mutex> lock(mutex_);
         title_ = title;
         lines_.clear();
@@ -160,6 +192,7 @@ namespace gsystemctl::ui
         follow_tail_ = true;
         has_selection_ = selecting_ = false;
         pin_.on = false;
+        match_line_ = -1;
         open_ = true;
     }
 
@@ -184,6 +217,8 @@ namespace gsystemctl::ui
             {
                 const int dropped = static_cast<int>(max_lines_ / 5);
                 lines_.erase(lines_.begin(), lines_.begin() + dropped);
+                if (match_line_ >= 0)
+                    match_line_ = std::max(-1, match_line_ - dropped);
                 if (has_selection_)
                 {
                     anchor_.line -= dropped;
@@ -215,6 +250,7 @@ namespace gsystemctl::ui
         follow_tail_ = true;
         has_selection_ = selecting_ = false;
         pin_.on = false;
+        match_line_ = -1;
     }
 
     void LogPanel::set_title(const std::string &title)
@@ -248,6 +284,69 @@ namespace gsystemctl::ui
         follow_tail_ = scroll_position_ == max_position;
     }
 
+    void LogPanel::set_search(const std::string &query)
+    {
+        const bool was_empty = search_.empty();
+        search_ = query;
+        if (query.empty())
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            match_line_ = -1;
+            if (!was_empty && !pin_.on)
+                follow_tail_ = true;
+            return;
+        }
+        {
+            // Look again from the end, so the newest match is shown first.
+            std::lock_guard<std::mutex> lock(mutex_);
+            match_line_ = static_cast<int>(lines_.size());
+        }
+        next_match(false);
+    }
+
+    void LogPanel::next_match(bool forward)
+    {
+        if (search_.empty())
+            return;
+        std::lock_guard<std::mutex> lock(mutex_);
+        const int n = static_cast<int>(lines_.size());
+        if (n == 0)
+            return;
+        int from = match_line_ >= 0 ? match_line_ : scroll_position_;
+        for (int step = 1; step <= n + 1; ++step)
+        {
+            const int i = ((from + (forward ? step : -step)) % n + n) % n;
+            if (!find_all(search_, lines_[i]).empty())
+            {
+                match_line_ = i;
+                pin_.on = false;
+                scroll_position_ = i;
+                follow_tail_ = false;
+                return;
+            }
+        }
+        match_line_ = -1;
+    }
+
+    std::string LogPanel::match_summary() const
+    {
+        if (search_.empty())
+            return "";
+        std::lock_guard<std::mutex> lock(mutex_);
+        int total = 0, current = 0;
+        for (int i = 0; i < static_cast<int>(lines_.size()); ++i)
+        {
+            if (find_all(search_, lines_[i]).empty())
+                continue;
+            ++total;
+            if (i <= match_line_)
+                current = total;
+        }
+        if (total == 0)
+            return "no matches";
+        return std::to_string(std::max(current, 1)) + "/" + std::to_string(total);
+    }
+
     bool LogPanel::contains(int x, int y) const
     {
         return box_.Contain(x, y);
@@ -262,9 +361,11 @@ namespace gsystemctl::ui
         bool selected = false;
         Pin pin;
         TextPoint a, b;
+        int match_line = -1;
         {
             std::lock_guard<std::mutex> lock(mutex_);
             title = title_;
+            match_line = match_line_;
             const int last = std::max(0, static_cast<int>(lines_.size()) - 1);
             scroll_position_ = follow_tail_ ? last : std::clamp(scroll_position_, 0, last);
             scroll_position = scroll_position_;
@@ -280,7 +381,7 @@ namespace gsystemctl::ui
 
         Element body = lines.empty() ? text("Waiting for log output...") | dim
                                      : std::make_shared<WrappedLines>(std::move(lines), scroll_position, wrap_width_,
-                                                                               layout_, selected, a, b, pin);
+                                                                               layout_, selected, a, b, pin, search_, match_line);
 
         // Fit the header: the buttons were already shortened by their owner; the
         // state shortens to "paused", then the title ends in "…". Always a gap
