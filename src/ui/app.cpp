@@ -1425,6 +1425,10 @@ namespace gsystemctl::ui
             u = update.size() - 1;
             r = reload.size() - 1;
         }();
+        // The version has the lowest priority: drawn only in the room the other
+        // labels leave. The help dialog always shows it.
+        const std::string version_label = "v" + std::string(G_SYSTEMCTL_VERSION) + " ";
+        const bool show_version = string_width(version_label) <= room - width();
 
         Element reload_button = hbox({text(reload[r].text) | color(reload_color),
                                       text(reload[r].key) | color(MutedColor())});
@@ -1439,6 +1443,7 @@ namespace gsystemctl::ui
 
         return hbox({
                    text(" g-systemctl ") | color(AccentColor()) | bold,
+                   show_version ? text(version_label) | color(MutedColor()) : text(""),
                    text(" "),
                    render_tabs(),
                    filler(),
@@ -1768,7 +1773,9 @@ namespace gsystemctl::ui
         }
 
         return vbox({
-                   hbox({text(" Help ") | bold | color(AccentColor()), filler(), hbox(std::move(tabs))}),
+                   hbox({text(" Help ") | bold | color(AccentColor()),
+                         text("v" + std::string(G_SYSTEMCTL_VERSION)) | color(MutedColor()), filler(),
+                         hbox(std::move(tabs))}),
                    separator() | color(BorderColor()),
                    // Fixed size, so switching tabs does not resize the dialog.
                    hbox({text(" "), vbox(std::move(body))}) | size(HEIGHT, EQUAL, 21) | size(WIDTH, EQUAL, 87),
