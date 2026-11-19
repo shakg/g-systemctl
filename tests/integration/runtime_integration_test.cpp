@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <map>
 #include <cstdlib>
 #include <fstream>
 #include <mutex>
@@ -197,7 +198,15 @@ TEST_F(RuntimeIntegration, ListsContainersWithoutPodInfra) {
 TEST_F(RuntimeIntegration, StatsParse) {
     auto logger = find(manager->list_containers(), "gsc-it-logger");
     ASSERT_TRUE(logger);
-    auto stats = manager->container_stats();
+    // Rootless podman can report "0B" memory for a container that just
+    // started (cgroup not populated yet): sample again for up to 5s.
+    std::map<std::string, ContainerStats> stats;
+    for (int i = 0; i < 10; ++i) {
+        stats = manager->container_stats();
+        if (stats.count(logger->id) && parse_docker_size_pair(stats.at(logger->id).mem_usage).first > 0)
+            break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
     ASSERT_TRUE(stats.count(logger->id)) << "no stats for " << logger->id;
     const auto& s = stats.at(logger->id);
     EXPECT_GE(parse_docker_percent(s.cpu), 0) << s.cpu;

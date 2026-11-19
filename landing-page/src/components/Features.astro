@@ -43,11 +43,22 @@ const METRICS = [
   { n: "Disk I/O", cls: "disk", max: 900, lo: 0, f: (x: number) => "W " + x.toFixed(1) + " KiB/s", v: series(COLS, () => (rand() < 0.3 ? between(300, 880) : between(10, 160))) },
 ];
 
-const FILTER_Q = "pos";
-const FILTER = [
+// Same rule as the app's fuzzy_match: substring if there is one, else the letters in order.
+const FILTER_Q = "pgs";
+const fuzzy = (q: string, s: string): number[] | null => {
+  const at = s.toLowerCase().indexOf(q.toLowerCase());
+  if (at >= 0) return [...q].map((_, i) => at + i);
+  const out: number[] = [];
+  for (let i = 0, k = 0; i < s.length && k < q.length; i++) if (s[i].toLowerCase() === q[k].toLowerCase()) out.push(i), k++;
+  return out.length === q.length ? out : null;
+};
+const FILTER = ([
   ["containerd.service", 1], ["cron.service", 1], ["docker.service", 1], ["nginx.service", 1],
   ["postgresql.service", 1], ["postgres-exporter.service", 0], ["redis-server.service", 1], ["ssh.service", 1],
-].filter(([n]) => (n as string).includes(FILTER_Q)) as [string, number][];
+] as [string, number][]).flatMap(([n, on]) => {
+  const hit = fuzzy(FILTER_Q, n);
+  return hit ? [{ n, on, parts: [...n].map((c, i) => [c, hit.includes(i)] as [string, boolean]) }] : [];
+});
 
 const LOGS: [string, string, string][] = [
   ["09:42:01", "info", "GET /v1/orders 200 12ms"],
@@ -170,11 +181,10 @@ const PROJECT: Row[] = [
           <div class="win">
             <div class="fl-in">Filter: <span>{FILTER_Q}</span><span class="cur">█</span></div>
             <ul class="fl-list">
-              {FILTER.map(([n, on]) => {
-                // The app narrows the list; it does not highlight the match.
+              {FILTER.map(({ on, parts }) => {
                 return (
                   <li>
-                    <span>{n}</span>
+                    <span>{parts.map(([c, m]) => (m ? <b class="m">{c}</b> : c))}</span>
                     <span class:list={["s", { o: !on }]}>{on ? "● active" : "○ inactive"}</span>
                   </li>
                 );
@@ -184,8 +194,9 @@ const PROJECT: Row[] = [
           </div>
         </div>
         <div>
-          <h3>Type to filter</h3>
-          <p>There is no search mode: typing narrows the list. <code>-f nginx</code> starts with a filter.</p>
+          <h3>Type to filter, type to search</h3>
+          <p>On a list, typing filters fuzzily and highlights the matched letters. On a detail page it searches the logs:
+            hits are highlighted and <code>Alt+n</code> / <code>Alt+N</code> jump between them.</p>
         </div>
       </article>
 
@@ -197,14 +208,14 @@ const PROJECT: Row[] = [
               <div class="t">Confirm</div>
               <div class="q">Stop service postgresql.service?</div>
               <div class="bb"><span class="yes">y  Stop</span><span class="no">n  Cancel</span></div>
-              <div class="f">y confirm · n / Esc cancel</div>
+              <div class="f">y / Enter confirm · n / Esc cancel</div>
             </div>
-            <div class="ks"><kbd class="bad">Enter</kbd><span class="tag bad">ignored</span><kbd class="good">y</kbd><span class="tag good">confirms</span></div>
+            <div class="ks"><kbd class="good">y</kbd><kbd class="good">Enter</kbd><span class="tag good">confirm</span><kbd class="bad">Esc</kbd><span class="tag bad">cancels</span></div>
           </div>
         </div>
         <div>
           <h3>Stop and restart ask first</h3>
-          <p><code>Enter</code> only opens views. Stop and restart run after <code>y</code> or a click on the confirm button.</p>
+          <p>Stop and restart open a prompt first. <code>y</code>, <code>Enter</code> or a click confirms; <code>n</code> or <code>Esc</code> cancels.</p>
         </div>
       </article>
 
