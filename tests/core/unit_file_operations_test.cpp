@@ -189,7 +189,7 @@ TEST(LinuxServiceActionTest, SuccessHasNoMessage) {
     auto [ok, message] = manager.start_service("nginx.service", "");
     EXPECT_TRUE(ok);
     EXPECT_EQ(message, "");
-    EXPECT_EQ(executor->commands.back().command, "systemctl start nginx.service");
+    EXPECT_EQ(executor->commands.back().command, "systemctl start 'nginx.service'");
 }
 
 } // namespace gsystemctl
