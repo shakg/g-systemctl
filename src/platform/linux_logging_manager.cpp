@@ -1,6 +1,7 @@
 #include "g-systemctl/platform/linux_logging_manager.hpp"
 #include "g-systemctl/core/command_executor.hpp"
 #include "g-systemctl/core/process_stream.hpp"
+#include "g-systemctl/core/shell.hpp"
 #include <cstdlib>
 #include <string>
 #include <vector>
@@ -37,8 +38,10 @@ std::pair<bool, std::string> LinuxLoggingManager::open_logs(
         return {false, "Not running inside a tmux session"};
     }
 
-    // Build the journalctl command. Quote the unit name to avoid shell issues.
-    std::string command = "tmux split-window -v 'journalctl -u " + unit + " -f'";
+    // Build the journalctl command. Quote the unit name for the inner shell
+    // that tmux runs, then quote the whole inner command for the outer shell.
+    const std::string inner = "journalctl -u " + shell_quote(unit) + " -f";
+    std::string command = "tmux split-window -v " + shell_quote(inner);
     if (!executor_) {
         // If we don't have an executor, just run the command directly via system().
         int rc = std::system(command.c_str());

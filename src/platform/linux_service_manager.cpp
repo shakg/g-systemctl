@@ -356,7 +356,7 @@ void LinuxServiceManager::populate_resource_usage(std::vector<ServiceUnit>& unit
     std::ostringstream show_command;
     show_command << prefix << " show --property=MainPID --value";
     for (const auto& unit_name : running_units) {
-        show_command << " " << unit_name;
+        show_command << " " << shell_quote(unit_name);
     }
 
     auto pid_result = executor_->execute(show_command.str());
@@ -437,19 +437,19 @@ void LinuxServiceManager::populate_resource_usage(std::vector<ServiceUnit>& unit
 
 std::pair<bool, std::string> LinuxServiceManager::start_service(const std::string& name, const std::string& password) {
     std::string prefix = system_mode_ ? "systemctl" : "systemctl --user";
-    auto result = executor_->execute_privileged(prefix + " start " + name, password);
+    auto result = executor_->execute_privileged(prefix + " start " + shell_quote(name), password);
     return {result.exit_code == 0, result.exit_code == 0 ? "" : describe_failure(result)};
 }
 
 std::pair<bool, std::string> LinuxServiceManager::stop_service(const std::string& name, const std::string& password) {
     std::string prefix = system_mode_ ? "systemctl" : "systemctl --user";
-    auto result = executor_->execute_privileged(prefix + " stop " + name, password);
+    auto result = executor_->execute_privileged(prefix + " stop " + shell_quote(name), password);
     return {result.exit_code == 0, result.exit_code == 0 ? "" : describe_failure(result)};
 }
 
 std::pair<bool, std::string> LinuxServiceManager::restart_service(const std::string& name, const std::string& password) {
     std::string prefix = system_mode_ ? "systemctl" : "systemctl --user";
-    auto result = executor_->execute_privileged(prefix + " restart " + name, password);
+    auto result = executor_->execute_privileged(prefix + " restart " + shell_quote(name), password);
     return {result.exit_code == 0, result.exit_code == 0 ? "" : describe_failure(result)};
 }
 

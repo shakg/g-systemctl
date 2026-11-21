@@ -58,12 +58,12 @@ std::vector<ServiceUnit> MacOSServiceManager::parse_launchctl_output(const std::
 }
 
 std::pair<bool, std::string> MacOSServiceManager::start_service(const std::string& name, const std::string& password) {
-    auto result = executor_->execute_privileged("launchctl load " + name, password);
+    auto result = executor_->execute_privileged("launchctl load " + shell_quote(name), password);
     return {result.exit_code == 0, result.stdout_output};
 }
 
 std::pair<bool, std::string> MacOSServiceManager::stop_service(const std::string& name, const std::string& password) {
-    auto result = executor_->execute_privileged("launchctl unload " + name, password);
+    auto result = executor_->execute_privileged("launchctl unload " + shell_quote(name), password);
     return {result.exit_code == 0, result.stdout_output};
 }
 
